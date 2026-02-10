@@ -50,7 +50,11 @@ class _SongsListContentState extends State<SongsListContent> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.only(
-                  top: 24.0 + 80.0 + MediaQuery.of(context).padding.top,
+                  top:
+                      24.0 +
+                      ((Platform.isAndroid || Platform.isIOS)
+                          ? (50.0 + MediaQuery.of(context).padding.top)
+                          : 50.0),
                   left: 24.0,
                   right: 24.0,
                   bottom: 24.0,
@@ -149,7 +153,9 @@ class _SongsListContentState extends State<SongsListContent> {
                 ),
               ),
             // Bottom padding for player bar
-            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            SliverToBoxAdapter(
+              child: SizedBox(height: audioSignal.reservedHeight.value),
+            ),
           ],
         ),
       );

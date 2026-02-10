@@ -6,6 +6,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:music_app/widgets/marquee_text.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
+import '../signals/settings_signal.dart';
 import '../services/album_art_cache.dart';
 import '../models/song.dart';
 
@@ -20,8 +21,9 @@ class MorphingPlayer extends StatefulWidget {
 }
 
 class _MorphingPlayerState extends State<MorphingPlayer>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _controller;
+  late AnimationController _visibilityController;
   File? _currentAlbumArt;
   String? _currentSongPath;
   bool _isSeeking = false;
@@ -32,18 +34,20 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   double get _miniArtSize => 50.0;
 
   // Compact Layout Specs
-  double get _compactMargin => 6.0;
-  double get _compactPadding => 16.0;
+  double get _compactMargin => 18.0;
+  double get _compactPadding => 15.0;
 
   // Full Layout Specs
   double get _fullMargin => 24.0;
-  double get _fullPadding => 20.0; // Reduced from 20.0
-  double get _leftControlsWidth => 160.0; // Reduced slightly for tighter look
-  double get _artSpacing => -12.0; // Comfortable spacing
+  double get _fullPadding => 16.0; // Reduced from 20.0
+  double get _leftControlsWidth => 180.0; // Reduced slightly for tighter look
+  double get _artSpacing => -10.0; // Comfortable spacing
 
   double get _startTop => 0.0; // Centered for full bar height (80px)
 
   double _dragStartValue = 0.0;
+  double _dragDownOffset = 0.0;
+  late AnimationController _dragResetController;
 
   @override
   void initState() {
@@ -56,11 +60,52 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           // Update signal for global UI coordination (like hiding navbar)
           audioSignal.playerExpansion.value = _controller.value;
         });
+
+    _visibilityController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+
+    _dragResetController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 300),
+        )..addListener(() {
+          setState(() {
+            _dragDownOffset = lerpDouble(
+              _dragDownOffset,
+              0.0,
+              _dragResetController.value,
+            )!;
+          });
+        });
+
+    // Initial state check
+    if (audioSignal.currentSong.value != null) {
+      _visibilityController.value = 1.0;
+    }
+
+    // specific listener for song changes to drive visibility
+    effect(() {
+      final song = audioSignal.currentSong.value;
+      // On desktop, we always want the player to be visible
+      final isDesktop =
+          !kIsWeb &&
+          (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
+
+      if (song != null || isDesktop) {
+        _visibilityController.forward();
+      } else {
+        _visibilityController.reverse();
+      }
+    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _visibilityController.dispose();
+    _dragResetController.dispose();
     super.dispose();
   }
 
@@ -81,15 +126,56 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
+    if (_controller.value == 0 && settingsSignal.swipeDownToStop.value) {
+      final delta = details.primaryDelta!;
+      // Only handle as a "swipe down to stop" if we are dragging down
+      // OR we have already moved the bar down.
+      if (delta > 0 || _dragDownOffset > 0) {
+        setState(() {
+          _dragDownOffset += delta;
+          if (_dragDownOffset < 0) _dragDownOffset = 0;
+        });
+
+        // If we still have a downward offset, consume the event.
+        // If we've returned to 0, let it fall through to handle expansion.
+        if (_dragDownOffset > 0) return;
+      }
+    }
+
     final screenHeight = MediaQuery.of(context).size.height;
     _controller.value -= details.primaryDelta! / screenHeight;
   }
 
   void _handleDragEnd(DragEndDetails details) {
+    if (_dragDownOffset > 0) {
+      final velocity = details.primaryVelocity ?? 0;
+      if (_dragDownOffset > 80 || velocity > 500) {
+        // Synchronize visibility controller with current drag position
+        // so the animation starts from the current visual position.
+        final syncValue = (1.0 - (_dragDownOffset / (_barHeight + 20.0))).clamp(
+          0.0,
+          1.0,
+        );
+        _visibilityController.value = syncValue;
+
+        audioSignal.stop();
+        _dragDownOffset = 0;
+      } else {
+        _dragResetController.forward(from: 0);
+      }
+      return;
+    }
+
     final velocity = details.primaryVelocity ?? 0;
     final value = _controller.value;
 
-    // 1. Flinging (High Velocity)
+    // 1. Swipe down to stop (early exit for this specific gesture)
+    if (velocity > 500 && value == 0 && settingsSignal.swipeDownToStop.value) {
+      audioSignal.stop();
+      return;
+    }
+
+    // 2. Flinging (High Velocity)
     if (velocity < -500) {
       // Fling Up -> Open
       _controller.animateTo(1.0, curve: Curves.fastLinearToSlowEaseIn);
@@ -202,19 +288,24 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     final artLeft = (screenWidth - artSize) / 2;
     final artRect = Rect.fromLTWH(artLeft, artTop, artSize, artSize);
 
-    // 5. Distribute Middle Elements Evenly
-    // Space between Art and Actions
+    // 5. Distribute Middle Elements
+    // Distribute evenly: Art -> Info -> Seekbar -> Controls -> Actions
     final middleStart = artRect.bottom;
     final middleEnd = actionsRect.top;
     final availableMiddleSpace = middleEnd - middleStart;
 
-    // Calculate gap size
-    // We have 4 gaps to distribute: Art->Info, Info->Seekbar, Seekbar->Controls, Controls->Actions
     final totalGapSpace = availableMiddleSpace - middleElementsHeight;
-    final gap = (totalGapSpace / 4).clamp(8.0, 60.0);
 
-    // Calculate Positions
-    final infoTop = middleStart + gap;
+    // Distribute slack evenly across 4 gaps
+    // Remove upper and lower clamps to allow even spacing on all screens
+    final gap = (totalGapSpace / 4.0).clamp(0.0, double.infinity);
+
+    // If we clamped the gap (min 0), we might need to center the whole block again
+    final totalConsumedHeight = middleElementsHeight + (gap * 4);
+    final unusedSpace = availableMiddleSpace - totalConsumedHeight;
+    final topOffset = middleStart + (unusedSpace / 2);
+
+    final infoTop = topOffset + gap;
     final seekbarTop = infoTop + infoHeight + gap;
     final controlsTop = seekbarTop + seekbarHeight + gap;
 
@@ -275,7 +366,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           : _fullPadding + _leftControlsWidth + _artSpacing;
 
       return AnimatedBuilder(
-        animation: _controller,
+        animation: Listenable.merge([_controller, _visibilityController]),
         builder: (context, child) {
           final value = _controller.value;
           final topPadding = MediaQuery.of(context).padding.top;
@@ -335,10 +426,20 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             value,
           )!;
 
+          // --- Visibility Interpolation ---
+          final visibilityCurve = Curves.easeInOut;
+          final visibilityValue = visibilityCurve.transform(
+            _visibilityController.value,
+          );
+          final visibilityOffset =
+              (1.0 - visibilityValue) * (currentHeight + 20.0);
+          final effectiveBottom =
+              currentBottom - visibilityOffset - _dragDownOffset;
+
           return Positioned(
             left: currentLeft,
             width: currentWidth,
-            bottom: currentBottom,
+            bottom: effectiveBottom,
             height: currentHeight,
             child: PopScope(
               canPop: value == 0,
@@ -907,6 +1008,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     bool isCompact,
     Rect targetRect,
   ) {
+    // Detect if we're on mobile based on platform
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+
     // Start State (Mini)
     double startRight;
     double startLeft;
@@ -917,13 +1021,16 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
     if (isCompact) {
       // Mobile: Right aligned, Play button hidden
-      startRight = 16.0; // Restored padding
-      startWidth = 100.0; // Match new tighter layout
+      // We use MainAxisAlignment.center for the Row to ensure it centers correctly when expanded.
+      // For the mini-player, we position the "center" of this block near the right edge.
+      startRight = 0.0; // Pushed closer to edge
+      startWidth =
+          140.0; // Narrower width to make "Center" alignment appear right-aligned
       startLeft = collapsedWidth - startRight - startWidth;
       startPlayBtnSize = 0;
     } else {
       // Desktop: Left aligned, Play button visible (just icon)
-      startLeft = 3;
+      startLeft = 0;
       startWidth = _leftControlsWidth;
       startPlayBtnSize = 24; // Enough for icon, background transparent
     }
@@ -940,7 +1047,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     // Button Spacing
     // final spacing = lerpDouble(8, 40, value)!;
     final buttonPadding = EdgeInsets.lerp(
-      const EdgeInsets.all(6),
+      isMobile ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 8),
       const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
       value,
     )!;
@@ -958,6 +1065,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     // Icon Color
     // final iconOpacity = isCompact ? value : 1.0;
 
+    final song = audioSignal.currentSong.value;
+    final hasSong = song != null;
+
     return Positioned(
       top: currentTop,
       left: currentLeft,
@@ -974,25 +1084,35 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           children: [
             IconButton(
               padding: buttonPadding,
+              constraints: isCompact
+                  ? const BoxConstraints()
+                  : null, // Allow shrinking
               splashColor: value > 0.05 ? Colors.transparent : null,
               highlightColor: value > 0.05 ? Colors.transparent : null,
               hoverColor: value > 0.05 ? Colors.transparent : null,
               icon: FaIcon(
                 FontAwesomeIcons.backwardStep,
-                color: const Color(0xFFFCE7AC),
-                size: lerpDouble(isCompact ? 24 : 24, 40, value)!,
+                color: hasSong
+                    ? const Color(0xFFFCE7AC)
+                    : const Color(0xFFFCE7AC).withOpacity(0.5),
+                size: lerpDouble(24, 40, value)!,
               ),
-              onPressed: audioSignal.skipPrevious,
+              onPressed: hasSong ? audioSignal.skipPrevious : null,
             ),
 
+            isMobile ? const SizedBox(width: 2) : const SizedBox(width: 0),
             // Play/Pause Button (Morphing)
+            // Use dynamic padding to collapse the container width to 0 when hidden
             Container(
               alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 6),
+              padding: EdgeInsets.symmetric(
+                horizontal: isMobile ? lerpDouble(0, 6, value)! : 6,
+              ),
               child: playBtnSize >= 24
                   ? IconButton(
                       // Hide if too small
                       padding: buttonPadding,
+                      constraints: isCompact ? const BoxConstraints() : null,
                       splashColor: value > 0.05 ? Colors.transparent : null,
                       highlightColor: value > 0.05 ? Colors.transparent : null,
                       hoverColor: value > 0.05 ? Colors.transparent : null,
@@ -1000,31 +1120,40 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                         isPlaying
                             ? FontAwesomeIcons.pause
                             : FontAwesomeIcons.play,
-                        color: const Color(0xFFFCE7AC),
+                        color: hasSong
+                            ? const Color(0xFFFCE7AC)
+                            : const Color(0xFFFCE7AC).withOpacity(0.5),
                         size: playBtnSize,
                       ),
-                      onPressed: () {
-                        if (isPlaying) {
-                          audioSignal.pause();
-                        } else {
-                          audioSignal.play();
-                        }
-                      },
+                      onPressed: hasSong
+                          ? () {
+                              if (isPlaying) {
+                                audioSignal.pause();
+                              } else {
+                                audioSignal.play();
+                              }
+                            }
+                          : null,
                     )
                   : null,
             ),
 
+            isMobile ? const SizedBox(width: 2) : const SizedBox(width: 0),
+
             IconButton(
               padding: buttonPadding,
+              constraints: isCompact ? const BoxConstraints() : null,
               splashColor: value > 0.05 ? Colors.transparent : null,
               highlightColor: value > 0.05 ? Colors.transparent : null,
               hoverColor: value > 0.05 ? Colors.transparent : null,
               icon: FaIcon(
                 FontAwesomeIcons.forwardStep,
-                color: const Color(0xFFFCE7AC),
-                size: lerpDouble(isCompact ? 24 : 24, 40, value)!,
+                color: hasSong
+                    ? const Color(0xFFFCE7AC)
+                    : const Color(0xFFFCE7AC).withOpacity(0.5),
+                size: lerpDouble(24, 40, value)!,
               ),
-              onPressed: audioSignal.skipNext,
+              onPressed: hasSong ? audioSignal.skipNext : null,
             ),
           ],
         ),
@@ -1047,7 +1176,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
     final startRight = 20.0;
     final startTop = 15.0; // Moved up by 1px
-    final startWidth = 200.0; // Reduced width due to smaller spacing
+    final startWidth =
+        220.0; // Increased width to prevent overflow (200 was too tight)
     final startLeft = collapsedWidth - startRight - startWidth;
 
     // End State (Expanded)
@@ -1066,10 +1196,10 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     final actionsOpacity = isCompact ? value : 1.0;
 
     // Interpolate Icon Size
-    final iconSize = lerpDouble(24, 18, value)!;
+    final iconSize = lerpDouble(24, 24, value)!;
 
     // Interpolate Spacing
-    final spacing = lerpDouble(12, 24, value)!;
+    final spacing = lerpDouble(12, 18, value)!;
 
     return Positioned(
       top: currentTop,

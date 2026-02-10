@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter_single_instance/flutter_single_instance.dart';
 import 'package:signals_flutter/signals_flutter.dart';
@@ -24,6 +25,9 @@ Future<void> main() async {
   // Ensure widgets are initialized
   WidgetsFlutterBinding.ensureInitialized();
   print('APP_START: Widgets initialized');
+
+  // Initialize Navigation Listener
+  initNavigationListener();
 
   // Initialize Signals (Load settings early for single instance check)
   await settingsSignal.loadSettings();
@@ -59,6 +63,16 @@ Future<void> main() async {
 
   // Request Android Permissions
   await requestAndroidPermissions();
+
+  // Configure System UI for Edge-to-Edge
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      statusBarColor: Colors.transparent,
+    ),
+  );
 
   print('APP_START: Running app');
   runApp(const MusicApp());
@@ -112,7 +126,7 @@ class MusicApp extends StatelessWidget {
             secondary: const Color(0xFFFCE7AC),
           ),
           useMaterial3: true,
-          textTheme: isDesktop && settingsSignal.useCustomFont.value
+          textTheme: settingsSignal.useCustomFont.value
               ? ThemeData.dark().textTheme.apply(
                   fontFamily: 'Iosevka Nerd Font',
                 )

@@ -9,7 +9,12 @@ class PlatformServiceStub implements PlatformService {
   }
 
   @override
-  Future<void> updatePresence(dynamic song, {String? artworkUrl, bool isPlaying = true}) async {
+  Future<void> updatePresence(
+    dynamic song, {
+    String? artworkUrl,
+    bool isPlaying = true,
+    int? startTimeStamp,
+  }) async {
     // No-op on mobile/web
   }
 

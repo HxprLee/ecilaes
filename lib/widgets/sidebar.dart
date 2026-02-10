@@ -61,6 +61,8 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
     final isHome = location == '/';
     final isExplorer = location.startsWith('/explorer');
     final isSettings = location.startsWith('/settings');
+    final isLibrary = location.startsWith('/library');
+    final isSongs = location == '/songs';
 
     return AnimatedBuilder(
       animation: _controller,
@@ -167,6 +169,8 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                 FontAwesomeIcons.recordVinyl,
                                 'Library',
                                 value,
+                                isSelected: isLibrary,
+                                onTap: () => context.go('/library'),
                               ),
                               const Divider(color: Colors.white10, height: 32),
                               if (value > 0.5)
@@ -180,6 +184,8 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                 FontAwesomeIcons.music,
                                 'Songs',
                                 value,
+                                isSelected: isSongs,
+                                onTap: () => context.go('/songs'),
                               ),
                               _buildNavItem(
                                 FontAwesomeIcons.list,
@@ -263,14 +269,13 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                       ),
 
                       // Settings at bottom (hide on mobile drawer)
-                      if (!widget.isDrawer)
-                        _buildNavItem(
-                          FontAwesomeIcons.gear,
-                          'Settings',
-                          value,
-                          isSelected: isSettings,
-                          onTap: () => context.go('/settings'),
-                        ),
+                      _buildNavItem(
+                        FontAwesomeIcons.gear,
+                        'Settings',
+                        value,
+                        isSelected: isSettings,
+                        onTap: () => context.go('/settings'),
+                      ),
                       const SizedBox(height: 12),
                     ],
                   ),

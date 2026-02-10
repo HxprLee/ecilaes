@@ -5,8 +5,11 @@ import 'screens/file_explorer_screen.dart';
 import 'screens/playlist_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/library_screen.dart';
+import 'screens/home_screen.dart';
 import 'widgets/songs_list_content.dart';
 import 'signals/audio_signal.dart';
+import 'signals/navigation_signal.dart';
 
 /// Creates the GoRouter configuration.
 final GoRouter router = GoRouter(
@@ -17,9 +20,15 @@ final GoRouter router = GoRouter(
         return HomeShell(child: child);
       },
       routes: [
-        // Home (Songs list)
+        // Home
         GoRoute(
           path: '/',
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: HomeScreen()),
+        ),
+        // Songs list
+        GoRoute(
+          path: '/songs',
           pageBuilder: (context, state) =>
               const NoTransitionPage(child: SongsListContent()),
         ),
@@ -28,6 +37,12 @@ final GoRouter router = GoRouter(
           path: '/search',
           pageBuilder: (context, state) =>
               const NoTransitionPage(child: SearchScreen()),
+        ),
+        // Library
+        GoRoute(
+          path: '/library',
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: LibraryScreen()),
         ),
         // File Explorer
         GoRoute(
@@ -73,3 +88,17 @@ final GoRouter router = GoRouter(
   errorBuilder: (context, state) =>
       Scaffold(body: Center(child: Text('Error: ${state.error}'))),
 );
+
+void initNavigationListener() {
+  // Seed initial location
+  final initialLocation = router.routerDelegate.currentConfiguration.uri
+      .toString();
+  if (initialLocation.isNotEmpty) {
+    navigationSignal.onRouteChanged(initialLocation);
+  }
+
+  router.routerDelegate.addListener(() {
+    final location = router.routerDelegate.currentConfiguration.uri.toString();
+    navigationSignal.onRouteChanged(location);
+  });
+}

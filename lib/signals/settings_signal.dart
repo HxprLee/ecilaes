@@ -11,6 +11,8 @@ class SettingsSignal {
   final useSingleInstance = signal<bool>(true);
   final useCustomFont = signal<bool>(true);
   final backgroundPlayback = signal<bool>(false);
+  final swipeDownToStop = signal<bool>(false);
+  final musicDirectory = signal<String?>(null);
 
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -20,6 +22,18 @@ class SettingsSignal {
     useSingleInstance.value = prefs.getBool('useSingleInstance') ?? true;
     useCustomFont.value = prefs.getBool('useCustomFont') ?? true;
     backgroundPlayback.value = prefs.getBool('backgroundPlayback') ?? false;
+    swipeDownToStop.value = prefs.getBool('swipeDownToStop') ?? false;
+    musicDirectory.value = prefs.getString('musicDirectory');
+  }
+
+  Future<void> updateMusicDirectory(String? value) async {
+    musicDirectory.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    if (value == null) {
+      await prefs.remove('musicDirectory');
+    } else {
+      await prefs.setString('musicDirectory', value);
+    }
   }
 
   Future<void> updateTextScale(double value) async {
@@ -50,6 +64,12 @@ class SettingsSignal {
     backgroundPlayback.value = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('backgroundPlayback', value);
+  }
+
+  Future<void> updateSwipeDownToStop(bool value) async {
+    swipeDownToStop.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('swipeDownToStop', value);
   }
 }
 

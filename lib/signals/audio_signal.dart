@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:signals/signals_flutter.dart';
+import 'settings_signal.dart';
 import 'package:uuid/uuid.dart';
 import 'package:metadata_god/metadata_god.dart';
 
@@ -36,6 +37,16 @@ class AudioSignal {
   final isShuffleMode = signal<bool>(false);
   final playerExpansion = signal<double>(0.0);
   final headerShowBlur = signal<bool>(false);
+  late final showPlayer = computed(
+    () => currentSong.value != null || isDesktop,
+  );
+  late final reservedHeight = computed(() {
+    if (isDesktop) {
+      return showPlayer.value ? 104.0 : 24.0;
+    } else {
+      return 56.0 + (showPlayer.value ? 80.0 : 0.0) + 24.0;
+    }
+  });
 
   // Caches
   final Map<String, Song> _explorerSongCache = {};
@@ -104,6 +115,8 @@ class AudioSignal {
   // Discord RPC
   String? _lastDiscordSongPath;
   bool? _lastDiscordIsPlaying;
+  int? _discordPlaybackStartTime;
+  String? _cachedArtworkUrl;
 
   Future<void> _updateDiscordPresence() async {
     final song = currentSong.value;
@@ -111,14 +124,40 @@ class AudioSignal {
 
     if (song == null || !isDesktop) return;
 
+    // If nothing changed, we don't strictly need to update every time,
+    // but the task asks for periodic updates. However, we should avoid
+    // re-fetching artwork if not necessary.
     if (_lastDiscordSongPath == song.path && _lastDiscordIsPlaying == playing) {
+      if (!playing)
+        return; // If paused and already sent pause, no need to resend
+
+      // If playing, we might want to resend to keep presence alive,
+      // but only if we have the cached info.
+      if (_cachedArtworkUrl != null) {
+        await PlatformService().updatePresence(
+          song,
+          artworkUrl: _cachedArtworkUrl,
+          isPlaying: true,
+          startTimeStamp: _discordPlaybackStartTime,
+        );
+      }
       return;
+    }
+
+    // State changed
+    if (_lastDiscordSongPath != song.path ||
+        (playing && !_lastDiscordIsPlaying!)) {
+      // New song or resumed playback
+      _discordPlaybackStartTime = DateTime.now().millisecondsSinceEpoch;
+    } else if (!playing) {
+      // Paused
+      _discordPlaybackStartTime = null;
     }
 
     _lastDiscordSongPath = song.path;
     _lastDiscordIsPlaying = playing;
 
-    final artworkUrl = await AlbumArtService().getAlbumArtUrl(
+    _cachedArtworkUrl = await AlbumArtService().getAlbumArtUrl(
       song.artist,
       song.album ?? '',
       song.title,
@@ -126,8 +165,9 @@ class AudioSignal {
 
     await PlatformService().updatePresence(
       song,
-      artworkUrl: artworkUrl,
+      artworkUrl: _cachedArtworkUrl,
       isPlaying: playing,
+      startTimeStamp: _discordPlaybackStartTime,
     );
   }
 
@@ -246,6 +286,12 @@ class AudioSignal {
   Future<void> seek(Duration pos) => _audioHandler.seek(pos);
   Future<void> skipNext() => _audioHandler.skipToNext();
   Future<void> skipPrevious() => _audioHandler.skipToPrevious();
+  Future<void> stop() async {
+    await _audioHandler.stop();
+    currentSong.value = null;
+    isPlaying.value = false;
+    position.value = Duration.zero;
+  }
 
   Future<void> playSong(Song song) async {
     if (_audioHandler is MyAudioHandler) {
@@ -361,6 +407,14 @@ class AudioSignal {
   }
 
   Future<String?> _getMusicPath() async {
+    final customPath = settingsSignal.musicDirectory.value;
+    if (customPath != null && customPath.isNotEmpty) {
+      final dir = Directory(customPath);
+      if (await dir.exists()) {
+        return customPath;
+      }
+    }
+
     if (Platform.isAndroid) {
       return '/storage/emulated/0/Music';
     } else {
@@ -453,7 +507,9 @@ class AudioSignal {
       );
       final song = Song(
         path: file.path,
-        title: metadata['title'] ?? 'Unknown',
+        title: (metadata['title'] as String?)?.isNotEmpty == true
+            ? metadata['title']
+            : Song.fromPath(file.path).title,
         artist: metadata['artist'] ?? 'Unknown Artist',
         album: metadata['album'],
         duration: metadata['duration'],
@@ -543,7 +599,9 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
 
         final song = Song(
           path: path,
-          title: metadata.title ?? 'Unknown',
+          title: (metadata.title != null && metadata.title!.trim().isNotEmpty)
+              ? metadata.title!
+              : Song.fromPath(path).title,
           artist: metadata.artist ?? 'Unknown Artist',
           album: metadata.album,
           hasAlbumArt: hasArt,
@@ -582,7 +640,9 @@ Future<Map<String, dynamic>> _extractMetadata(
     }
 
     return {
-      'title': metadata.title,
+      'title': (metadata.title != null && metadata.title!.trim().isNotEmpty)
+          ? metadata.title
+          : null,
       'artist': metadata.artist,
       'album': metadata.album,
       'duration': metadata.durationMs != null

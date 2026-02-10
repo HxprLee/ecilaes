@@ -13,16 +13,26 @@ class PlatformServiceProxy implements PlatformService {
     if (kIsWeb) return;
     // Only load implementation if we are on a desktop platform
     if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
-        await impl.loadLibrary();
-        _delegate = impl.PlatformServiceDesktopImpl();
-        await _delegate!.init();
+      await impl.loadLibrary();
+      _delegate = impl.PlatformServiceDesktopImpl();
+      await _delegate!.init();
     }
   }
 
   @override
-  Future<void> updatePresence(dynamic song, {String? artworkUrl, bool isPlaying = true}) async {
+  Future<void> updatePresence(
+    dynamic song, {
+    String? artworkUrl,
+    bool isPlaying = true,
+    int? startTimeStamp,
+  }) async {
     if (_delegate != null) {
-      await _delegate!.updatePresence(song, artworkUrl: artworkUrl, isPlaying: isPlaying);
+      await _delegate!.updatePresence(
+        song,
+        artworkUrl: artworkUrl,
+        isPlaying: isPlaying,
+        startTimeStamp: startTimeStamp,
+      );
     }
   }
 

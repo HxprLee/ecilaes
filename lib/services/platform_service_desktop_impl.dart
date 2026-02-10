@@ -30,7 +30,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
         effect: WindowEffect.transparent,
         color: const Color.fromARGB(165, 18, 22, 26),
       );
-      
+
       await windowManager.ensureInitialized();
 
       // Initialize Discord RPC
@@ -62,7 +62,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
 
       // Setup Tray Icon
       _trayIcon = native.TrayIcon();
-      
+
       // Load Icon
       native.Image? icon;
       try {
@@ -80,7 +80,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
           if (await file.exists()) {
             icon = native.Image.fromFile(assetPath);
           } else {
-             debugPrint("Tray icon not found at $assetPath");
+            debugPrint("Tray icon not found at $assetPath");
           }
         } catch (e) {
           debugPrint("Error loading tray icon from path: $e");
@@ -92,25 +92,29 @@ class PlatformServiceDesktopImpl implements PlatformService {
       } else {
         debugPrint("Failed to load tray icon");
       }
-      
+
       _trayIcon!.title = "Music App";
       _trayIcon!.tooltip = "Music App";
       _trayIcon!.contextMenu = _trayMenu;
       _trayIcon!.contextMenuTrigger = native.ContextMenuTrigger.rightClicked;
-      
+
       // Event Listeners (using addCallbackListener which auto-starts listening)
-      
+
       // Handle Tray Clicks
       _trayIcon!.addCallbackListener<native.TrayIconClickedEvent>((e) async {
         await windowManager.show();
       });
-      
+
       // Note: Right click handled by contextMenuTrigger
 
       // Menu Actions
-      prevItem.addCallbackListener<native.MenuItemClickedEvent>((e) => audioSignal.skipPrevious());
-      nextItem.addCallbackListener<native.MenuItemClickedEvent>((e) => audioSignal.skipNext());
-      
+      prevItem.addCallbackListener<native.MenuItemClickedEvent>(
+        (e) => audioSignal.skipPrevious(),
+      );
+      nextItem.addCallbackListener<native.MenuItemClickedEvent>(
+        (e) => audioSignal.skipNext(),
+      );
+
       _playPauseItem!.addCallbackListener<native.MenuItemClickedEvent>((e) {
         if (audioSignal.isPlaying.value) {
           audioSignal.pause();
@@ -118,11 +122,11 @@ class PlatformServiceDesktopImpl implements PlatformService {
           audioSignal.play();
         }
       });
-      
+
       showItem.addCallbackListener<native.MenuItemClickedEvent>((e) async {
         await windowManager.show();
       });
-      
+
       quitItem.addCallbackListener<native.MenuItemClickedEvent>((e) {
         exit(0);
       });
@@ -134,18 +138,23 @@ class PlatformServiceDesktopImpl implements PlatformService {
       });
 
       _trayIcon!.isVisible = true;
-
     } catch (e) {
       debugPrint("Error setting up system tray: $e");
     }
   }
 
   @override
-  Future<void> updatePresence(dynamic song, {String? artworkUrl, bool isPlaying = true}) async {
+  Future<void> updatePresence(
+    dynamic song, {
+    String? artworkUrl,
+    bool isPlaying = true,
+    int? startTimeStamp,
+  }) async {
     await DiscordRpcService().updatePresence(
       song,
       artworkUrl: artworkUrl,
       isPlaying: isPlaying,
+      startTimeStamp: startTimeStamp,
     );
   }
 
@@ -157,7 +166,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
   @override
   Future<void> dispose() async {
     await DiscordRpcService().dispose();
-    // trayIcon and items stop listening automatically when listeners are removed, 
+    // trayIcon and items stop listening automatically when listeners are removed,
     // but here we are disposing the app usually.
     // Explicit cleanup if needed:
     // _trayIcon?.removeAllListeners();

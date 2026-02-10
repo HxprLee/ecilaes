@@ -6,7 +6,12 @@ abstract class PlatformService {
   factory PlatformService() => _instance;
 
   Future<void> init();
-  Future<void> updatePresence(dynamic song, {String? artworkUrl, bool isPlaying = true});
+  Future<void> updatePresence(
+    dynamic song, {
+    String? artworkUrl,
+    bool isPlaying = true,
+    int? startTimeStamp,
+  });
   Future<void> clearPresence();
   Future<void> dispose();
 }

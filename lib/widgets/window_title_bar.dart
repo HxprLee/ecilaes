@@ -9,6 +9,7 @@ import 'package:signals/signals_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
+import '../signals/navigation_signal.dart';
 
 class WindowTitleBar extends StatefulWidget {
   final double leftOffset;
@@ -57,109 +58,117 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
 
       return IgnorePointer(
         ignoring: expansion > 0.5,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: EdgeInsets.only(
-            top: isDesktop ? 0 : topPadding,
-            left: 2 + widget.leftOffset,
-            right: 2,
-          ),
-          decoration: BoxDecoration(
-            gradient: showBlur
-                ? LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      const Color(0xFF0D1117).withOpacity(0.9),
-                      const Color(0xFF0D1117).withOpacity(0.0),
-                    ],
-                  )
-                : null,
-          ),
-          child: SizedBox(
-            height: 80,
-            child: Row(
-              children: [
-                // Left: Navigation Buttons (Desktop) or Sidebar Toggle (Android)
-                Opacity(
-                  opacity: hideContentOpacity,
-                  child: IgnorePointer(
-                    ignoring: expansion > 0.5,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(width: 16),
-                        if (isDesktop) ...[
-                          _CircularIconButton(
-                            icon: Icons.chevron_left,
-                            onPressed: () {
-                              if (context.canPop()) {
-                                context.pop();
-                              }
-                            },
-                            tooltip: 'Back',
-                          ),
-                          const SizedBox(width: 8),
-                          _CircularIconButton(
-                            icon: Icons.chevron_right,
-                            onPressed: null,
-                            tooltip: 'Forward',
-                          ),
-                        ] else ...[
-                          _CircularIconButton(
-                            icon: Icons.menu,
-                            onPressed: () {
-                              Scaffold.of(context).openDrawer();
-                            },
-                            tooltip: 'Menu',
-                          ),
-                        ],
+        child: GestureDetector(
+          onPanStart: (details) {
+            if (isDesktop) {
+              windowManager.startDragging();
+            }
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: EdgeInsets.only(
+              top: isDesktop ? 0 : topPadding,
+              left: 2 + widget.leftOffset,
+              right: 2,
+            ),
+            decoration: BoxDecoration(
+              gradient: showBlur
+                  ? LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        const Color(0xFF0D1117).withOpacity(0.9),
+                        const Color(0xFF0D1117).withOpacity(0.0),
                       ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 16),
-
-                // Center: Search Bar (Responsive)
-                Expanded(
-                  child: isDesktop
-                      ? MoveWindow(
-                          child: Center(
-                            child: _buildSearchBar(
-                              hideContentOpacity,
-                              expansion,
+                    )
+                  : null,
+            ),
+            child: Container(
+              height: !isDesktop ? 64 : 50,
+              padding: EdgeInsets.only(top: 0),
+              child: Row(
+                children: [
+                  // Left: Navigation Buttons (Desktop) or Sidebar Toggle (Android)
+                  Opacity(
+                    opacity: hideContentOpacity,
+                    child: IgnorePointer(
+                      ignoring: expansion > 0.5,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(width: 16),
+                          if (isDesktop) ...[
+                            Watch((context) {
+                              final canBack = navigationSignal.canGoBack.value;
+                              return _CircularIconButton(
+                                icon: Icons.chevron_left,
+                                onPressed: canBack
+                                    ? () => navigationSignal.goBack(context)
+                                    : null,
+                                tooltip: 'Back',
+                              );
+                            }),
+                            const SizedBox(width: 8),
+                            Watch((context) {
+                              final canForward =
+                                  navigationSignal.canGoForward.value;
+                              return _CircularIconButton(
+                                icon: Icons.chevron_right,
+                                onPressed: canForward
+                                    ? () => navigationSignal.goForward(context)
+                                    : null,
+                                tooltip: 'Forward',
+                              );
+                            }),
+                          ] else ...[
+                            _CircularIconButton(
+                              icon: Icons.menu,
+                              onPressed: () {
+                                Scaffold.of(context).openDrawer();
+                              },
+                              tooltip: 'Menu',
                             ),
-                          ),
-                        )
-                      : _buildSearchBar(hideContentOpacity, expansion),
-                ),
-
-                const SizedBox(width: 16),
-
-                // Right: Window Buttons (Desktop) or Settings (Android)
-                Opacity(
-                  opacity: hideContentOpacity,
-                  child: IgnorePointer(
-                    ignoring: expansion > 0.5,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (isDesktop &&
-                            settingsSignal.useCustomWindowControls.value)
-                          const WindowButtons()
-                        else if (!isDesktop)
-                          _CircularIconButton(
-                            icon: Icons.settings,
-                            onPressed: () => context.go('/settings'),
-                            tooltip: 'Settings',
-                          ),
-                        const SizedBox(width: 16),
-                      ],
+                          ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+
+                  const SizedBox(width: 16),
+
+                  // Center: Search Bar (Responsive)
+                  Expanded(
+                    child: Center(
+                      child: _buildSearchBar(hideContentOpacity, expansion),
+                    ),
+                  ),
+
+                  const SizedBox(width: 16),
+
+                  // Right: Window Buttons (Desktop) or Settings (Android)
+                  Opacity(
+                    opacity: hideContentOpacity,
+                    child: IgnorePointer(
+                      ignoring: expansion > 0.5,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isDesktop &&
+                              settingsSignal.useCustomWindowControls.value)
+                            const WindowButtons()
+                          else if (!isDesktop)
+                            _CircularIconButton(
+                              icon: Icons.settings,
+                              onPressed: () => context.go('/settings'),
+                              tooltip: 'Settings',
+                            ),
+                          const SizedBox(width: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -183,8 +192,8 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
           child: CallbackShortcuts(
             bindings: {
               const SingleActivator(LogicalKeyboardKey.escape): () {
-                if (context.canPop()) {
-                  context.pop();
+                if (navigationSignal.canPopSync) {
+                  navigationSignal.goBack(context);
                   // Clear search on exit
                   audioSignal.searchQuery.value = '';
                 }
@@ -195,15 +204,15 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
               textAlignVertical: TextAlignVertical.center,
               onChanged: (value) => audioSignal.searchQuery.value = value,
               onTap: () {
-                final location = GoRouterState.of(context).uri.toString();
-                if (location != '/search') {
-                  context.push('/search');
+                final currentRoute = navigationSignal.currentRoute.value;
+                if (currentRoute != '/search') {
+                  context.go('/search');
                 }
               },
               onSubmitted: (value) {
-                final location = GoRouterState.of(context).uri.toString();
-                if (location != '/search') {
-                  context.push('/search');
+                final currentRoute = navigationSignal.currentRoute.value;
+                if (currentRoute != '/search') {
+                  context.go('/search');
                 }
               },
               decoration: InputDecoration(

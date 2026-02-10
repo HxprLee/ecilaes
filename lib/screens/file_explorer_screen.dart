@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../signals/audio_signal.dart';
+import '../signals/navigation_signal.dart';
 import '../models/song.dart';
 import '../services/album_art_cache.dart';
 import 'package:path/path.dart' as p;
@@ -72,7 +73,11 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
           // Header
           Padding(
             padding: EdgeInsets.only(
-              top: 24.0 + 80.0 + MediaQuery.of(context).padding.top,
+              top:
+                  24.0 +
+                  ((Platform.isAndroid || Platform.isIOS)
+                      ? (50.0 + MediaQuery.of(context).padding.top)
+                      : 50.0),
               left: 24.0,
               right: 24.0,
               bottom: 24.0,
@@ -98,8 +103,8 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
                     IconButton(
                       icon: const Icon(Icons.arrow_back, color: Colors.white54),
                       onPressed: () {
-                        if (context.canPop()) {
-                          context.pop();
+                        if (navigationSignal.canPopSync) {
+                          navigationSignal.goBack(context);
                         } else {
                           // If we can't pop, try to go up one level manually
                           final parent = Directory(currentPath).parent;
@@ -141,7 +146,12 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 104),
+                    padding: EdgeInsets.fromLTRB(
+                      24,
+                      0,
+                      24,
+                      audioSignal.reservedHeight.value,
+                    ),
                     itemCount: _items!.length,
                     itemBuilder: (context, index) {
                       final item = _items![index];

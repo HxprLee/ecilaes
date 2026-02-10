@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter_discord_rpc/flutter_discord_rpc.dart';
+import 'package:dart_discord_presence/dart_discord_presence.dart';
 import '../models/song.dart';
 
 class DiscordRpcService {
@@ -7,8 +7,8 @@ class DiscordRpcService {
   factory DiscordRpcService() => _instance;
   DiscordRpcService._internal();
 
+  DiscordRPC? _rpc;
   bool _isConnected = false;
-  bool _isInitialized = false;
   Completer<void>? _initCompleter;
 
   static const String _applicationId = '1453422309057757307';
@@ -21,7 +21,6 @@ class DiscordRpcService {
 
   String _sanitize(String? text) {
     if (text == null) return '';
-    // Basic sanitization, but flutter_discord_rpc should handle UTF-8
     return text
         .replaceAll('‘', "'")
         .replaceAll('’', "'")
@@ -33,18 +32,15 @@ class DiscordRpcService {
   }
 
   Future<void> init() async {
-    if (_isConnected) return;
+    if (_isConnected && _rpc != null && _rpc!.isInitialized) return;
     if (_initCompleter != null) return _initCompleter!.future;
 
     _initCompleter = Completer<void>();
 
     try {
-      if (!_isInitialized) {
-        print('DiscordRpcService: Initializing with ID $_applicationId');
-        FlutterDiscordRPC.initialize(_applicationId);
-        _isInitialized = true;
-      }
-      await FlutterDiscordRPC.instance.connect();
+      print('DiscordRpcService: Initializing with ID $_applicationId');
+      _rpc = DiscordRPC();
+      await _rpc!.initialize(_applicationId);
       _isConnected = true;
       print('DiscordRpcService: Connected.');
     } catch (e) {
@@ -62,37 +58,39 @@ class DiscordRpcService {
     Song song, {
     String? artworkUrl,
     bool isPlaying = true,
+    int? startTimeStamp,
   }) async {
     try {
-      if (!_isConnected) {
+      if (!_isConnected || _rpc == null) {
         await init();
       }
 
-      if (!_isConnected) return;
+      if (!_isConnected || _rpc == null) return;
 
       print(
         'DiscordRpcService: updatePresence called for "${song.title}" (playing: $isPlaying)',
       );
 
-      final activity = RPCActivity(
-        activityType: ActivityType.listening,
+      final presence = DiscordPresence(
+        type: DiscordActivityType.listening,
         details: _truncate(_sanitize(song.title), 128),
         state: _truncate(_sanitize(song.artist), 128),
-        timestamps: isPlaying
-            ? RPCTimestamps(start: DateTime.now().millisecondsSinceEpoch)
-            : null,
-        assets: RPCAssets(
-          largeImage: artworkUrl ?? 'app_icon',
-          largeText: isPlaying ? '▸ Playing' : '⏸︎ Paused',
-        ),
+        timestamps: startTimeStamp != null
+            ? DiscordTimestamps(start: startTimeStamp ~/ 1000)
+            : (isPlaying ? DiscordTimestamps.started(DateTime.now()) : null),
+        largeAsset: artworkUrl != null && artworkUrl.startsWith('http')
+            ? DiscordAsset.fromUrl(
+                artworkUrl,
+                text: isPlaying ? '▸ Playing' : '⏸︎ Paused',
+              )
+            : DiscordAsset(
+                key: artworkUrl ?? 'app_icon',
+                text: isPlaying ? '▸ Playing' : '⏸︎ Paused',
+              ),
       );
 
-      print('DiscordRpcService: Sending activity (playing: $isPlaying)');
-      print(
-        'DiscordRpcService: Details: ${activity.details}, State: ${activity.state}',
-      );
-      await FlutterDiscordRPC.instance.setActivity(activity: activity);
-      print('DiscordRpcService: setActivity sent successfully.');
+      await _rpc!.setPresence(presence);
+      print('DiscordRpcService: updatePresence sent successfully.');
     } catch (e, stack) {
       print('DiscordRpcService: updatePresence error: $e');
       print('Stack trace: $stack');
@@ -101,11 +99,11 @@ class DiscordRpcService {
   }
 
   Future<void> clearPresence() async {
-    if (!_isConnected) return;
+    if (!_isConnected || _rpc == null) return;
 
     try {
       print('DiscordRpcService: Clearing presence...');
-      await FlutterDiscordRPC.instance.clearActivity();
+      await _rpc!.clearPresence();
     } catch (e) {
       print('DiscordRpcService: clearPresence error: $e');
       _isConnected = false;
@@ -115,10 +113,11 @@ class DiscordRpcService {
   Future<void> dispose() async {
     print('DiscordRpcService: Disposing and disconnecting...');
     try {
-      await FlutterDiscordRPC.instance.disconnect();
+      await _rpc!.shutdown();
     } catch (e) {
       // Ignore errors during disconnect
     }
+    _rpc = null;
     _isConnected = false;
   }
 }

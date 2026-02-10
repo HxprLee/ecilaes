@@ -1,11 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../signals/audio_signal.dart';
+import '../signals/navigation_signal.dart';
 import '../services/song_cache.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -51,8 +51,8 @@ class _SearchScreenState extends State<SearchScreen> {
         body: CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.escape): () {
-              if (context.canPop()) {
-                context.pop();
+              if (navigationSignal.canPopSync) {
+                navigationSignal.goBack(context);
                 // Clear search on exit
                 audioSignal.searchQuery.value = '';
               }
@@ -66,7 +66,11 @@ class _SearchScreenState extends State<SearchScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.only(
-                      top: 24.0 + 80.0 + MediaQuery.of(context).padding.top,
+                      top:
+                          24.0 +
+                          ((Platform.isAndroid || Platform.isIOS)
+                              ? (50.0 + MediaQuery.of(context).padding.top)
+                              : 50.0),
                       left: 24.0,
                       right: 24.0,
                       bottom: 24.0,
@@ -188,7 +192,9 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                   ),
                 // Bottom padding for player bar
-                const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                SliverToBoxAdapter(
+                  child: SizedBox(height: audioSignal.reservedHeight.value),
+                ),
               ],
             ),
           ),

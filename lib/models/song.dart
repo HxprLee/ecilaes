@@ -22,7 +22,10 @@ class Song {
   // Extract title from filename
   factory Song.fromPath(String path) {
     final fileName = path.split('/').last;
-    final titleWithoutExt = fileName.split('.').first;
+    final lastDotIndex = fileName.lastIndexOf('.');
+    final titleWithoutExt = lastDotIndex != -1
+        ? fileName.substring(0, lastDotIndex)
+        : fileName;
 
     return Song(path: path, title: titleWithoutExt, artist: 'Unknown Artist');
   }

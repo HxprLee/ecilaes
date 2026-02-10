@@ -63,7 +63,9 @@ class SongCache {
         songs.add(
           Song(
             path: json['path'],
-            title: json['title'] ?? 'Unknown',
+            title: (json['title'] == null || json['title'] == 'Unknown')
+                ? Song.fromPath(json['path']).title
+                : json['title'],
             artist: json['artist'] ?? 'Unknown Artist',
             album: json['album'],
             hasAlbumArt: hasArt, // Lightweight flag

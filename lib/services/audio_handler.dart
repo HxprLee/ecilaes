@@ -134,6 +134,12 @@ class MyAudioHandler extends BaseAudioHandler {
   }
 
   @override
+  Future<void> stop() async {
+    await _player.stop();
+    await super.stop();
+  }
+
+  @override
   Future<void> play() async {
     if (_player.processingState == ProcessingState.idle) {
       await _playCurrent();

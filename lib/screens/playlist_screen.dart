@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -38,7 +39,11 @@ class PlaylistScreen extends StatelessWidget {
             // Header
             Padding(
               padding: EdgeInsets.only(
-                top: 24.0 + 80.0 + MediaQuery.of(context).padding.top,
+                top:
+                    24.0 +
+                    ((Platform.isAndroid || Platform.isIOS)
+                        ? (50.0 + MediaQuery.of(context).padding.top)
+                        : 50.0),
                 left: 24.0,
                 right: 24.0,
                 bottom: 24.0,
@@ -175,7 +180,9 @@ class PlaylistScreen extends StatelessWidget {
                       ),
                     )
                   : ListView.builder(
-                      padding: const EdgeInsets.only(bottom: 100),
+                      padding: EdgeInsets.only(
+                        bottom: audioSignal.reservedHeight.value,
+                      ),
                       itemCount: songs.length,
                       itemBuilder: (context, index) {
                         final song = songs[index];

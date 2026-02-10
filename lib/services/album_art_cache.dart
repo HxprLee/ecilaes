@@ -17,6 +17,9 @@ class AlbumArtCache {
   // Directory paths
   String? _artDirPath;
 
+  // Static flag to prevent double MetadataGod initialization
+  static bool _metadataInitialized = false;
+
   /// Initialize the cache directory
   Future<void> init() async {
     if (_artDirPath != null) return;
@@ -26,7 +29,10 @@ class AlbumArtCache {
     if (!await artDir.exists()) {
       await artDir.create(recursive: true);
     }
-    MetadataGod.initialize();
+    if (!_metadataInitialized) {
+      MetadataGod.initialize();
+      _metadataInitialized = true;
+    }
   }
 
   /// Get the file path for a song's album art
