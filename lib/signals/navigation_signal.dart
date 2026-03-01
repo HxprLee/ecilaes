@@ -7,128 +7,157 @@ import 'package:signals/signals_flutter.dart';
 /// Pages can appear multiple times but not consecutively.
 /// Example: /Home → /Library → /Settings → /Library → /Folders → /Home
 class NavigationSignal {
+  static const int _maxHistorySize = 50;
+
   static final NavigationSignal _instance = NavigationSignal._internal();
   factory NavigationSignal() => _instance;
-  NavigationSignal._internal() {
-    // Initialize with home route
-    _history.add('/');
-  }
+  NavigationSignal._internal();
 
-  // Single history list tracking all visited pages
-  final _history = listSignal<String>([]);
+  // Single history list (Source of Truth)
+  final List<String> _history = ['/'];
 
-  // Current position in history (0-indexed)
+  // Position signal (UI Trigger)
   final _position = signal<int>(0);
 
-  // Computed signals for UI binding
+  // External signals for UI binding
   late final canGoBack = computed(() => _position.value > 0);
   late final canGoForward = computed(
-    () => _position.value < _history.value.length - 1,
+    () => _position.value < _history.length - 1,
   );
-
-  // Current route (for convenience)
-  late final currentRoute = computed(() {
-    if (_history.value.isEmpty) return '/';
-    return _history.value[_position.value];
-  });
+  late final currentRoute = computed(() => _history[_position.value]);
 
   /// Check if we can go back (for synchronous PopScope canPop).
   bool get canPopSync => _position.value > 0;
 
-  /// Called when user navigates to a new page (e.g. via UI click or deep link).
-  /// Adds to history if not the same as current page.
+  // Manual navigation state
+  bool _isLocked = false;
+  String? _targetRoute;
+  DateTime? _lastManualNavTime;
+
+  /// Helper to normalize routes
+  String _normalize(String route) {
+    if (route == '/' || route.isEmpty) return '/';
+    String result = route;
+    if (result.endsWith('/')) {
+      result = result.substring(0, result.length - 1);
+    }
+    return result;
+  }
+
+  /// Called when GoRouter reports a location change.
   void onRouteChanged(String newRoute) {
-    final current = currentRoute.value;
+    final normalized = _normalize(newRoute);
 
-    // Don't add consecutive duplicates
-    if (newRoute == current) return;
-
-    // If we're not at the end of history, truncate forward history
-    // This implements standard browser behavior: new navigation clears forward history
-    if (_position.value < _history.value.length - 1) {
-      _history.value = _history.value.sublist(0, _position.value + 1);
+    // 1. GLOBAL LOCK: If we just performed a manual BACK/FORWARD,
+    // ignore ALL events for 500ms to allow the router and OS to settle.
+    if (_isLocked) {
+      if (normalized == _targetRoute) {
+        _isLocked = false;
+        _targetRoute = null;
+        _lastManualNavTime = DateTime.now();
+      }
+      return;
     }
 
-    // Add new route to history
-    _history.add(newRoute);
-    _position.value = _history.value.length - 1;
+    // 2. COOLDOWN: Protect against late "stale" events immediately after lock.
+    if (_lastManualNavTime != null) {
+      final elapsed = DateTime.now().difference(_lastManualNavTime!);
+      if (elapsed < const Duration(milliseconds: 500)) {
+        return;
+      }
+      // Cooldown expired, clear it so we stop checking
+      _lastManualNavTime = null;
+    }
 
-    print('History updated: $historyDebugString (Pos: ${_position.value})');
+    final current = _history[_position.value];
+    if (normalized == current) return;
+
+    // 3. COLLAPSE: If navigating to the route that is immediately behind us
+    // in history (e.g. /settings/appearance → /settings where /settings is
+    // already at position-1), treat it as a "go back" instead of a new entry.
+    // This prevents loops like /settings → /settings/appearance → /settings → ...
+    if (_position.value > 0 && _history[_position.value - 1] == normalized) {
+      // Remove current entry and move position back
+      _history.removeAt(_position.value);
+      _position.value--;
+      return;
+    }
+
+    // 4. NEW NAVIGATION: User clicked a link or typed a URL.
+    // Standard browser behavior: new navigation clears forward history.
+    if (_position.value < _history.length - 1) {
+      _history.removeRange(_position.value + 1, _history.length);
+    }
+
+    _history.add(normalized);
+    _position.value = _history.length - 1;
+
+    // Cap history size to prevent unbounded growth
+    if (_history.length > _maxHistorySize) {
+      final excess = _history.length - _maxHistorySize;
+      _history.removeRange(0, excess);
+      _position.value = _history.length - 1;
+    }
   }
 
-  /// Navigate to a route programmatically.
+  /// Navigate programmatically
   void navigateTo(BuildContext context, String route) {
-    if (route == currentRoute.value) return;
-    context.go(route);
+    final normalized = _normalize(route);
+    if (normalized == currentRoute.value) return;
+    context.go(normalized);
   }
 
-  /// Navigate back in history.
+  /// Go back in history
   void goBack(BuildContext context) {
-    if (!canPopSync) return;
+    if (!canPopSync || _isLocked) return;
 
     _position.value--;
-    final route = _history.value[_position.value];
+    final target = _history[_position.value];
 
-    context.go(route);
-    print('Went back to: $route (Pos: ${_position.value})');
+    _isLocked = true;
+    _targetRoute = target;
+
+    context.go(target);
+
+    // Safety timeout to prevent permanent lock
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (_isLocked && _targetRoute == target) {
+        _isLocked = false;
+        _targetRoute = null;
+      }
+    });
   }
 
-  /// Navigate forward in history.
+  /// Go forward in history
   void goForward(BuildContext context) {
-    if (_position.value >= _history.value.length - 1) return;
+    if (_position.value >= _history.length - 1 || _isLocked) return;
 
     _position.value++;
-    final route = _history.value[_position.value];
+    final target = _history[_position.value];
 
-    context.go(route);
-    print('Went forward to: $route (Pos: ${_position.value})');
+    _isLocked = true;
+    _targetRoute = target;
+
+    context.go(target);
+
+    // Safety timeout
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (_isLocked && _targetRoute == target) {
+        _isLocked = false;
+        _targetRoute = null;
+      }
+    });
   }
 
   /// Clear history and reset to home.
   void clear() {
-    _history.value = ['/'];
+    _history.clear();
+    _history.add('/');
     _position.value = 0;
   }
 
-  /// Debug: Get history as string (e.g., "/Home/Library/Settings")
-  String get historyDebugString => _history.value.join(' -> ');
-}
-
-/// Navigator observer that syncs route changes with NavigationSignal.
-class NavigationObserver extends NavigatorObserver {
-  final NavigationSignal _signal;
-
-  NavigationObserver(this._signal);
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    super.didPush(route, previousRoute);
-    _updateRoute(route);
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
-    if (newRoute != null) {
-      _updateRoute(newRoute);
-    }
-  }
-
-  void _updateRoute(Route<dynamic> route) {
-    final routeName = route.settings.name;
-    // GoRouter sometimes sends null names, check path if possible or ensure routes have names
-    // For ShellRoutes, we might not get good names.
-    // Ideally we rely on the path from GoRouterState, but observer gives us Routes.
-    // Let's assume our GoRoutes have paths or we can trust the name if set,
-    // or we might need to rely on GoRouterState change listener instead of Observer.
-    if (routeName != null && routeName.isNotEmpty) {
-      _signal.onRouteChanged(routeName);
-    } else {
-      // Fallback: This might be an issue if RouteSettings.name is not set.
-      // GoRouter usually sets location as name if not specified?
-      // Actually GoRouter uses 'path' or 'name' params.
-    }
-  }
+  /// Debug: Get history as string
+  String get historyDebugString => _history.join(' -> ');
 }
 
 final navigationSignal = NavigationSignal();

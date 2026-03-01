@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../signals/navigation_signal.dart';
 import '../services/song_cache.dart';
+import '../widgets/page_header.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -64,40 +65,11 @@ class _SearchScreenState extends State<SearchScreen> {
               slivers: [
                 // Header
                 SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      top:
-                          24.0 +
-                          ((Platform.isAndroid || Platform.isIOS)
-                              ? (50.0 + MediaQuery.of(context).padding.top)
-                              : 50.0),
-                      left: 24.0,
-                      right: 24.0,
-                      bottom: 24.0,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isSearching
-                              ? 'Search results for "$query"'
-                              : 'Search',
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFFFCE7AC),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${searchResults.length} songs found',
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
+                  child: PageHeader(
+                    title: isSearching
+                        ? 'Search results for "$query"'
+                        : 'Search',
+                    subtitle: '${searchResults.length} songs found',
                   ),
                 ),
 
@@ -113,83 +85,97 @@ class _SearchScreenState extends State<SearchScreen> {
                                 ? FontAwesomeIcons.magnifyingGlass
                                 : FontAwesomeIcons.music,
                             size: 48,
-                            color: Colors.white10,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withOpacity(0.1),
                           ),
                           const SizedBox(height: 16),
                           Text(
                             isSearching
                                 ? 'No results found for "$query"'
                                 : 'Start typing to search',
-                            style: const TextStyle(color: Colors.white24),
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.24),
+                            ),
                           ),
                         ],
                       ),
                     ),
                   )
                 else
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    sliver: SuperSliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final song = searchResults[index];
-                        final isCurrent =
-                            audioSignal.currentSong.value?.path == song.path;
-                        final artPath = _getArtPath(song.path);
-                        final hasArt = song.hasAlbumArt && artPath.isNotEmpty;
+                  SuperSliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final song = searchResults[index];
+                      final isCurrent =
+                          audioSignal.currentSong.value?.path == song.path;
+                      final artPath = _getArtPath(song.path);
+                      final hasArt = song.hasAlbumArt && artPath.isNotEmpty;
 
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 4,
-                          ),
-                          leading: Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1E222B),
-                              borderRadius: BorderRadius.circular(4),
-                              image: hasArt
-                                  ? DecorationImage(
-                                      image: FileImage(File(artPath)),
-                                      fit: BoxFit.cover,
-                                    )
-                                  : null,
-                            ),
-                            child: !hasArt
-                                ? const Center(
-                                    child: FaIcon(
-                                      FontAwesomeIcons.music,
-                                      size: 18,
-                                      color: Colors.white24,
-                                    ),
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 4,
+                          horizontal: 24,
+                        ),
+                        leading: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4),
+                            image: hasArt
+                                ? DecorationImage(
+                                    image: FileImage(File(artPath)),
+                                    fit: BoxFit.cover,
                                   )
                                 : null,
                           ),
-                          title: Text(
-                            song.title,
-                            style: TextStyle(
-                              color: isCurrent
-                                  ? const Color(0xFFFCE7AC)
-                                  : Colors.white,
-                              fontWeight: isCurrent
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
+                          child: !hasArt
+                              ? Center(
+                                  child: FaIcon(
+                                    FontAwesomeIcons.music,
+                                    size: 18,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withOpacity(0.24),
+                                  ),
+                                )
+                              : null,
+                        ),
+                        title: Text(
+                          song.title,
+                          style: TextStyle(
+                            color: isCurrent
+                                ? Theme.of(context).colorScheme.secondary
+                                : Theme.of(context).colorScheme.onSurface,
+                            fontWeight: isCurrent
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                           ),
-                          subtitle: Text(
-                            song.artist,
-                            style: const TextStyle(color: Colors.white54),
+                        ),
+                        subtitle: Text(
+                          song.artist,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withOpacity(0.54),
                           ),
-                          trailing: Text(
-                            _formatDuration(song.duration ?? Duration.zero),
-                            style: const TextStyle(
-                              color: Colors.white38,
-                              fontSize: 12,
-                            ),
+                        ),
+                        trailing: Text(
+                          _formatDuration(song.duration ?? Duration.zero),
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withOpacity(0.38),
+                            fontSize: 12,
                           ),
-                          onTap: () => audioSignal.playSong(song),
-                        );
-                      }, childCount: searchResults.length),
-                    ),
+                        ),
+                        onTap: () => audioSignal.playSong(song),
+                      );
+                    }, childCount: searchResults.length),
                   ),
                 // Bottom padding for player bar
                 SliverToBoxAdapter(

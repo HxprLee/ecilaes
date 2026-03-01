@@ -4,7 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
+import '../services/platform_service.dart';
 import '../signals/audio_signal.dart';
+import '../signals/navigation_signal.dart';
+import '../signals/settings_signal.dart';
+import '../theme/app_theme_extensions.dart';
+import '../models/playlist.dart';
+import 'dart:io';
 
 class Sidebar extends StatefulWidget {
   final bool isCollapsed;
@@ -58,11 +64,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
-    final isHome = location == '/';
-    final isExplorer = location.startsWith('/explorer');
     final isSettings = location.startsWith('/settings');
-    final isLibrary = location.startsWith('/library');
-    final isSongs = location == '/songs';
 
     return AnimatedBuilder(
       animation: _controller,
@@ -80,13 +82,24 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                   ? BorderRadius.circular(8)
                   : BorderRadius.circular(6),
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                filter: settingsSignal.enableGlobalBlur.value
+                    ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
+                    : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
                 child: Container(
                   width: expandedWidth,
                   decoration: BoxDecoration(
-                    color: const Color.fromARGB(170, 17, 23, 28),
+                    color: Theme.of(context)
+                        .extension<AppThemeExtension>()!
+                        .sidebarBackground
+                        .withValues(
+                          alpha: settingsSignal.enableGlobalBlur.value
+                              ? 0.67
+                              : 1.0,
+                        ),
                     border: Border.all(
-                      color: const Color.fromARGB(38, 255, 239, 175),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.15),
                     ),
                   ),
                   child: Column(
@@ -106,9 +119,11 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                 width: 48,
                                 child: Center(
                                   child: IconButton(
-                                    icon: const FaIcon(
+                                    icon: FaIcon(
                                       FontAwesomeIcons.bars,
-                                      color: Colors.white70,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface.withOpacity(0.7),
                                       size: 20,
                                     ),
                                     onPressed: widget.onToggle,
@@ -123,14 +138,16 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                       lerpDouble(-20, 0, value)!,
                                       0,
                                     ),
-                                    child: const Padding(
+                                    child: Padding(
                                       padding: EdgeInsets.only(left: 12),
                                       child: Text(
                                         'Music',
                                         style: TextStyle(
                                           fontSize: 22,
                                           fontWeight: FontWeight.bold,
-                                          color: Color(0xFFFCE7AC),
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.secondary,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.fade,
@@ -148,123 +165,188 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                       // Navigation Items
                       Expanded(
                         child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (value > 0.5)
-                                _buildSectionTitle('Pinned', value),
-                              _buildNavItem(
-                                FontAwesomeIcons.solidHouse,
-                                'Home',
-                                value,
-                                isSelected: isHome,
-                                onTap: () => context.go('/'),
-                              ),
-                              _buildNavItem(
-                                FontAwesomeIcons.youtube,
-                                'YouTube Music',
-                                value,
-                              ),
-                              _buildNavItem(
-                                FontAwesomeIcons.recordVinyl,
-                                'Library',
-                                value,
-                                isSelected: isLibrary,
-                                onTap: () => context.go('/library'),
-                              ),
-                              const Divider(color: Colors.white10, height: 32),
-                              if (value > 0.5)
-                                _buildSectionTitle('Library', value),
-                              _buildNavItem(
-                                FontAwesomeIcons.compactDisc,
-                                'Albums',
-                                value,
-                              ),
-                              _buildNavItem(
-                                FontAwesomeIcons.music,
-                                'Songs',
-                                value,
-                                isSelected: isSongs,
-                                onTap: () => context.go('/songs'),
-                              ),
-                              _buildNavItem(
-                                FontAwesomeIcons.list,
-                                'Playlists',
-                                value,
-                                isSelected: false,
-                              ),
-                              _buildNavItem(
-                                FontAwesomeIcons.solidFolder,
-                                'Folders',
-                                value,
-                                isSelected: isExplorer,
-                                onTap: () => context.go('/explorer'),
-                              ),
-                              _buildNavItem(
-                                FontAwesomeIcons.user,
-                                'Artists',
-                                value,
-                              ),
-                              _buildNavItem(
-                                FontAwesomeIcons.circleCheck,
-                                'Downloaded',
-                                value,
-                              ),
-                              const Divider(color: Colors.white10, height: 32),
-                              if (value > 0.5)
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: 12,
-                                    right: 12,
-                                    bottom: 8,
+                          child: Watch((context) {
+                            final pinnedItemsIds =
+                                settingsSignal.pinnedSidebarItems.value;
+                            final currentLocation = GoRouterState.of(
+                              context,
+                            ).uri.toString();
+
+                            final allAvailableItems = {
+                              'albums': {
+                                'icon': FontAwesomeIcons.compactDisc,
+                                'label': 'Albums',
+                                'onTap': () {}, // Placeholder
+                                'isSelected': currentLocation == '/albums',
+                              },
+                              'songs': {
+                                'icon': FontAwesomeIcons.music,
+                                'label': 'Songs',
+                                'onTap': () => context.go('/songs'),
+                                'isSelected': currentLocation == '/songs',
+                              },
+                              'playlists': {
+                                'icon': FontAwesomeIcons.list,
+                                'label': 'Playlists',
+                                'onTap': () => context.go('/playlists'),
+                                'isSelected': currentLocation.startsWith(
+                                  '/playlists',
+                                ),
+                              },
+                              'folders': {
+                                'icon': FontAwesomeIcons.solidFolder,
+                                'label': 'Folders',
+                                'onTap': () => context.go('/explorer'),
+                                'isSelected': currentLocation.startsWith(
+                                  '/explorer',
+                                ),
+                              },
+                              'artists': {
+                                'icon': FontAwesomeIcons.user,
+                                'label': 'Artists',
+                                'onTap': () {}, // Placeholder
+                                'isSelected': currentLocation == '/artists',
+                              },
+                              'downloaded': {
+                                'icon': FontAwesomeIcons.circleCheck,
+                                'label': 'Downloaded',
+                                'onTap': () {}, // Placeholder
+                                'isSelected': currentLocation == '/downloaded',
+                              },
+                            };
+
+                            final pinnedItems = pinnedItemsIds
+                                .where(
+                                  (id) => allAvailableItems.containsKey(id),
+                                )
+                                .map((id) => allAvailableItems[id]!)
+                                .toList();
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildNavItem(
+                                  FontAwesomeIcons.solidHouse,
+                                  'Home',
+                                  value,
+                                  isSelected: currentLocation == '/',
+                                  onTap: () => context.go('/'),
+                                ),
+                                _buildNavItem(
+                                  FontAwesomeIcons.youtube,
+                                  'YouTube Music',
+                                  value,
+                                  isSelected: false,
+                                  onTap: () {}, // Placeholder
+                                ),
+                                _buildNavItem(
+                                  FontAwesomeIcons.recordVinyl,
+                                  'Library',
+                                  value,
+                                  isSelected: currentLocation.startsWith(
+                                    '/library',
                                   ),
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text(
-                                        'Playlists',
-                                        style: TextStyle(
-                                          color: Colors.white54,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.add,
-                                          color: Colors.white54,
-                                          size: 16,
-                                        ),
-                                        onPressed: () =>
-                                            _showCreatePlaylistDialog(context),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                      ),
-                                    ],
+                                  onTap: () => context.go('/library'),
+                                ),
+                                if (value > 0.5 && pinnedItems.isNotEmpty)
+                                  _buildSectionTitle('Library', value),
+                                ...pinnedItems.map(
+                                  (item) => _buildNavItem(
+                                    item['icon'] as IconData,
+                                    item['label'] as String,
+                                    value,
+                                    isSelected: item['isSelected'] as bool,
+                                    onTap: item['onTap'] as VoidCallback?,
                                   ),
                                 ),
-                              Watch((context) {
-                                final playlists = audioSignal.playlists.value;
-                                return Column(
-                                  children: playlists.map((playlist) {
-                                    final playlistPath =
-                                        '/playlist/${playlist.id}';
-                                    return _buildNavItem(
-                                      FontAwesomeIcons.list,
-                                      playlist.name,
-                                      value,
-                                      isSelected: location.startsWith(
-                                        playlistPath,
-                                      ),
-                                      onTap: () => context.go(playlistPath),
-                                    );
-                                  }).toList(),
-                                );
-                              }),
-                              const SizedBox(height: 100),
-                            ],
-                          ),
+                                Divider(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withOpacity(0.1),
+                                  height: 32,
+                                ),
+                                if (value > 0.5)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 12,
+                                      right: 12,
+                                      bottom: 8,
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Playlists',
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.54),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: Icon(
+                                            Icons.settings_outlined,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withOpacity(0.54),
+                                            size: 16,
+                                          ),
+                                          onPressed: () =>
+                                              _showManagePlaylistsDialog(
+                                                context,
+                                              ),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                Watch((context) {
+                                  final playlists = audioSignal.playlists.value;
+                                  final pinnedIds =
+                                      settingsSignal.pinnedPlaylistIds.value;
+
+                                  if (pinnedIds.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+
+                                  // Filter and sort pinned playlists
+                                  final pinnedPlaylists = <Playlist>[];
+                                  for (final id in pinnedIds) {
+                                    try {
+                                      final p = playlists.firstWhere(
+                                        (p) => p.id == id,
+                                      );
+                                      pinnedPlaylists.add(p);
+                                    } catch (_) {}
+                                  }
+
+                                  return Column(
+                                    children: pinnedPlaylists.map((playlist) {
+                                      final playlistPath =
+                                          '/playlist/${playlist.id}';
+                                      return _buildNavItem(
+                                        FontAwesomeIcons.list,
+                                        playlist.name,
+                                        value,
+                                        isSelected: currentLocation.startsWith(
+                                          playlistPath,
+                                        ),
+                                        onTap: () => context.go(playlistPath),
+                                        imagePath: playlist.imagePath,
+                                      );
+                                    }).toList(),
+                                  );
+                                }),
+                                const SizedBox(height: 100),
+                              ],
+                            );
+                          }),
                         ),
                       ),
 
@@ -297,8 +379,8 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           padding: const EdgeInsets.only(bottom: 12, left: 12),
           child: Text(
             title,
-            style: const TextStyle(
-              color: Colors.white54,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.54),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -316,11 +398,14 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
     double value, {
     bool isSelected = false,
     VoidCallback? onTap,
+    String? imagePath,
   }) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFFFCE7AC) : Colors.transparent,
+        color: isSelected
+            ? Theme.of(context).colorScheme.secondary
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Tooltip(
@@ -336,13 +421,23 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                 SizedBox(
                   width: 24,
                   child: Center(
-                    child: FaIcon(
-                      icon,
-                      color: isSelected
-                          ? Colors.black87
-                          : const Color.fromARGB(255, 252, 231, 172),
-                      size: 18,
-                    ),
+                    child: imagePath != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.file(
+                              File(imagePath),
+                              width: 18,
+                              height: 18,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : FaIcon(
+                            icon,
+                            color: isSelected
+                                ? Colors.black87
+                                : Theme.of(context).colorScheme.secondary,
+                            size: 18,
+                          ),
                   ),
                 ),
                 Expanded(
@@ -356,9 +451,10 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                           title,
                           style: TextStyle(
                             color: isSelected
-                                ? Colors.black87
-                                : Color.fromARGB(160, 252, 231, 172),
-                            fontSize: 16,
+                                ? Theme.of(context).colorScheme.onSecondary
+                                : Theme.of(context).colorScheme.secondary
+                                      .withValues(alpha: 0.6),
+                            fontSize: 14,
                             fontWeight: FontWeight.w400,
                           ),
                           maxLines: 1,
@@ -374,6 +470,120 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           ),
         ),
       ),
+    );
+  }
+
+  void _showManagePlaylistsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Watch((context) {
+          final allPlaylists = audioSignal.playlists.value;
+          final pinnedIds = settingsSignal.pinnedPlaylistIds.value;
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  Icons.settings_outlined,
+                  color: Theme.of(context).colorScheme.secondary,
+                ),
+                const SizedBox(width: 12),
+                const Text('Manage Sidebar Playlists'),
+              ],
+            ),
+            content: SizedBox(
+              width: 400,
+              height: 500,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ReorderableListView(
+                      onReorder: (oldIndex, newIndex) {
+                        settingsSignal.reorderPinnedPlaylists(
+                          oldIndex,
+                          newIndex,
+                        );
+                      },
+                      children: [
+                        for (int i = 0; i < pinnedIds.length; i++)
+                          FutureBuilder<Playlist?>(
+                            key: ValueKey('pinned_${pinnedIds[i]}'),
+                            future: Future.value(
+                              allPlaylists.cast<Playlist?>().firstWhere(
+                                (p) => p?.id == pinnedIds[i],
+                                orElse: () => null,
+                              ),
+                            ),
+                            builder: (context, snapshot) {
+                              final playlist = snapshot.data;
+                              if (playlist == null)
+                                return SizedBox(
+                                  key: ValueKey('missing_${pinnedIds[i]}'),
+                                );
+
+                              return ListTile(
+                                key: ValueKey(playlist.id),
+                                leading: const Icon(Icons.drag_handle),
+                                title: Text(playlist.name),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.pin_end),
+                                  onPressed: () => settingsSignal
+                                      .togglePinnedPlaylist(playlist.id),
+                                  tooltip: 'Unpin',
+                                ),
+                              );
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'All Playlists',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: allPlaylists.length,
+                      itemBuilder: (context, index) {
+                        final playlist = allPlaylists[index];
+                        final isPinned = pinnedIds.contains(playlist.id);
+
+                        return ListTile(
+                          title: Text(playlist.name),
+                          trailing: Checkbox(
+                            value: isPinned,
+                            onChanged: (_) => settingsSignal
+                                .togglePinnedPlaylist(playlist.id),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => _showCreatePlaylistDialog(context),
+                child: const Text('New Playlist'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context),
+                style: FilledButton.styleFrom(shape: const StadiumBorder()),
+                child: const Text('Done'),
+              ),
+            ],
+          );
+        });
+      },
     );
   }
 
@@ -393,13 +603,18 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          TextButton(
-            onPressed: () {
+          FilledButton(
+            onPressed: () async {
               if (controller.text.isNotEmpty) {
-                audioSignal.createPlaylist(controller.text);
-                Navigator.pop(context);
+                final name = controller.text;
+                // We need to wait for creation to get the ID if we want to auto-pin
+                // But createPlaylist is currently void. Let's assume the user
+                // will pin it from the manage dialog or we can update createPlaylist.
+                await audioSignal.createPlaylist(name);
+                if (context.mounted) Navigator.pop(context);
               }
             },
+            style: FilledButton.styleFrom(shape: const StadiumBorder()),
             child: const Text('Create'),
           ),
         ],

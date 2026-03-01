@@ -2,8 +2,11 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:signals/signals_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:palette_generator/palette_generator.dart';
 import 'settings_signal.dart';
 import 'package:uuid/uuid.dart';
 import 'package:metadata_god/metadata_god.dart';
@@ -15,6 +18,8 @@ import '../services/song_cache.dart';
 import '../services/platform_service.dart';
 import '../services/album_art_service.dart';
 import '../services/playlist_service.dart';
+import '../services/playback_history_service.dart';
+import '../models/history_entry.dart';
 
 class AudioSignal {
   static final AudioSignal _instance = AudioSignal._internal();
@@ -31,20 +36,36 @@ class AudioSignal {
   final duration = signal<Duration>(Duration.zero);
   final allSongs = listSignal<Song>([]);
   final playlists = listSignal<Playlist>([]);
+  final historySongs = listSignal<HistoryEntry>([]);
+  final isHistoryGridView = signal<bool>(false);
   final currentPlaylist = signal<Playlist?>(null);
   final isScanning = signal<bool>(false);
+  final scanProgress = signal<double>(0.0);
   final searchQuery = signal<String>('');
   final isShuffleMode = signal<bool>(false);
   final playerExpansion = signal<double>(0.0);
   final headerShowBlur = signal<bool>(false);
+  final headerTitleProgress = signal<double>(0.0);
+  final headerArtCover = signal<String?>(null);
   late final showPlayer = computed(
     () => currentSong.value != null || isDesktop,
   );
+  final dynamicThemeSeed = signal<Color?>(null);
+  final dominantColor = signal<Color?>(null);
+  final mutedColor = signal<Color?>(null);
+  final sleepTimerRemaining = signal<Duration?>(null);
+  Timer? _sleepInternalTimer;
+  final bottomPadding = signal<double>(0.0);
   late final reservedHeight = computed(() {
     if (isDesktop) {
-      return showPlayer.value ? 104.0 : 24.0;
+      // 80.0 is Player Bar, 24.0 is Player Margin
+      final playerHeight = showPlayer.value ? (80.0 + 24.0) : 0.0;
+      return playerHeight + 24.0; // User safety gap
     } else {
-      return 56.0 + (showPlayer.value ? 80.0 : 0.0) + 24.0;
+      // 56.0 is Nav Bar, 80.0 is Player Bar, 18.0 is Player Margin
+      final navBarHeight = 56.0 + bottomPadding.value;
+      final playerHeight = showPlayer.value ? (80.0 + 18.0) : 0.0;
+      return navBarHeight + playerHeight + 24.0; // User safety gap
     }
   });
 
@@ -66,11 +87,16 @@ class AudioSignal {
   });
 
   late final recentlyAdded = computed(() {
-    return allSongs.value.take(10).toList();
+    return allSongs.value.take(50).toList();
   });
 
   late final recentlyPlayed = computed(() {
-    return allSongs.value.take(6).toList();
+    return historySongs.value.take(6).map((h) {
+      return allSongs.value.firstWhere(
+        (s) => s.path == h.songPath,
+        orElse: () => Song.fromPath(h.songPath),
+      );
+    }).toList();
   });
 
   bool get isDesktop =>
@@ -97,6 +123,7 @@ class AudioSignal {
         try {
           final song = allSongs.value.firstWhere((s) => s.path == item.id);
           currentSong.value = song;
+          _updateDynamicTheme(song);
         } catch (_) {}
       }
     });
@@ -110,6 +137,16 @@ class AudioSignal {
     // Load cache and start scan in background
     unawaited(_loadCacheAndScan());
     unawaited(_loadPlaylists());
+    unawaited(_loadHistory());
+  }
+
+  Future<void> _loadHistory() async {
+    final history = await PlaybackHistoryService.loadHistory();
+    historySongs.value = [...history];
+  }
+
+  Future<void> refreshHistory() async {
+    await _loadHistory();
   }
 
   // Discord RPC
@@ -190,22 +227,46 @@ class AudioSignal {
 
     try {
       final musicPath = await getMusicPath();
+      print('SCAN_DEBUG: Music path: "$musicPath"');
+
       if (musicPath.isEmpty) {
+        print('SCAN_DEBUG: Music path is empty. Aborting.');
         isScanning.value = false;
         return;
       }
 
       final musicDir = Directory(musicPath);
       if (!await musicDir.exists()) {
+        print('SCAN_DEBUG: Music directory does not exist: $musicPath');
         isScanning.value = false;
         return;
       }
+
+      // Check permissions on Android before proceeding
+      if (Platform.isAndroid) {
+        final storageStatus = await Permission.storage.status;
+        final audioStatus = await Permission.audio.status;
+        print(
+          'SCAN_DEBUG: Permissions - Storage: $storageStatus, Audio: $audioStatus',
+        );
+
+        if (!storageStatus.isGranted && !audioStatus.isGranted) {
+          print(
+            'Scan aborted: Neither Storage nor Audio permission is granted.',
+          );
+          isScanning.value = false;
+          return;
+        }
+      }
+
+      // Ensure cache directories are initialized (Art directory must exist!)
+      await SongCache.init();
 
       final cachedPaths = allSongs.value.map((s) => s.path).toSet();
       final artDir = await SongCache.artDir;
 
       print(
-        'Starting rock-solid streaming background directory scan: $musicPath',
+        'SCAN_DEBUG: Starting background scan. cachedCount=${cachedPaths.length}, artDir=$artDir',
       );
 
       isolate = await Isolate.spawn(_indexingIsolateEntry, {
@@ -247,7 +308,13 @@ class AudioSignal {
           isolateDone = true;
           break;
         } else if (message is Map && message['type'] == 'progress') {
-          print('Scan progress: ${message['count']} found');
+          if (message.containsKey('total') && message['total'] > 0) {
+            scanProgress.value = (message['count'] / message['total']).clamp(
+              0.0,
+              1.0,
+            );
+          }
+          print('Scan progress: ${message['count']} / ${message['total']}');
         } else if (message is Map && message['type'] == 'error') {
           print('Isolate error: ${message['message']}');
         }
@@ -287,10 +354,10 @@ class AudioSignal {
   Future<void> skipNext() => _audioHandler.skipToNext();
   Future<void> skipPrevious() => _audioHandler.skipToPrevious();
   Future<void> stop() async {
-    await _audioHandler.stop();
-    currentSong.value = null;
+    currentSong.value = null; // Update immediately for UI spacing
     isPlaying.value = false;
     position.value = Duration.zero;
+    await _audioHandler.stop();
   }
 
   Future<void> playSong(Song song) async {
@@ -312,6 +379,53 @@ class AudioSignal {
       }
 
       await _audioHandler.playSong(song);
+      _updateDynamicTheme(song);
+    }
+  }
+
+  Future<void> _updateDynamicTheme(Song song) async {
+    if (!song.hasAlbumArt) {
+      dynamicThemeSeed.value = null;
+      return;
+    }
+
+    try {
+      final artDir = await SongCache.artDir;
+      final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
+      final file = File(artPath);
+
+      if (await file.exists()) {
+        final palette = await PaletteGenerator.fromImageProvider(
+          FileImage(file),
+          maximumColorCount: 10,
+        );
+
+        // Try dominant color, fallback to vibrant
+        final color =
+            palette.vibrantColor?.color ??
+            palette.dominantColor?.color ??
+            palette.mutedColor?.color;
+
+        batch(() {
+          dominantColor.value = palette.dominantColor?.color;
+          mutedColor.value =
+              palette.mutedColor?.color ?? palette.darkMutedColor?.color;
+          dynamicThemeSeed.value = color;
+        });
+      } else {
+        batch(() {
+          dynamicThemeSeed.value = null;
+          dominantColor.value = null;
+          mutedColor.value = null;
+        });
+      }
+    } catch (e) {
+      print('Error updating dynamic theme: $e');
+      batch(() {
+        dynamicThemeSeed.value = null;
+        dominantColor.value = null;
+        mutedColor.value = null;
+      });
     }
   }
 
@@ -335,7 +449,21 @@ class AudioSignal {
 
   // Playlist Management
   Future<void> _loadPlaylists() async {
-    playlists.value = await PlaylistService.loadPlaylists();
+    final loaded = await PlaylistService.loadPlaylists();
+    // Ensure "Favorites" persistent playlist exists
+    if (!loaded.any((p) => p.id == 'favorites')) {
+      loaded.insert(
+        0,
+        Playlist(
+          id: 'favorites',
+          name: 'Favorites',
+          songPaths: [],
+          createdAt: DateTime.now(),
+        ),
+      );
+      await PlaylistService.savePlaylists(loaded);
+    }
+    playlists.value = loaded;
   }
 
   Future<void> createPlaylist(String name) async {
@@ -381,11 +509,70 @@ class AudioSignal {
     }
   }
 
+  Future<void> toggleFavorite(String songPath) async {
+    final index = playlists.value.indexWhere((p) => p.id == 'favorites');
+    if (index != -1) {
+      final playlist = playlists[index];
+      final newPaths = List<String>.from(playlist.songPaths);
+      if (newPaths.contains(songPath)) {
+        newPaths.remove(songPath);
+      } else {
+        newPaths.add(songPath);
+      }
+      playlists[index] = playlist.copyWith(songPaths: newPaths);
+      await PlaylistService.savePlaylists(playlists.value);
+    }
+  }
+
+  bool isFavorite(String songPath) {
+    final favorites = playlists.value.firstWhere(
+      (p) => p.id == 'favorites',
+      orElse: () => Playlist(
+        id: 'favorites',
+        name: 'Favorites',
+        songPaths: [],
+        createdAt: DateTime.now(),
+      ),
+    );
+    return favorites.songPaths.contains(songPath);
+  }
+
   void setCurrentPlaylist(Playlist? playlist) {
     currentPlaylist.value = playlist;
   }
 
-  Future<void> playPlaylist(Playlist playlist) async {
+  Future<void> setPlaylistCover(
+    String playlistId,
+    String imageSourcePath,
+  ) async {
+    try {
+      final index = playlists.value.indexWhere((p) => p.id == playlistId);
+      if (index == -1) return;
+
+      final sourceFile = File(imageSourcePath);
+      if (!await sourceFile.exists()) return;
+
+      // Copy to app dir so we don't lose it if user deletes original
+      final ext = imageSourcePath.split('.').last;
+      final cacheDir = await SongCache.artDir; // using same dir for simplicity
+      final destPath = '$cacheDir/playlist_${playlistId}_cover.$ext';
+
+      await sourceFile.copy(destPath);
+
+      final playlist = playlists[index];
+      playlists[index] = playlist.copyWith(imagePath: destPath);
+      await PlaylistService.savePlaylists(playlists.value);
+
+      // Update currentPlaylist if it's the active one
+      if (currentPlaylist.value?.id == playlistId) {
+        currentPlaylist.value = playlists[index];
+      }
+    } catch (e) {
+      print('Error setting playlist cover: $e');
+    }
+  }
+
+  Future<void> playPlaylist(Playlist playlist, {bool shuffle = false}) async {
     final songs = playlist.songPaths
         .map(
           (path) => allSongs.value.firstWhere(
@@ -396,6 +583,11 @@ class AudioSignal {
         .toList();
 
     if (songs.isNotEmpty && _audioHandler is MyAudioHandler) {
+      if (shuffle) {
+        await _audioHandler.setShuffleMode(AudioServiceShuffleMode.all);
+      } else {
+        await _audioHandler.setShuffleMode(AudioServiceShuffleMode.none);
+      }
       await _audioHandler.setPlaylist(songs);
       await _audioHandler.playSong(songs.first);
     }
@@ -416,7 +608,7 @@ class AudioSignal {
     }
 
     if (Platform.isAndroid) {
-      return '/storage/emulated/0/Music';
+      return '/storage/emulated/0';
     } else {
       final home = Platform.environment['HOME'];
       if (home != null) {
@@ -521,8 +713,29 @@ class AudioSignal {
     }
   }
 
+  void setSleepTimer(Duration? duration) {
+    _sleepInternalTimer?.cancel();
+    _sleepInternalTimer = null;
+    sleepTimerRemaining.value = duration;
+
+    if (duration != null && duration.inSeconds > 0) {
+      _sleepInternalTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        final current = sleepTimerRemaining.value;
+        if (current == null || current.inSeconds <= 0) {
+          timer.cancel();
+          _sleepInternalTimer = null;
+          sleepTimerRemaining.value = null;
+          pause(); // Pause playback instead of stopping
+        } else {
+          sleepTimerRemaining.value = current - const Duration(seconds: 1);
+        }
+      });
+    }
+  }
+
   void dispose() {
     _discordTimer?.cancel();
+    _sleepInternalTimer?.cancel();
   }
 }
 
@@ -545,9 +758,14 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
   final String artDir = params['artDir'];
 
   try {
+    print('ISOLATE_DEBUG: Initializing MetadataGod');
     MetadataGod.initialize();
+
     final dir = Directory(musicPath);
+    print('ISOLATE_DEBUG: Scanning directory: $musicPath');
+
     if (!dir.existsSync()) {
+      print('ISOLATE_DEBUG: Directory does not exist. Done.');
       sendPort.send('done');
       return;
     }
@@ -556,37 +774,64 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
     final List<String> filesToProcess = [];
     int foundCount = 0;
 
-    await for (final entity in dir.list(recursive: true, followLinks: false)) {
-      if (entity is File && _isSupportedAudio(entity.path)) {
-        if (!cachedPaths.contains(entity.path)) {
-          filesToProcess.add(entity.path);
-          foundCount++;
+    print('ISOLATE_DEBUG: Starting discovery...');
+    try {
+      await for (final entity
+          in dir.list(recursive: true, followLinks: false).handleError((e) {
+            // print('ISOLATE_DEBUG: Skipping restricted folder/file: $e');
+          })) {
+        if (entity is File && _isSupportedAudio(entity.path)) {
+          if (!cachedPaths.contains(entity.path)) {
+            filesToProcess.add(entity.path);
+            foundCount++;
 
-          // Periodic progress update during discovery
-          if (foundCount % 50 == 0) {
-            sendPort.send({'type': 'progress', 'count': foundCount});
+            // Periodic progress update during discovery
+            if (foundCount % 50 == 0) {
+              print('ISOLATE_DEBUG: Discovered $foundCount files...');
+              sendPort.send({'type': 'progress', 'count': foundCount});
+            }
           }
         }
       }
+    } catch (e) {
+      print('ISOLATE_DEBUG: Fatal error during discovery: $e');
     }
 
+    print(
+      'ISOLATE_DEBUG: Discovery complete. Found $foundCount new files to process.',
+    );
+
     if (filesToProcess.isEmpty) {
+      print('ISOLATE_DEBUG: No new files to process. Done.');
       sendPort.send('done');
       return;
     }
 
     // 2. Process files sequentially to avoid memory spikes
-    for (final path in filesToProcess) {
+    for (int i = 0; i < filesToProcess.length; i++) {
+      final path = filesToProcess[i];
       try {
+        // Send progress
+        sendPort.send({
+          'type': 'progress',
+          'count': i + 1,
+          'total': filesToProcess.length,
+        });
+
         final metadata = await MetadataGod.readMetadata(file: path);
 
         bool hasArt = false;
         if (metadata.picture != null) {
           try {
             final artPath = '$artDir/${path.hashCode.abs()}.jpg';
-            await File(artPath).writeAsBytes(metadata.picture!.data);
+            final artFile = File(artPath);
+            if (!await artFile.exists()) {
+              await artFile.writeAsBytes(metadata.picture!.data);
+            }
             hasArt = true;
-          } catch (_) {}
+          } catch (e) {
+            // Silently fail artwork, but song is still indexed
+          }
         }
 
         // Calculate bitrate from file size and duration (lightweight)

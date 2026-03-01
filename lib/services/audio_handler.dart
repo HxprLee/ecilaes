@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:home_widget/home_widget.dart';
 import '../models/song.dart';
+import '../signals/audio_signal.dart';
 import 'album_art_cache.dart';
+import 'playback_history_service.dart';
 
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
@@ -20,6 +24,11 @@ class MyAudioHandler extends BaseAudioHandler {
 
   // Album art cache
   final AlbumArtCache _artCache = AlbumArtCache();
+
+  // History tracking
+  Timer? _historyTimer;
+  bool _hasRecordedCurrent = false;
+  String? _lastTrackId;
 
   MyAudioHandler() {
     _init();
@@ -65,6 +74,8 @@ class MyAudioHandler extends BaseAudioHandler {
             shuffleMode: _shuffleMode,
           ),
         );
+        _updateWidget();
+        _handleHistoryTracking(playing);
       }),
     );
 
@@ -98,6 +109,44 @@ class MyAudioHandler extends BaseAudioHandler {
           }
         }
       }),
+    );
+
+    // Listen for mediaItem changes to update widget
+    mediaItem.listen((item) {
+      if (item != null) {
+        _updateWidget();
+      }
+    });
+  }
+
+  Future<void> _updateWidget() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+
+    final item = mediaItem.value;
+    final isPlaying = playbackState.value.playing;
+
+    if (item == null ||
+        playbackState.value.processingState == AudioProcessingState.idle) {
+      await HomeWidget.saveWidgetData<String>('title', 'Not Playing');
+      await HomeWidget.saveWidgetData<String>('artist', '-');
+      await HomeWidget.saveWidgetData<bool>('isPlaying', false);
+      await HomeWidget.saveWidgetData<String?>('artPath', null);
+    } else {
+      await HomeWidget.saveWidgetData<String>('title', item.title);
+      await HomeWidget.saveWidgetData<String>('artist', item.artist ?? "-");
+      await HomeWidget.saveWidgetData<bool>('isPlaying', isPlaying);
+
+      // Get art path if available
+      String? artPath;
+      if (item.artUri != null && item.artUri!.isScheme('file')) {
+        artPath = item.artUri!.toFilePath();
+      }
+      await HomeWidget.saveWidgetData<String?>('artPath', artPath);
+    }
+
+    await HomeWidget.updateWidget(
+      name: 'MusicWidgetProvider',
+      androidName: 'MusicWidgetProvider',
     );
   }
 
@@ -137,6 +186,7 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> stop() async {
     await _player.stop();
     await super.stop();
+    _updateWidget();
   }
 
   @override
@@ -263,6 +313,10 @@ class MyAudioHandler extends BaseAudioHandler {
         final updatedQueue = List<MediaItem>.from(queue.value);
         updatedQueue[_currentIndex] = item;
         queue.add(updatedQueue);
+        // Explicitly update MediaItem to trigger listeners
+        if (mediaItem.value?.id == item.id) {
+          mediaItem.add(item);
+        }
       }
     }
 
@@ -297,6 +351,37 @@ class MyAudioHandler extends BaseAudioHandler {
       // Only complete if this is still the active load
       if (_loadingCompleter == thisLoad && !thisLoad.isCompleted) {
         thisLoad.complete();
+      }
+    }
+  }
+
+  void _handleHistoryTracking(bool isPlaying) {
+    final currentId = mediaItem.value?.id;
+
+    // Reset if track changed
+    if (currentId != _lastTrackId) {
+      _historyTimer?.cancel();
+      _historyTimer = null;
+      _hasRecordedCurrent = false;
+      _lastTrackId = currentId;
+    }
+
+    if (isPlaying && !_hasRecordedCurrent && currentId != null) {
+      // Start or resume timer
+      _historyTimer ??= Timer(const Duration(seconds: 40), () async {
+        if (mediaItem.value?.id == currentId && !_hasRecordedCurrent) {
+          _hasRecordedCurrent = true;
+          await PlaybackHistoryService.recordPlay(currentId);
+          await audioSignal.refreshHistory();
+          print('HISTORY_DEBUG: Recorded play for $currentId');
+        }
+      });
+    } else if (!isPlaying) {
+      // Pause timer - for simplicity, we'll just cancel and restart if they haven't hit 40s yet.
+      // If we want "cumulative" 40s across pauses, we'd need a Stopwatch.
+      if (!_hasRecordedCurrent && _historyTimer != null) {
+        _historyTimer?.cancel();
+        _historyTimer = null;
       }
     }
   }

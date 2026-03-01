@@ -1,7 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:signals/signals_flutter.dart';
+import '../signals/audio_signal.dart';
 import '../services/album_art_cache.dart';
+import '../theme/app_theme_extensions.dart';
 
 class QuickActionCard extends StatefulWidget {
   final IconData icon;
@@ -27,10 +30,19 @@ class _QuickActionCardState extends State<QuickActionCard> {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: _isHovered
-              ? const Color.fromARGB(102, 17, 23, 28)
-              : const Color.fromARGB(178, 17, 23, 28),
+              ? Theme.of(context)
+                    .extension<AppThemeExtension>()!
+                    .songCardBackground
+                    .withValues(alpha: 0.6)
+              : Theme.of(
+                  context,
+                ).extension<AppThemeExtension>()!.songCardBackground,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color.fromARGB(38, 255, 239, 175)),
+          border: Border.all(
+            color: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.15),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -38,15 +50,17 @@ class _QuickActionCardState extends State<QuickActionCard> {
           children: [
             FaIcon(
               widget.icon,
-              color: Color.fromARGB(255, 252, 231, 172),
+              color: Theme.of(context).colorScheme.secondary,
               size: 18,
             ),
             Text(
               widget.label,
-              style: const TextStyle(
-                color: Color.fromARGB(204, 252, 231, 172),
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
+              style: TextStyle(
+                color: Theme.of(
+                  context,
+                ).colorScheme.secondary.withValues(alpha: 0.8),
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],
@@ -120,96 +134,119 @@ class _SongCardState extends State<SongCard> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Container(
-          width: 180,
           margin: const EdgeInsets.only(right: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Album Art
-              Stack(
-                children: [
-                  Container(
-                    height: 180,
-                    decoration: BoxDecoration(
-                      color: widget.color,
-                      borderRadius: BorderRadius.circular(8),
-                      image: _albumArt != null
-                          ? DecorationImage(
-                              image: ResizeImage(
-                                FileImage(_albumArt!),
-                                width:
-                                    200, // Optimize memory: decode at smaller size
+              AspectRatio(
+                aspectRatio: 1.0,
+                child: Stack(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: widget.color,
+                        borderRadius: BorderRadius.circular(8),
+                        image: _albumArt != null
+                            ? DecorationImage(
+                                image: ResizeImage(
+                                  FileImage(_albumArt!),
+                                  width:
+                                      200, // Optimize memory: decode at smaller size
+                                ),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                      ),
+                      child: _albumArt == null
+                          ? Center(
+                              child: FaIcon(
+                                FontAwesomeIcons.music,
+                                size: 36,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.5),
                               ),
-                              fit: BoxFit.cover,
                             )
                           : null,
                     ),
-                    child: _albumArt == null
-                        ? Center(
-                            child: FaIcon(
-                              FontAwesomeIcons.music,
-                              size: 36,
-                              color: Colors.white.withOpacity(0.5),
+                    if (_isHovered || Platform.isAndroid || Platform.isIOS)
+                      Positioned.fill(
+                        child: Watch((context) {
+                          final currentSong = audioSignal.currentSong.value;
+                          final isThisSong =
+                              currentSong?.path == widget.songPath;
+                          final isPlaying = audioSignal.isPlaying.value;
+
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black45,
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                          )
-                        : null,
-                  ),
-                  if (_isHovered || Platform.isAndroid || Platform.isIOS)
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black26,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Stack(
-                          children: [
-                            Center(
-                              child: GestureDetector(
-                                onTap: widget.onTap,
-                                child: const FaIcon(
-                                  FontAwesomeIcons.play,
-                                  color: Colors.white,
-                                  size: 36,
+                            child: Stack(
+                              children: [
+                                Center(
+                                  child: isThisSong && isPlaying
+                                      ? FaIcon(
+                                          FontAwesomeIcons.chartSimple,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.secondary,
+                                          size: 32,
+                                        )
+                                      : GestureDetector(
+                                          onTap: widget.onTap,
+                                          child: FaIcon(
+                                            FontAwesomeIcons.play,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurface,
+                                            size: 36,
+                                          ),
+                                        ),
                                 ),
-                              ),
-                            ),
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: IconButton(
-                                icon: const Icon(
-                                  Icons.more_vert,
-                                  color: Colors.white,
-                                  size: 24,
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: IconButton(
+                                    icon: Icon(
+                                      Icons.more_vert,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      size: 24,
+                                    ),
+                                    onPressed: () => _showContextMenu(context),
+                                  ),
                                 ),
-                                onPressed: () => _showContextMenu(context),
-                              ),
+                              ],
                             ),
-                          ],
-                        ),
+                          );
+                        }),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
               Text(
                 widget.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color.fromARGB(255, 252, 231, 172),
-                  fontWeight: FontWeight.w500,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.secondary,
+                  fontWeight: FontWeight.w600,
                   fontSize: 16,
                 ),
               ),
-              const SizedBox(height: 0),
+              const SizedBox(height: 2),
               Text(
                 widget.artist,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Color.fromARGB(204, 252, 231, 172),
-                  fontSize: 14,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.7),
+                  fontSize: 13,
                 ),
               ),
             ],
@@ -234,26 +271,37 @@ class _SongCardState extends State<SongCard> {
       Offset.zero & overlay.size,
     );
 
+    final themeExt = Theme.of(context).extension<AppThemeExtension>()!;
+
     showMenu(
       context: context,
       position: position,
-      color: const Color(0xFF1E222B),
+      color: themeExt.songCardBackground,
       items: [
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'add_to_playlist',
           child: ListTile(
-            leading: Icon(Icons.playlist_add, color: Colors.white70),
+            leading: Icon(
+              Icons.playlist_add,
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+            ),
             title: Text(
               'Add to Playlist',
-              style: TextStyle(color: Colors.white),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
             ),
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'play_next',
           child: ListTile(
-            leading: Icon(Icons.skip_next, color: Colors.white70),
-            title: Text('Play Next', style: TextStyle(color: Colors.white)),
+            leading: Icon(
+              Icons.skip_next,
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+            ),
+            title: Text(
+              'Play Next',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+            ),
           ),
         ),
       ],

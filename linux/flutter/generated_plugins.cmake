@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   bitsdojo_window_linux
+  file_selector_linux
   flutter_acrylic
   media_kit_libs_linux
   screen_retriever_linux

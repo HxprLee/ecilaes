@@ -39,6 +39,10 @@ android {
     }
 }
 
+dependencies {
+    implementation("androidx.palette:palette-ktx:1.0.0")
+}
+
 flutter {
     source = "../.."
 }

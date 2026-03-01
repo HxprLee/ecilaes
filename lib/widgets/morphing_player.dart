@@ -3,12 +3,14 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:music_app/widgets/marquee_text.dart';
 import 'package:signals/signals_flutter.dart';
+import '../models/song.dart';
+import '../services/album_art_cache.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
-import '../services/album_art_cache.dart';
-import '../models/song.dart';
+import '../theme/app_theme_extensions.dart';
+import 'marquee_text.dart';
+import 'song_actions_sheet.dart';
 
 class MorphingPlayer extends StatefulWidget {
   final double bottomOffset;
@@ -59,6 +61,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         )..addListener(() {
           // Update signal for global UI coordination (like hiding navbar)
           audioSignal.playerExpansion.value = _controller.value;
+
+          // Automatically hide keyboard when expanding
+          if (_controller.value > 0.05 &&
+              FocusManager.instance.primaryFocus != null) {
+            FocusManager.instance.primaryFocus?.unfocus();
+          }
         });
 
     _visibilityController = AnimationController(
@@ -390,7 +398,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           final availableWidth = screenWidth - widget.leftOffset;
           final collapsedWidth = (availableWidth - (margin * 2)).clamp(
             0.0,
-            1200.0,
+            900.0,
           );
           final collapsedLeft = isCompact
               ? widget.leftOffset + margin
@@ -470,12 +478,25 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                       lerpDouble(50, 0, value)!,
                     ),
                     child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                      filter: settingsSignal.enableGlobalBlur.value
+                          ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
+                          : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
                       child: Container(
                         decoration: BoxDecoration(
                           color: Color.lerp(
-                            const Color(0xFF11171C).withOpacity(0.6),
-                            const Color(0xFF0D1117).withOpacity(0.8),
+                            Theme.of(context)
+                                .extension<AppThemeExtension>()!
+                                .playerBarBackground
+                                .withValues(
+                                  alpha: settingsSignal.enableGlobalBlur.value
+                                      ? 0.92
+                                      : 1.0,
+                                ),
+                            Color.lerp(
+                              Theme.of(context).colorScheme.surface,
+                              Theme.of(context).colorScheme.surface,
+                              value,
+                            )!,
                             value,
                           ),
                           borderRadius: BorderRadius.circular(
@@ -483,7 +504,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                           ),
                           border: Border.all(
                             color: Color.lerp(
-                              const Color.fromARGB(38, 255, 239, 175),
+                              Theme.of(
+                                context,
+                              ).colorScheme.secondary.withValues(alpha: 0.15),
                               Colors.transparent,
                               value,
                             )!,
@@ -580,9 +603,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 child: Opacity(
                                   opacity: fullOpacity,
                                   child: IconButton(
-                                    icon: const Icon(
+                                    icon: Icon(
                                       Icons.keyboard_arrow_down,
-                                      color: Color(0xFFFCE7AC),
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.secondary,
                                       size: 24,
                                     ),
                                     onPressed: () => _controller.animateTo(
@@ -607,33 +632,72 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   }
 
   Widget _buildBackground(Song currentSong, double fullOpacity) {
-    if (_currentAlbumArt == null || fullOpacity <= 0)
-      return const SizedBox.shrink();
+    if (fullOpacity <= 0) return const SizedBox.shrink();
+
     return Positioned.fill(
       child: Opacity(
         opacity: fullOpacity,
         child: RepaintBoundary(
           child: Stack(
             children: [
-              Positioned.fill(
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
-                  child: Image.file(_currentAlbumArt!, fit: BoxFit.cover),
-                ),
-              ),
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        const Color(0xFF0D1117).withOpacity(0.5),
-                        const Color(0xFF0D1117).withOpacity(0.9),
-                      ],
-                    ),
+              // 1. Image Background (Blurred or not) - Only visible when blur is enabled
+              Watch((context) {
+                final isBlurEnabled = settingsSignal.enableGlobalBlur.value;
+                if (!isBlurEnabled) return const SizedBox.shrink();
+
+                return Positioned.fill(
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
+                    child: _currentAlbumArt != null
+                        ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
+                        : Container(
+                            color: Theme.of(context).colorScheme.surface,
+                          ),
                   ),
-                ),
+                );
+              }),
+
+              // 2. Gradient Overlay / Main Background
+              Positioned.fill(
+                child: Watch((context) {
+                  final isBlurEnabled = settingsSignal.enableGlobalBlur.value;
+                  final dominant = audioSignal.dominantColor.value;
+                  final muted = audioSignal.mutedColor.value;
+
+                  if (!isBlurEnabled && dominant != null && muted != null) {
+                    // Gradient mode when blur is disabled
+                    return Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            dominant.withValues(alpha: 0.8),
+                            muted.withValues(alpha: 0.95),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Default blur overlay
+                  return Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Theme.of(
+                            context,
+                          ).colorScheme.surface.withOpacity(0.5),
+                          Theme.of(
+                            context,
+                          ).colorScheme.surface.withOpacity(0.9),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
               ),
             ],
           ),
@@ -683,11 +747,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                       overlayShape: const RoundSliderOverlayShape(
                         overlayRadius: 6,
                       ),
-                      activeTrackColor: const Color(0xFFFCE7AC),
-                      inactiveTrackColor: const Color(
-                        0xFFFCE7AC,
-                      ).withOpacity(0.3),
-                      thumbColor: const Color(0xFFFCE7AC),
+                      activeTrackColor: Theme.of(context).colorScheme.secondary,
+                      inactiveTrackColor: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withOpacity(0.3),
+                      thumbColor: Theme.of(context).colorScheme.secondary,
                     ),
                     child: Slider(
                       value:
@@ -719,16 +783,20 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                 children: [
                   Text(
                     _formatDuration(position),
-                    style: const TextStyle(
-                      color: Color(0x9FFCE7AC),
+                    style: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.6),
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
                     _formatDuration(duration),
-                    style: const TextStyle(
-                      color: Color(0x9FFCE7AC),
+                    style: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.6),
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
@@ -781,14 +849,14 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
     // Text Styles
     final titleStyle = TextStyle.lerp(
-      const TextStyle(
-        color: Color(0xFFFCE7AC),
+      TextStyle(
+        color: Theme.of(context).colorScheme.secondary,
         fontWeight: FontWeight.w500,
-        fontSize: 16,
+        fontSize: 14,
         height: 1.2,
       ),
-      const TextStyle(
-        color: Color(0xFFFCE7AC),
+      TextStyle(
+        color: Theme.of(context).colorScheme.secondary,
         fontSize: 20,
         fontWeight: FontWeight.w600,
         height: 1.2,
@@ -797,13 +865,13 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     )!;
 
     final artistStyle = TextStyle.lerp(
-      const TextStyle(
-        color: Color.fromARGB(204, 252, 231, 172),
-        fontSize: 14,
+      TextStyle(
+        color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.8),
+        fontSize: 12,
         height: 1.2,
       ),
-      const TextStyle(
-        color: Color.fromARGB(180, 252, 231, 172),
+      TextStyle(
+        color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
         fontWeight: FontWeight.w500,
         fontSize: 16,
         height: 1.2,
@@ -857,16 +925,27 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   opacity: ((value - 0.5) * 2).clamp(0.0, 1.0),
                   child: Padding(
                     padding: const EdgeInsets.only(left: 16),
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: const FaIcon(
-                        FontAwesomeIcons.heart,
-                        color: Color(0xFFFCE7AC),
-                        size: 24,
-                      ),
-                      onPressed: () {}, // TODO: Implement favorites
-                    ),
+                    child: Watch((context) {
+                      final isFav =
+                          currentSong != null &&
+                          audioSignal.isFavorite(currentSong.path);
+                      return IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: FaIcon(
+                          isFav
+                              ? FontAwesomeIcons.solidHeart
+                              : FontAwesomeIcons.heart,
+                          color: Theme.of(context).colorScheme.secondary,
+                          size: 24,
+                        ),
+                        onPressed: () {
+                          if (currentSong != null) {
+                            audioSignal.toggleFavorite(currentSong.path);
+                          }
+                        },
+                      );
+                    }),
                   ),
                 ),
             ],
@@ -935,9 +1014,13 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                       ? position.inMilliseconds / duration.inMilliseconds
                       : 0.0,
                   strokeWidth: 3,
-                  backgroundColor: const Color.fromARGB(51, 255, 239, 175),
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color.fromARGB(204, 255, 239, 175),
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.2),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Theme.of(
+                      context,
+                    ).colorScheme.secondary.withValues(alpha: 0.8),
                   ),
                 ),
               ),
@@ -959,7 +1042,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   width: value == 0 ? 42 : artSize,
                   height: value == 0 ? 42 : artSize,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(value == 0 ? 50 : 12),
+                    borderRadius: BorderRadius.circular(value == 0 ? 50 : 8),
                     boxShadow: [
                       if (value > 0.5)
                         BoxShadow(
@@ -970,7 +1053,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                     ],
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(value == 0 ? 50 : 12),
+                    borderRadius: BorderRadius.circular(value == 0 ? 50 : 8),
                     child: _currentAlbumArt != null
                         ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
                         : (value == 0)
@@ -979,15 +1062,15 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                               isPlaying
                                   ? FontAwesomeIcons.pause
                                   : FontAwesomeIcons.play,
-                              color: const Color(0xFFFCE7AC),
-                              size: 16,
+                              color: Theme.of(context).colorScheme.secondary,
+                              size: 14,
                             ),
                           )
                         : Container(
                             color: Colors.grey[800],
-                            child: const Icon(
+                            child: Icon(
                               Icons.music_note,
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                   ),
@@ -1014,7 +1097,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     // Start State (Mini)
     double startRight;
     double startLeft;
-    double startTop = _startTop;
+    double startTop = isMobile ? _startTop - 1.0 : _startTop;
 
     double startWidth;
     double startPlayBtnSize;
@@ -1093,8 +1176,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               icon: FaIcon(
                 FontAwesomeIcons.backwardStep,
                 color: hasSong
-                    ? const Color(0xFFFCE7AC)
-                    : const Color(0xFFFCE7AC).withOpacity(0.5),
+                    ? Theme.of(context).colorScheme.secondary
+                    : Theme.of(context).colorScheme.secondary.withOpacity(0.5),
                 size: lerpDouble(24, 40, value)!,
               ),
               onPressed: hasSong ? audioSignal.skipPrevious : null,
@@ -1121,8 +1204,10 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                             ? FontAwesomeIcons.pause
                             : FontAwesomeIcons.play,
                         color: hasSong
-                            ? const Color(0xFFFCE7AC)
-                            : const Color(0xFFFCE7AC).withOpacity(0.5),
+                            ? Theme.of(context).colorScheme.secondary
+                            : Theme.of(
+                                context,
+                              ).colorScheme.secondary.withOpacity(0.5),
                         size: playBtnSize,
                       ),
                       onPressed: hasSong
@@ -1149,8 +1234,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               icon: FaIcon(
                 FontAwesomeIcons.forwardStep,
                 color: hasSong
-                    ? const Color(0xFFFCE7AC)
-                    : const Color(0xFFFCE7AC).withOpacity(0.5),
+                    ? Theme.of(context).colorScheme.secondary
+                    : Theme.of(context).colorScheme.secondary.withOpacity(0.5),
                 size: lerpDouble(24, 40, value)!,
               ),
               onPressed: hasSong ? audioSignal.skipNext : null,
@@ -1174,7 +1259,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     // Start Right = 20
     // Start Top = (80 - 48) / 2 = 16 - 1 = 15
 
-    final startRight = 20.0;
+    final startRight = 16.0;
     final startTop = 15.0; // Moved up by 1px
     final startWidth =
         220.0; // Increased width to prevent overflow (200 was too tight)
@@ -1225,18 +1310,20 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFCE7AC),
+                        color: Theme.of(context).colorScheme.secondary,
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: const Color(0xFFFCE7AC).withOpacity(0.2),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondary.withOpacity(0.2),
                         ),
                       ),
                       child: Text(
                         '${currentSong.path.split('.').last.toUpperCase()} | ${currentSong.bitrate ?? '---'}Kbps',
-                        style: const TextStyle(
-                          color: Color(0xFF21282D),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSecondary,
                           fontWeight: FontWeight.w900,
-                          fontSize: 11,
+                          fontSize: 10,
                         ),
                       ),
                     ),
@@ -1252,19 +1339,26 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    IconButton(
-                      icon: FaIcon(
-                        FontAwesomeIcons.shuffle,
-                        color: const Color(0xFFFCE7AC),
-                        size: iconSize,
-                      ),
-                      onPressed: audioSignal.toggleShuffle,
-                    ),
+                    Watch((context) {
+                      final isShuffle = audioSignal.isShuffleMode.value;
+                      return IconButton(
+                        icon: FaIcon(
+                          FontAwesomeIcons.shuffle,
+                          color: isShuffle
+                              ? Theme.of(context).colorScheme.secondary
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.secondary.withOpacity(0.4),
+                          size: iconSize,
+                        ),
+                        onPressed: audioSignal.toggleShuffle,
+                      );
+                    }),
                     SizedBox(width: spacing),
                     IconButton(
                       icon: FaIcon(
                         FontAwesomeIcons.repeat,
-                        color: const Color(0xFFFCE7AC),
+                        color: Theme.of(context).colorScheme.secondary,
                         size: iconSize,
                       ),
                       onPressed: () {},
@@ -1273,7 +1367,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                     IconButton(
                       icon: FaIcon(
                         FontAwesomeIcons.listUl,
-                        color: const Color(0xFFFCE7AC),
+                        color: Theme.of(context).colorScheme.secondary,
                         size: iconSize,
                       ),
                       onPressed: () {},
@@ -1282,10 +1376,18 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                     IconButton(
                       icon: FaIcon(
                         FontAwesomeIcons.ellipsis,
-                        color: const Color(0xFFFCE7AC),
+                        color: Theme.of(context).colorScheme.secondary,
                         size: iconSize,
                       ),
-                      onPressed: () {},
+                      onPressed: () {
+                        if (currentSong != null) {
+                          showSongMoreActionsSheet(
+                            context: context,
+                            song: currentSong,
+                            albumArt: _currentAlbumArt,
+                          );
+                        }
+                      },
                     ),
                   ],
                 ),

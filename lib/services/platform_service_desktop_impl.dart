@@ -8,6 +8,7 @@ import 'package:nativeapi/nativeapi.dart' as native;
 import 'package:window_manager/window_manager.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
+import '../signals/settings_signal.dart';
 import 'platform_service.dart';
 import 'discord_rpc_service.dart';
 
@@ -24,12 +25,20 @@ class PlatformServiceDesktopImpl implements PlatformService {
       JustAudioPlatform.instance = JustAudioMediaKit();
       JustAudioMediaKit.ensureInitialized();
 
-      // Initialize transparent window on Desktop
+      // Initialize window effect based on transparency setting
       await Window.initialize();
-      await Window.setEffect(
-        effect: WindowEffect.transparent,
-        color: const Color.fromARGB(165, 18, 22, 26),
-      );
+      final isTransparent = settingsSignal.enableWindowTransparency.value;
+      if (isTransparent) {
+        await Window.setEffect(
+          effect: WindowEffect.transparent,
+          color: const Color(0x00000000),
+        );
+      } else {
+        await Window.setEffect(
+          effect: WindowEffect.disabled,
+          color: const Color.fromARGB(255, 18, 22, 26),
+        );
+      }
 
       await windowManager.ensureInitialized();
 

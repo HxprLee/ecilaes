@@ -1,9 +1,9 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
+import '../widgets/page_header.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -16,41 +16,8 @@ class LibraryScreen extends StatelessWidget {
         body: CustomScrollView(
           slivers: [
             // Header
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  top:
-                      24.0 +
-                      ((Platform.isAndroid || Platform.isIOS)
-                          ? (50.0 + MediaQuery.of(context).padding.top)
-                          : 50.0),
-                  left: 24.0,
-                  right: 24.0,
-                  bottom: 24.0,
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Library',
-                      style: TextStyle(
-                        fontSize: 46,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFFFCE7AC),
-                      ),
-                    ),
-                    SizedBox(height: 32),
-                    Text(
-                      'Local library',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFFFCE7AC),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            const SliverToBoxAdapter(
+              child: PageHeader(title: 'Library', subtitle: 'Local library'),
             ),
 
             // Grid
@@ -67,7 +34,7 @@ class LibraryScreen extends StatelessWidget {
                   _CategoryCard(
                     title: 'Favorites',
                     icon: FontAwesomeIcons.solidHeart,
-                    onTap: () {}, // TODO
+                    onTap: () => context.go('/playlist/favorites'),
                   ),
                   _CategoryCard(
                     title: 'Albums',
@@ -82,7 +49,7 @@ class LibraryScreen extends StatelessWidget {
                   _CategoryCard(
                     title: 'Playlists',
                     icon: FontAwesomeIcons.list,
-                    onTap: () {}, // TODO
+                    onTap: () => context.go('/playlists'),
                   ),
                   _CategoryCard(
                     title: 'Artists',
@@ -136,14 +103,22 @@ class _CategoryCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF1E222B).withOpacity(0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withOpacity(0.7),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: const Color.fromARGB(38, 255, 239, 175),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.15),
                 ),
               ),
               child: Center(
-                child: FaIcon(icon, color: const Color(0xFFFCE7AC), size: 48),
+                child: FaIcon(
+                  icon,
+                  color: Theme.of(context).colorScheme.secondary,
+                  size: 48,
+                ),
               ),
             ),
           ),
@@ -151,8 +126,8 @@ class _CategoryCard extends StatelessWidget {
         const SizedBox(height: 12),
         Text(
           title,
-          style: const TextStyle(
-            color: Colors.white70,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
             fontSize: 14,
             fontWeight: FontWeight.w400,
           ),

@@ -11,6 +11,7 @@ import '../widgets/morphing_player.dart';
 import '../widgets/window_title_bar.dart';
 import '../signals/audio_signal.dart';
 import '../signals/navigation_signal.dart';
+import '../signals/settings_signal.dart';
 
 /// Shell widget that wraps all routes with common UI elements:
 /// - Sidebar (desktop)
@@ -30,6 +31,7 @@ class _HomeShellState extends State<HomeShell> {
   final GlobalKey _playerKey = GlobalKey();
   bool _isSidebarCollapsed = false;
   double? _lastWidth;
+  String? _lastLocation;
 
   bool get isDesktop =>
       !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
@@ -79,9 +81,11 @@ class _HomeShellState extends State<HomeShell> {
     int index,
   ) {
     final isSelected = _getSelectedIndex(currentLocation) == index;
-    const selectedColor = Color(0xFFFCE7AC);
-    const unselectedColor = Colors.white54;
-    const indicatorColor = Color(0xFFFCE7AC);
+    final selectedColor = Theme.of(context).colorScheme.secondary;
+    final unselectedColor = Theme.of(
+      context,
+    ).colorScheme.onSurface.withOpacity(0.54);
+    final indicatorColor = Theme.of(context).colorScheme.secondary;
 
     return Expanded(
       child: GestureDetector(
@@ -99,7 +103,9 @@ class _HomeShellState extends State<HomeShell> {
               child: FaIcon(
                 icon,
                 size: 20,
-                color: isSelected ? const Color(0xFF11171C) : unselectedColor,
+                color: isSelected
+                    ? Theme.of(context).colorScheme.surface
+                    : unselectedColor,
               ),
             ),
             const SizedBox(height: 4),
@@ -123,47 +129,58 @@ class _HomeShellState extends State<HomeShell> {
     final isSmallScreen = screenWidth < 1000;
     final location = GoRouterState.of(context).uri.toString();
 
+    // Reset header signals on navigation
+    if (_lastLocation != location) {
+      _lastLocation = location;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        audioSignal.headerShowBlur.value = false;
+        audioSignal.headerTitleProgress.value = 0.0;
+        audioSignal.headerArtCover.value = null;
+      });
+    }
+
     // Dimensions
-    const collapsedWidth = 70.0 + 16.0; // 70 width + 16 margin
-    const expandedWidth = 250.0 + 16.0; // 250 width + 16 margin
+    const collapsedWidth = 70.0 + 16.0;
+    const expandedWidth = 250.0 + 16.0;
 
     // Calculate content left offset
     double contentLeftOffset;
     if (isMobile) {
       contentLeftOffset = 0;
     } else if (isSmallScreen) {
-      // Small screen: content always offset by collapsed width
       contentLeftOffset = collapsedWidth;
     } else {
-      // Large screen: content offset depends on sidebar state
       contentLeftOffset = _isSidebarCollapsed ? collapsedWidth : expandedWidth;
     }
 
     final topPadding = MediaQuery.of(context).padding.top;
     final headerHeight = isMobile ? (64.0 + topPadding) : 74.0;
 
-    return Watch((context) {
-      final canGoBack = navigationSignal.canGoBack.value;
-      final currentRoute = navigationSignal.currentRoute.value;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarDividerColor: Colors.transparent,
+      ),
+      child: Watch((context) {
+        // Sync bottom padding to audio signal for dynamic spacing
+        final bottomPadding = MediaQuery.of(context).padding.bottom;
+        if (audioSignal.bottomPadding.value != bottomPadding) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            audioSignal.bottomPadding.value = bottomPadding;
+          });
+        }
 
-      return PopScope(
-        canPop: !canGoBack,
-        onPopInvokedWithResult: (didPop, result) {
-          if (didPop) return;
-
-          // Use navigation signal to go back
-          if (canGoBack) {
-            navigationSignal.goBack(context);
-          }
-        },
-        child: AnnotatedRegion<SystemUiOverlayStyle>(
-          value: const SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
-            statusBarIconBrightness: Brightness.light,
-            systemNavigationBarColor: Colors.transparent,
-            systemNavigationBarIconBrightness: Brightness.light,
-            systemNavigationBarDividerColor: Colors.transparent,
-          ),
+        return PopScope(
+          canPop: !navigationSignal.canGoBack.value,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            if (navigationSignal.canGoBack.value) {
+              navigationSignal.goBack(context);
+            }
+          },
           child: Scaffold(
             key: _scaffoldKey,
             extendBody: true,
@@ -181,12 +198,12 @@ class _HomeShellState extends State<HomeShell> {
                 : null,
             body: Stack(
               children: [
-                // Main Content (from router)
+                // Main Content
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOutCubic,
                   left: contentLeftOffset,
-                  top: 0, // Allow content to scroll behind header
+                  top: 0,
                   right: 0,
                   bottom: 0,
                   child: NotificationListener<ScrollNotification>(
@@ -195,46 +212,72 @@ class _HomeShellState extends State<HomeShell> {
                         final metrics = notification.metrics;
                         if (metrics.axis == Axis.vertical) {
                           audioSignal.headerShowBlur.value = metrics.pixels > 0;
+                          // Map scroll 0–80px to progress 0.0–1.0 for title morph
+                          final progress = (metrics.pixels / 80.0).clamp(
+                            0.0,
+                            1.0,
+                          );
+                          audioSignal.headerTitleProgress.value = progress;
+                        }
+                      } else if (notification is ScrollEndNotification) {
+                        // Ensure progress is updated on scroll end too
+                        final metrics = notification.metrics;
+                        if (metrics.axis == Axis.vertical) {
+                          final progress = (metrics.pixels / 80.0).clamp(
+                            0.0,
+                            1.0,
+                          );
+                          audioSignal.headerTitleProgress.value = progress;
                         }
                       }
                       return false;
                     },
-                    child: widget.child,
+                    child: ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(context).copyWith(
+                        physics: const HeaderSnapScrollPhysics().applyTo(
+                          ScrollConfiguration.of(
+                            context,
+                          ).getScrollPhysics(context),
+                        ),
+                      ),
+                      child: widget.child,
+                    ),
                   ),
                 ),
 
-                // Title Bar (Always visible now, layout handled internally)
+                // Title Bar
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOutCubic,
                   top: 0,
                   left: 0,
                   right: 0,
-                  height:
-                      headerHeight, // Match design height + SafeArea on mobile
+                  height: headerHeight,
                   child: WindowTitleBar(leftOffset: contentLeftOffset),
                 ),
 
                 if (kDebugMode && isMobile)
-                  Positioned(
-                    top: 100,
-                    left: 10,
-                    child: IgnorePointer(
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        color: Colors.black54,
-                        child: Text(
-                          'Route: $currentRoute\nBack: $canGoBack\n${navigationSignal.historyDebugString}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
+                  Watch(
+                    (context) => Positioned(
+                      top: 100,
+                      left: 10,
+                      child: IgnorePointer(
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          color: Colors.black54,
+                          child: Text(
+                            'Route: ${navigationSignal.currentRoute.value}\nBack: ${navigationSignal.canGoBack.value}\n${navigationSignal.historyDebugString}',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface,
+                              fontSize: 10,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
 
-                // Sidebar and MorphingPlayer with dynamic Z-index
+                // Sidebar and MorphingPlayer
                 Positioned.fill(
                   child: Watch((context) {
                     final expansion = audioSignal.playerExpansion.value;
@@ -254,7 +297,6 @@ class _HomeShellState extends State<HomeShell> {
                         : const SizedBox.shrink();
 
                     final bottomPadding = MediaQuery.of(context).padding.bottom;
-                    // Compact height to minimize internal padding
                     const navBarHeight = 56.0;
                     final mobileNavBarHeight = navBarHeight + bottomPadding;
 
@@ -283,18 +325,34 @@ class _HomeShellState extends State<HomeShell> {
                                       ? const SizedBox.shrink()
                                       : ClipRRect(
                                           child: BackdropFilter(
-                                            filter: ImageFilter.blur(
-                                              sigmaX: 20,
-                                              sigmaY: 20,
-                                            ),
+                                            filter:
+                                                settingsSignal
+                                                    .enableGlobalBlur
+                                                    .value
+                                                ? ImageFilter.blur(
+                                                    sigmaX: 20,
+                                                    sigmaY: 20,
+                                                  )
+                                                : ImageFilter.blur(
+                                                    sigmaX: 0,
+                                                    sigmaY: 0,
+                                                  ),
                                             child: Container(
                                               height: mobileNavBarHeight,
                                               padding: EdgeInsets.only(
                                                 bottom: bottomPadding,
                                               ),
-                                              color: const Color(
-                                                0xFF11171C,
-                                              ).withValues(alpha: 0.9),
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .surface
+                                                  .withValues(
+                                                    alpha:
+                                                        settingsSignal
+                                                            .enableGlobalBlur
+                                                            .value
+                                                        ? 0.9
+                                                        : 1.0,
+                                                  ),
                                               child: Row(
                                                 mainAxisAlignment:
                                                     MainAxisAlignment
@@ -312,7 +370,7 @@ class _HomeShellState extends State<HomeShell> {
                                                     context,
                                                     FontAwesomeIcons.youtube,
                                                     'YouTube',
-                                                    null, // TODO
+                                                    null,
                                                     location,
                                                     1,
                                                   ),
@@ -344,56 +402,64 @@ class _HomeShellState extends State<HomeShell> {
                     );
                   }),
                 ),
-
-                // Scanning Indicator
-                Positioned(
-                  top: 16,
-                  right: 16,
-                  child: Watch((context) {
-                    if (audioSignal.isScanning.value) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Color(0xFFFCE7AC),
-                                ),
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Scanning...',
-                              style: TextStyle(
-                                color: Color(0xFFFCE7AC),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  }),
-                ),
               ],
             ),
-            bottomNavigationBar: null,
           ),
-        ),
+        );
+      }),
+    );
+  }
+}
+
+class HeaderSnapScrollPhysics extends ScrollPhysics {
+  const HeaderSnapScrollPhysics({super.parent});
+
+  @override
+  HeaderSnapScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return HeaderSnapScrollPhysics(parent: buildParent(ancestor));
+  }
+
+  @override
+  bool get allowImplicitScrolling => true;
+
+  @override
+  double applyBoundaryConditions(ScrollMetrics position, double value) {
+    if (parent != null) return parent!.applyBoundaryConditions(position, value);
+    return 0.0;
+  }
+
+  @override
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) {
+    // If we're out of snap range, use parent physics
+    if (position.pixels < 0.0 || position.pixels > 80.0) {
+      return super.createBallisticSimulation(position, velocity);
+    }
+
+    // Only snap if velocity is low (not a strong flick)
+    // and we're within the snap zone.
+    if (velocity.abs() < 400.0) {
+      // Determine target based on 0.5 progress (40px)
+      final double target;
+      if (position.pixels <= 40.0) {
+        target = 0.0;
+      } else {
+        target = 80.0;
+      }
+
+      // Create a tighter, more mechanical snapping simulation
+      return ScrollSpringSimulation(
+        const SpringDescription(mass: 1.0, stiffness: 100, damping: 1.5),
+        position.pixels,
+        target,
+        velocity,
+        tolerance: toleranceFor(position),
       );
-    });
+    }
+
+    // High velocity: let the parent physics handle the natural momentum
+    return super.createBallisticSimulation(position, velocity);
   }
 }

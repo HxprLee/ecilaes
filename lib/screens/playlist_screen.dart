@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -6,11 +7,33 @@ import 'package:signals/signals_flutter.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
+import '../widgets/page_header.dart';
 
-class PlaylistScreen extends StatelessWidget {
+import '../widgets/song_list_view.dart';
+
+class PlaylistScreen extends StatefulWidget {
   final Playlist playlist;
 
   const PlaylistScreen({super.key, required this.playlist});
+
+  @override
+  State<PlaylistScreen> createState() => _PlaylistScreenState();
+}
+
+class _PlaylistScreenState extends State<PlaylistScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      audioSignal.headerArtCover.value = widget.playlist.imagePath;
+    });
+  }
+
+  @override
+  void dispose() {
+    audioSignal.headerArtCover.value = null;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,9 +41,18 @@ class PlaylistScreen extends StatelessWidget {
       // We need to find the current version of this playlist from the signal
       // because the one passed in the constructor might be stale
       final currentPlaylist = audioSignal.playlists.value.firstWhere(
-        (p) => p.id == playlist.id,
-        orElse: () => playlist,
+        (p) => p.id == widget.playlist.id,
+        orElse: () => widget.playlist,
       );
+
+      // Update header art in case it changed (e.g. user set a new cover)
+      if (audioSignal.headerArtCover.value != currentPlaylist.imagePath) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            audioSignal.headerArtCover.value = currentPlaylist.imagePath;
+          }
+        });
+      }
 
       final allSongs = audioSignal.allSongs.value;
       final songs = currentPlaylist.songPaths.map((path) {
@@ -33,186 +65,199 @@ class PlaylistScreen extends StatelessWidget {
 
       return Scaffold(
         backgroundColor: Colors.transparent,
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        body: CustomScrollView(
+          slivers: [
             // Header
-            Padding(
-              padding: EdgeInsets.only(
-                top:
-                    24.0 +
-                    ((Platform.isAndroid || Platform.isIOS)
-                        ? (50.0 + MediaQuery.of(context).padding.top)
-                        : 50.0),
-                left: 24.0,
-                right: 24.0,
-                bottom: 24.0,
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: Colors.deepPurple,
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Colors.deepPurple, Colors.indigo],
-                      ),
-                    ),
-                    child: const Center(
-                      child: FaIcon(
-                        FontAwesomeIcons.list,
-                        color: Colors.white,
-                        size: 48,
-                      ),
-                    ),
+            SliverToBoxAdapter(
+              child: PageHeader(
+                title: currentPlaylist.name,
+                subtitle: '${songs.length} songs',
+                leading: Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple,
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: currentPlaylist.imagePath == null
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Colors.deepPurple, Colors.indigo],
+                          )
+                        : null,
+                    image: currentPlaylist.imagePath != null
+                        ? DecorationImage(
+                            image: FileImage(File(currentPlaylist.imagePath!)),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
                   ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Text(
-                              'PLAYLIST',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white54,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          currentPlaylist.name,
-                          style: const TextStyle(
-                            fontSize: 48,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFFCE7AC),
+                  child: currentPlaylist.imagePath == null
+                      ? Center(
+                          child: FaIcon(
+                            currentPlaylist.id == 'favorites'
+                                ? FontAwesomeIcons.solidHeart
+                                : FontAwesomeIcons.list,
+                            color: Theme.of(context).colorScheme.onSurface,
+                            size: 48,
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${songs.length} songs',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                        )
+                      : null,
+                ),
               ),
             ),
 
             // Action Buttons
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Row(
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () => audioSignal.playPlaylist(currentPlaylist),
-                    icon: const FaIcon(FontAwesomeIcons.play, size: 16),
-                    label: const Text('Play'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFCE7AC),
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: Row(
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () =>
+                          audioSignal.playPlaylist(currentPlaylist),
+                      icon: const FaIcon(FontAwesomeIcons.play, size: 16),
+                      label: const Text('Play'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.secondary,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onSecondary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  IconButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Delete Playlist'),
-                          content: Text(
-                            'Are you sure you want to delete "${currentPlaylist.name}"?',
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                audioSignal.deletePlaylist(currentPlaylist.id);
-                                Navigator.pop(context); // Close dialog
-                                Navigator.pop(context); // Go back from screen
-                              },
-                              child: const Text(
-                                'Delete',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
+                    const SizedBox(width: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => audioSignal.playPlaylist(
+                        currentPlaylist,
+                        shuffle: true,
+                      ),
+                      icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
+                      label: const Text('Shuffle'),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondary.withValues(alpha: 0.2),
                         ),
-                      );
-                    },
-                    icon: const FaIcon(
-                      FontAwesomeIcons.trash,
-                      color: Colors.white54,
-                      size: 20,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.secondary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                    const Spacer(),
+                    PopupMenuButton<String>(
+                      onSelected: (value) async {
+                        if (value == 'change_cover') {
+                          const typeGroup = XTypeGroup(
+                            label: 'images',
+                            extensions: <String>['jpg', 'jpeg', 'png'],
+                          );
+                          final file = await openFile(
+                            acceptedTypeGroups: <XTypeGroup>[typeGroup],
+                          );
+                          if (file != null) {
+                            await audioSignal.setPlaylistCover(
+                              currentPlaylist.id,
+                              file.path,
+                            );
+                          }
+                        } else if (value == 'delete') {
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Delete Playlist'),
+                              content: Text(
+                                'Are you sure you want to delete "${currentPlaylist.name}"?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    audioSignal.deletePlaylist(
+                                      currentPlaylist.id,
+                                    );
+                                    Navigator.pop(context); // Close dialog
+                                    Navigator.pop(
+                                      context,
+                                    ); // Go back from screen
+                                  },
+                                  child: const Text(
+                                    'Delete',
+                                    style: TextStyle(color: Colors.red),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'change_cover',
+                          child: Row(
+                            children: [
+                              Icon(Icons.image_outlined, size: 20),
+                              SizedBox(width: 12),
+                              Text('Change Cover'),
+                            ],
+                          ),
+                        ),
+                        if (currentPlaylist.id != 'favorites')
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.red,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 12),
+                                Text(
+                                  'Delete Playlist',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        child: FaIcon(
+                          FontAwesomeIcons.ellipsisVertical,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.54),
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
 
-            const SizedBox(height: 24),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
             // Song List
-            Expanded(
-              child: songs.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'This playlist is empty',
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: EdgeInsets.only(
-                        bottom: audioSignal.reservedHeight.value,
-                      ),
-                      itemCount: songs.length,
-                      itemBuilder: (context, index) {
-                        final song = songs[index];
-                        return ListTile(
-                          leading: Text(
-                            '${index + 1}',
-                            style: const TextStyle(color: Colors.white54),
-                          ),
-                          title: Text(
-                            song.title,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          subtitle: Text(
-                            song.artist,
-                            style: const TextStyle(color: Colors.white54),
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(
-                              Icons.remove_circle_outline,
-                              color: Colors.white24,
-                            ),
-                            onPressed: () => audioSignal.removeSongFromPlaylist(
-                              currentPlaylist.id,
-                              song.path,
-                            ),
-                          ),
-                          onTap: () => audioSignal.playSong(song),
-                        );
-                      },
-                    ),
+            SongListView(
+              songs: songs,
+              showIndex: true,
+              emptyMessage: 'This playlist is empty',
+              playlistId: currentPlaylist.id,
             ),
           ],
         ),

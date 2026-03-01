@@ -1,5 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:signals/signals_flutter.dart';
+import '../theme/app_theme_style.dart';
 
 class SettingsSignal {
   static final SettingsSignal _instance = SettingsSignal._internal();
@@ -13,6 +15,19 @@ class SettingsSignal {
   final backgroundPlayback = signal<bool>(false);
   final swipeDownToStop = signal<bool>(false);
   final musicDirectory = signal<String?>(null);
+  final themeMode = signal<ThemeMode>(ThemeMode.dark);
+  final enableWindowTransparency = signal<bool>(true);
+  final enableGlobalBlur = signal<bool>(true);
+  final themeStyle = signal<AppThemeStyle>(AppThemeStyle.signature);
+  final pinnedSidebarItems = signal<List<String>>([
+    'albums',
+    'songs',
+    'playlists',
+    'folders',
+    'artists',
+    'downloaded',
+  ]);
+  final pinnedPlaylistIds = signal<List<String>>(['favorites']);
 
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -24,6 +39,33 @@ class SettingsSignal {
     backgroundPlayback.value = prefs.getBool('backgroundPlayback') ?? false;
     swipeDownToStop.value = prefs.getBool('swipeDownToStop') ?? false;
     musicDirectory.value = prefs.getString('musicDirectory');
+    enableWindowTransparency.value =
+        prefs.getBool('enableWindowTransparency') ?? true;
+    enableGlobalBlur.value = prefs.getBool('enableGlobalBlur') ?? true;
+
+    final themeIndex = prefs.getInt('themeMode');
+    if (themeIndex != null &&
+        themeIndex >= 0 &&
+        themeIndex < ThemeMode.values.length) {
+      themeMode.value = ThemeMode.values[themeIndex];
+    }
+
+    final styleIndex = prefs.getInt('themeStyle');
+    if (styleIndex != null &&
+        styleIndex >= 0 &&
+        styleIndex < AppThemeStyle.values.length) {
+      themeStyle.value = AppThemeStyle.values[styleIndex];
+    }
+
+    final pinned = prefs.getStringList('pinnedSidebarItems');
+    if (pinned != null) {
+      pinnedSidebarItems.value = pinned;
+    }
+
+    final pinnedPlaylists = prefs.getStringList('pinnedPlaylistIds');
+    if (pinnedPlaylists != null) {
+      pinnedPlaylistIds.value = pinnedPlaylists;
+    }
   }
 
   Future<void> updateMusicDirectory(String? value) async {
@@ -70,6 +112,84 @@ class SettingsSignal {
     swipeDownToStop.value = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('swipeDownToStop', value);
+  }
+
+  Future<void> updateThemeMode(ThemeMode mode) async {
+    themeMode.value = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('themeMode', mode.index);
+  }
+
+  Future<void> updateWindowTransparency(bool value) async {
+    enableWindowTransparency.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enableWindowTransparency', value);
+  }
+
+  Future<void> updateGlobalBlur(bool value) async {
+    enableGlobalBlur.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enableGlobalBlur', value);
+  }
+
+  Future<void> updateThemeStyle(AppThemeStyle style) async {
+    themeStyle.value = style;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('themeStyle', style.index);
+  }
+
+  Future<void> togglePinnedItem(String itemId) async {
+    final current = List<String>.from(pinnedSidebarItems.value);
+    if (current.contains(itemId)) {
+      current.remove(itemId);
+    } else {
+      current.add(itemId);
+    }
+    pinnedSidebarItems.value = current;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('pinnedSidebarItems', current);
+  }
+
+  Future<void> reorderPinnedItems(int oldIndex, int newIndex) async {
+    final current = List<String>.from(pinnedSidebarItems.value);
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = current.removeAt(oldIndex);
+    current.insert(newIndex, item);
+    pinnedSidebarItems.value = current;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('pinnedSidebarItems', current);
+  }
+
+  Future<void> togglePinnedPlaylist(String playlistId) async {
+    final current = List<String>.from(pinnedPlaylistIds.value);
+    if (current.contains(playlistId)) {
+      current.remove(playlistId);
+    } else {
+      current.add(playlistId);
+    }
+    pinnedPlaylistIds.value = current;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('pinnedPlaylistIds', current);
+  }
+
+  Future<void> reorderPinnedPlaylists(int oldIndex, int newIndex) async {
+    final current = List<String>.from(pinnedPlaylistIds.value);
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = current.removeAt(oldIndex);
+    current.insert(newIndex, item);
+    pinnedPlaylistIds.value = current;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('pinnedPlaylistIds', current);
+  }
+
+  Future<void> setPinnedPlaylists(List<String> ids) async {
+    pinnedPlaylistIds.value = ids;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('pinnedPlaylistIds', ids);
   }
 }
 

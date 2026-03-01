@@ -11,6 +11,7 @@ import 'router.dart';
 import 'package:audio_service/audio_service.dart';
 import 'services/audio_handler.dart';
 import 'services/platform_service.dart';
+import 'package:music_app/theme/app_theme_builder.dart';
 
 import 'signals/audio_signal.dart';
 import 'signals/settings_signal.dart';
@@ -58,11 +59,11 @@ Future<void> main() async {
   );
   print('APP_START: AudioService initialized');
 
-  // Initialize Audio Signal
-  await audioSignal.init(_audioHandler);
-
   // Request Android Permissions
   await requestAndroidPermissions();
+
+  // Initialize Audio Signal
+  await audioSignal.init(_audioHandler);
 
   // Configure System UI for Edge-to-Edge
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -108,30 +109,28 @@ class MusicApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Watch((context) {
-      // Access signal value here to register dependency
       final textScale = settingsSignal.textScaleFactor.value;
+      final useCustomFont = settingsSignal.useCustomFont.value;
 
       return MaterialApp.router(
         title: 'Music App',
         debugShowCheckedModeBanner: false,
         routerConfig: router,
-        theme: ThemeData(
-          brightness: Brightness.dark,
-          scaffoldBackgroundColor: isDesktop
-              ? const Color.fromARGB(0, 0, 0, 0)
-              : null,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFFFCE7AC),
-            brightness: Brightness.dark,
-            secondary: const Color(0xFFFCE7AC),
-          ),
-          useMaterial3: true,
-          textTheme: settingsSignal.useCustomFont.value
-              ? ThemeData.dark().textTheme.apply(
-                  fontFamily: 'Iosevka Nerd Font',
-                )
-              : null,
+        theme: AppThemeBuilder.buildLight(
+          settingsSignal.themeStyle.value,
+          fontFamily: useCustomFont ? 'Iosevka Nerd Font' : null,
+          seedColor: audioSignal.dynamicThemeSeed.value,
+          isDesktop: isDesktop,
+          desktopTransparency: settingsSignal.enableWindowTransparency.value,
         ),
+        darkTheme: AppThemeBuilder.buildDark(
+          settingsSignal.themeStyle.value,
+          fontFamily: useCustomFont ? 'Iosevka Nerd Font' : null,
+          seedColor: audioSignal.dynamicThemeSeed.value,
+          isDesktop: isDesktop,
+          desktopTransparency: settingsSignal.enableWindowTransparency.value,
+        ),
+        themeMode: settingsSignal.themeMode.value,
         builder: (context, child) {
           return MediaQuery(
             data: MediaQuery.of(
