@@ -7,6 +7,7 @@ import '../models/song.dart';
 import '../signals/audio_signal.dart';
 import 'album_art_cache.dart';
 import 'playback_history_service.dart';
+import 'youtube_service.dart';
 
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
@@ -450,7 +451,8 @@ class MyAudioHandler extends BaseAudioHandler {
     var item = queue.value[_currentIndex];
 
     // Lazily load art URI for MPRIS if this song has album art
-    if (item.artUri == null && item.extras?['hasAlbumArt'] == true) {
+    // Skip yt: paths — thumbnail URLs are handled via NetworkImage in the UI
+    if (!item.id.startsWith('yt:') && item.artUri == null && item.extras?['hasAlbumArt'] == true) {
       final artUri = await _artCache.getArtUri(item.id);
       if (artUri != null) {
         // Create updated item with art URI
@@ -464,6 +466,11 @@ class MyAudioHandler extends BaseAudioHandler {
           mediaItem.add(item);
         }
       }
+    } else if (item.id.startsWith('yt:')) {
+      // For YouTube items, set the thumbnail URL as artUri so MPRIS shows it
+      final videoId = item.id.substring(3);
+      final thumbUri = Uri.parse('https://img.youtube.com/vi/$videoId/hqdefault.jpg');
+      item = item.copyWith(artUri: thumbUri);
     }
 
     mediaItem.add(item);
@@ -475,9 +482,28 @@ class MyAudioHandler extends BaseAudioHandler {
       // Check if we were cancelled before loading
       if (thisLoad.isCompleted || _isDisposed) return;
 
-      await _player.setAudioSource(
-        AudioSource.uri(Uri.file(item.id), tag: item),
-      );
+      if (item.id.startsWith('yt:')) {
+        final videoId = item.id.substring(3);
+        // Note: Make sure to import youtube_service.dart at the top
+        final url = await youtubeService.getAudioStreamUrl(videoId);
+        if (url != null) {
+          await _player.setAudioSource(
+            AudioSource.uri(
+              Uri.parse(url),
+              tag: item,
+              headers: const {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              },
+            ),
+          );
+        } else {
+          throw Exception('Could not resolve YouTube stream');
+        }
+      } else {
+        await _player.setAudioSource(
+          AudioSource.uri(Uri.file(item.id), tag: item),
+        );
+      }
 
       // Check if we were cancelled after loading
       if (thisLoad.isCompleted || _isDisposed) return;

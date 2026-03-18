@@ -13,6 +13,7 @@ import '../theme/app_theme_extensions.dart';
 import 'marquee_text.dart';
 import 'song_actions_sheet.dart';
 import 'player/queue_view.dart';
+import '../services/youtube_service.dart';
 
 class MorphingPlayer extends StatefulWidget {
   final double bottomOffset;
@@ -540,9 +541,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                     width: artSize,
                                     height: artSize,
                                     child: Watch((context) {
-                                      final position =
-                                          audioSignal.position.value;
+                                      final position = audioSignal.position.value;
                                       return _buildMorphingArt(
+                                        currentSong,
                                         value,
                                         artSize,
                                         isPlaying,
@@ -648,14 +649,19 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                 final isBlurEnabled = settingsSignal.enableGlobalBlur.value;
                 if (!isBlurEnabled) return const SizedBox.shrink();
 
+                final isYoutube = currentSong.path.startsWith('yt:');
+                final ytThumbnailUrl = isYoutube ? 'https://img.youtube.com/vi/${currentSong.path.substring(3)}/hqdefault.jpg' : null;
+
                 return Positioned.fill(
                   child: ImageFiltered(
                     imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
-                    child: _currentAlbumArt != null
-                        ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
-                        : Container(
-                            color: Theme.of(context).colorScheme.surface,
-                          ),
+                    child: isYoutube
+                        ? Image.network(ytThumbnailUrl!, fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: Theme.of(context).colorScheme.surface))
+                        : _currentAlbumArt != null
+                            ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
+                            : Container(
+                                color: Theme.of(context).colorScheme.surface,
+                              ),
                   ),
                 );
               }),
@@ -994,12 +1000,16 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   }
 
   Widget _buildMorphingArt(
+    Song? currentSong,
     double value,
     double artSize,
     bool isPlaying,
     Duration duration,
     Duration position,
   ) {
+    final isYoutube = currentSong?.path.startsWith('yt:') ?? false;
+    final ytThumbnailUrl = isYoutube ? 'https://img.youtube.com/vi/${currentSong!.path.substring(3)}/hqdefault.jpg' : null;
+
     return IgnorePointer(
       ignoring:
           value > 0.1 && value < 0.9, // Let controls catch hits during morph
@@ -1057,25 +1067,27 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(value == 0 ? 50 : 8),
-                    child: _currentAlbumArt != null
-                        ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
-                        : (value == 0)
-                        ? Center(
-                            child: FaIcon(
-                              isPlaying
-                                  ? FontAwesomeIcons.pause
-                                  : FontAwesomeIcons.play,
-                              color: Theme.of(context).colorScheme.secondary,
-                              size: 14,
-                            ),
-                          )
-                        : Container(
-                            color: Colors.grey[800],
-                            child: Icon(
-                              Icons.music_note,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                          ),
+                    child: isYoutube
+                        ? Image.network(ytThumbnailUrl!, fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: Colors.grey[800], child: Icon(Icons.music_note, color: Theme.of(context).colorScheme.onSurface)))
+                        : _currentAlbumArt != null
+                            ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
+                            : (value == 0)
+                            ? Center(
+                                child: FaIcon(
+                                  isPlaying
+                                      ? FontAwesomeIcons.pause
+                                      : FontAwesomeIcons.play,
+                                  color: Theme.of(context).colorScheme.secondary,
+                                  size: 14,
+                                ),
+                              )
+                            : Container(
+                                color: Colors.grey[800],
+                                child: Icon(
+                                  Icons.music_note,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                              ),
                   ),
                 ),
               ),
@@ -1085,6 +1097,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       ),
     );
   }
+
 
   Widget _buildMorphingControls(
     double value,
@@ -1321,8 +1334,22 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                           ).colorScheme.secondary.withOpacity(0.2),
                         ),
                       ),
-                      child: Text(
-                        '${currentSong.path.split('.').last.toUpperCase()} | ${currentSong.bitrate ?? '---'}Kbps',
+                        child: Text(
+                          () {
+                            if (currentSong.path.startsWith('yt:')) {
+                              // Derive a short codec label from the mime type
+                              // e.g. "audio/mp4" -> "M4A", "audio/webm" -> "WEBM"
+                              final mime = youtubeService.lastStreamMimeType ?? 'audio/mp4';
+                              final codecLabel = mime.contains('mp4')
+                                  ? 'M4A'
+                                  : mime.contains('webm')
+                                      ? 'WEBM'
+                                      : mime.split('/').last.toUpperCase();
+                              final kbps = youtubeService.lastStreamBitrateKbps ?? '—';
+                              return 'YT $codecLabel | ${kbps}Kbps';
+                            }
+                            return '${currentSong.path.split('.').last.toUpperCase()} | ${currentSong.bitrate ?? '---'}Kbps';
+                          }(),
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSecondary,
                           fontWeight: FontWeight.w900,

@@ -70,6 +70,9 @@ class AlbumArtCache {
 
   /// Load art from disk or extract from audio file
   Future<File?> _loadArt(String songPath) async {
+    // YouTube paths don't have local art - thumbnail is fetched via NetworkImage
+    if (songPath.startsWith('yt:')) return null;
+
     final artPath = _getArtPath(songPath);
     final artFile = File(artPath);
 
@@ -106,6 +109,12 @@ class AlbumArtCache {
 
   /// Get art file URI for MPRIS (returns file path, not bytes)
   Future<Uri?> getArtUri(String songPath) async {
+    // YouTube paths use a remote thumbnail URL, not a local file
+    if (songPath.startsWith('yt:')) {
+      final videoId = songPath.substring(3);
+      return Uri.parse('https://img.youtube.com/vi/$videoId/hqdefault.jpg');
+    }
+
     await init();
     final artPath = _getArtPath(songPath);
     final artFile = File(artPath);

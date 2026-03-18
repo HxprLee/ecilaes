@@ -19,6 +19,7 @@ import '../services/platform_service.dart';
 import '../services/album_art_service.dart';
 import '../services/playlist_service.dart';
 import '../services/playback_history_service.dart';
+import '../services/youtube_service.dart';
 import '../models/history_entry.dart';
 
 class AudioSignal {
@@ -81,11 +82,14 @@ class AudioSignal {
   // Caches
   final Map<String, Song> _explorerSongCache = {};
 
+  final youtubeSearchResults = listSignal<Song>([]);
+  Timer? _searchDebounce;
+
   // Computed for backward compatibility or simple checks
   late final isPlayerExpanded = computed(() => playerExpansion.value > 0.1);
 
   // Computed
-  late final searchResults = computed(() {
+  late final localSearchResults = computed(() {
     final query = searchQuery.value.toLowerCase();
     if (query.isEmpty) return <Song>[];
     return allSongs.value.where((song) {
@@ -93,6 +97,10 @@ class AudioSignal {
           song.artist.toLowerCase().contains(query) ||
           (song.album?.toLowerCase().contains(query) ?? false);
     }).toList();
+  });
+
+  late final searchResults = computed(() {
+    return [...localSearchResults.value, ...youtubeSearchResults.value];
   });
 
   late final recentlyAdded = computed(() {
@@ -157,7 +165,23 @@ class AudioSignal {
       if (item != null) {
         duration.value = item.duration ?? Duration.zero;
         try {
-          final song = songMap.value[item.id];
+          // First try local song map
+          Song? song = songMap.value[item.id];
+
+          // For YouTube songs (yt: prefix), look up in youtubeSearchResults
+          if (song == null && item.id.startsWith('yt:')) {
+            song = youtubeSearchResults.value.firstWhere(
+              (s) => s.path == item.id,
+              orElse: () => Song(
+                path: item.id,
+                title: item.title,
+                artist: item.artist ?? 'YouTube',
+                duration: item.duration,
+                hasAlbumArt: true,
+              ),
+            );
+          }
+
           if (song != null) {
             currentSong.value = song;
             _updateDynamicTheme(song);
@@ -179,6 +203,26 @@ class AudioSignal {
         shuffledIndices.value = indices;
       });
     }
+
+    // YouTube search effect
+    effect(() {
+      final query = searchQuery.value;
+      _searchDebounce?.cancel();
+
+      if (query.isEmpty) {
+        youtubeSearchResults.value = [];
+        return;
+      }
+
+      _searchDebounce = Timer(const Duration(milliseconds: 700), () async {
+        try {
+          final results = await youtubeService.searchSongs(query);
+          youtubeSearchResults.value = results;
+        } catch (e) {
+          print('YouTube search error: $e');
+        }
+      });
+    });
 
     // Load cache and start scan in background
     unawaited(_loadCacheAndScan());
@@ -478,35 +522,46 @@ class AudioSignal {
     }
 
     try {
-      final artDir = await SongCache.artDir;
-      final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
-      final file = File(artPath);
+      ImageProvider imageProvider;
 
-      if (await file.exists()) {
-        final palette = await PaletteGenerator.fromImageProvider(
-          FileImage(file),
-          maximumColorCount: 10,
+      if (song.path.startsWith('yt:')) {
+        // Use YouTube thumbnail for palette generation
+        final videoId = song.path.substring(3);
+        imageProvider = NetworkImage(
+          'https://img.youtube.com/vi/$videoId/hqdefault.jpg',
         );
-
-        // Try dominant color, fallback to vibrant
-        final color =
-            palette.vibrantColor?.color ??
-            palette.dominantColor?.color ??
-            palette.mutedColor?.color;
-
-        batch(() {
-          dominantColor.value = palette.dominantColor?.color;
-          mutedColor.value =
-              palette.mutedColor?.color ?? palette.darkMutedColor?.color;
-          dynamicThemeSeed.value = color;
-        });
       } else {
-        batch(() {
-          dynamicThemeSeed.value = null;
-          dominantColor.value = null;
-          mutedColor.value = null;
-        });
+        final artDir = await SongCache.artDir;
+        final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
+        final file = File(artPath);
+        if (!await file.exists()) {
+          batch(() {
+            dynamicThemeSeed.value = null;
+            dominantColor.value = null;
+            mutedColor.value = null;
+          });
+          return;
+        }
+        imageProvider = FileImage(file);
       }
+
+      final palette = await PaletteGenerator.fromImageProvider(
+        imageProvider,
+        maximumColorCount: 10,
+      );
+
+      // Try dominant color, fallback to vibrant
+      final color =
+          palette.vibrantColor?.color ??
+          palette.dominantColor?.color ??
+          palette.mutedColor?.color;
+
+      batch(() {
+        dominantColor.value = palette.dominantColor?.color;
+        mutedColor.value =
+            palette.mutedColor?.color ?? palette.darkMutedColor?.color;
+        dynamicThemeSeed.value = color;
+      });
     } catch (e) {
       print('Error updating dynamic theme: $e');
       batch(() {

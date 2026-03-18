@@ -42,8 +42,10 @@ class SongTile extends StatelessWidget {
     return Watch((context) {
       final isCurrent = audioSignal.currentSong.value?.path == song.path;
       final artDir = audioSignal.albumArtDir.value;
-      final hasArt = song.hasAlbumArt && artDir != null;
-      final artPath = hasArt ? SongTile.getArtPath(song.path, artDir) : '';
+      final isYoutube = song.path.startsWith('yt:');
+      final hasArt = song.hasAlbumArt && (artDir != null || isYoutube);
+      final artPath = hasArt && !isYoutube ? SongTile.getArtPath(song.path, artDir) : '';
+      final ytThumbnailUrl = isYoutube ? 'https://img.youtube.com/vi/${song.path.substring(3)}/hqdefault.jpg' : null;
 
       return ListTile(
         contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 24),
@@ -71,14 +73,19 @@ class SongTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
-                image: hasArt
+                image: isYoutube && hasArt
                     ? DecorationImage(
-                        image: FileImage(
-                          File(artPath),
-                        ),
+                        image: NetworkImage(ytThumbnailUrl!),
                         fit: BoxFit.cover,
                       )
-                    : null,
+                    : hasArt && !isYoutube
+                        ? DecorationImage(
+                            image: FileImage(
+                              File(artPath),
+                            ),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
               ),
               child: !hasArt
                   ? Center(

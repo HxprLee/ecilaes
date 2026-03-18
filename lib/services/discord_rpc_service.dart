@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:dart_discord_presence/dart_discord_presence.dart';
 import '../models/song.dart';
 
@@ -38,14 +39,19 @@ class DiscordRpcService {
     _initCompleter = Completer<void>();
 
     try {
-      print('DiscordRpcService: Initializing with ID $_applicationId');
+      // debugPrint('DiscordRpcService: Initializing with ID $_applicationId');
       _rpc = DiscordRPC();
       await _rpc!.initialize(_applicationId);
       _isConnected = true;
-      print('DiscordRpcService: Connected.');
+      debugPrint('DiscordRpcService: Connected.');
     } catch (e) {
-      print('DiscordRpcService: Init error: $e');
-      _isConnected = false;
+      if (e.toString().contains('Discord is not running')) {
+        // Silently fail if Discord is just not open
+        _isConnected = false;
+      } else {
+        debugPrint('DiscordRpcService: Init error: $e');
+        _isConnected = false;
+      }
     } finally {
       if (!(_initCompleter?.isCompleted ?? true)) {
         _initCompleter?.complete();

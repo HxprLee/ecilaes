@@ -38,8 +38,11 @@ void showSongMoreActionsSheet({
             final showLabels = settingsSignal.actionsSheetShowLabels.value;
             final artDir = audioSignal.albumArtDir.value;
 
+            final isYoutube = song.path.startsWith('yt:');
+            final ytThumbnailUrl = isYoutube ? 'https://img.youtube.com/vi/${song.path.substring(3)}/hqdefault.jpg' : null;
+
             File? effectiveArt = albumArt;
-            if (effectiveArt == null && song.hasAlbumArt && artDir != null) {
+            if (effectiveArt == null && song.hasAlbumArt && artDir != null && !isYoutube) {
               final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
               final file = File(artPath);
               if (file.existsSync()) {
@@ -62,15 +65,20 @@ void showSongMoreActionsSheet({
                             height: 54,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(4),
-                              image: effectiveArt != null
+                              image: isYoutube && song.hasAlbumArt
                                   ? DecorationImage(
-                                      image: FileImage(effectiveArt),
+                                      image: NetworkImage(ytThumbnailUrl!),
                                       fit: BoxFit.cover,
                                     )
-                                  : null,
+                                  : effectiveArt != null
+                                      ? DecorationImage(
+                                          image: FileImage(effectiveArt),
+                                          fit: BoxFit.cover,
+                                        )
+                                      : null,
                               color: Theme.of(context).colorScheme.secondary,
                             ),
-                            child: effectiveArt == null
+                            child: effectiveArt == null && !isYoutube
                                 ? Icon(
                                     Icons.music_note,
                                     color: Theme.of(context)
