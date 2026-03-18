@@ -74,6 +74,9 @@ class SongCache {
                 ? Duration(milliseconds: json['durationMs'])
                 : null,
             bitrate: json['bitrate'],
+            modifiedAt: json['modifiedAt'] != null
+                ? DateTime.fromMillisecondsSinceEpoch(json['modifiedAt'])
+                : null,
           ),
         );
       }
@@ -101,6 +104,7 @@ class SongCache {
           'lyrics': song.lyrics,
           'durationMs': song.duration?.inMilliseconds,
           'bitrate': song.bitrate,
+          'modifiedAt': song.modifiedAt?.millisecondsSinceEpoch,
         });
       }
 

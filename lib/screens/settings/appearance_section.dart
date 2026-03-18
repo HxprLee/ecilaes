@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
@@ -483,6 +484,44 @@ class AppearanceSection extends StatelessWidget {
                               );
                             }),
                           ],
+                          Divider(
+                            height: 1,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.05),
+                            indent: 16,
+                            endIndent: 16,
+                          ),
+                          ListTile(
+                            title: Text(
+                              'Actions Sheet Layout',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface,
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Customize the more options menu',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.54),
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: Icon(
+                              Icons.chevron_right,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.3),
+                            ),
+                            onTap: () {
+                              context.go('/settings/appearance/actions-layout');
+                            },
+                          ),
                         ],
                       ),
                     ),

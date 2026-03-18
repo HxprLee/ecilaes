@@ -13,7 +13,10 @@ class MyAudioHandler extends BaseAudioHandler {
   // We'll use the 'queue' behavior subject from BaseAudioHandler to store the playlist
   int _currentIndex = 0;
   List<int> _shuffledIndices = [];
+  final _shuffleIndicesController = StreamController<List<int>>.broadcast();
+  Stream<List<int>> get shuffleIndicesStream => _shuffleIndicesController.stream;
   AudioServiceShuffleMode _shuffleMode = AudioServiceShuffleMode.none;
+  AudioServiceRepeatMode _repeatMode = AudioServiceRepeatMode.none;
 
   // Loading lock to prevent concurrent _playCurrent calls
   Completer<void>? _loadingCompleter;
@@ -72,6 +75,7 @@ class MyAudioHandler extends BaseAudioHandler {
             speed: _player.speed,
             queueIndex: _currentIndex,
             shuffleMode: _shuffleMode,
+            repeatMode: _repeatMode,
           ),
         );
         _updateWidget();
@@ -84,7 +88,11 @@ class MyAudioHandler extends BaseAudioHandler {
       _player.processingStateStream.listen((state) {
         if (_isDisposed) return;
         if (state == ProcessingState.completed) {
-          skipToNext();
+          if (_repeatMode == AudioServiceRepeatMode.none && _isAtEnd) {
+            stop();
+          } else {
+            skipToNext();
+          }
         }
       }),
     );
@@ -174,6 +182,8 @@ class MyAudioHandler extends BaseAudioHandler {
     _shuffledIndices = [];
     if (_shuffleMode == AudioServiceShuffleMode.all) {
       _generateShuffledIndices();
+    } else {
+      _shuffleIndicesController.add([]);
     }
 
     // Don't auto-play, just be ready
@@ -211,9 +221,113 @@ class MyAudioHandler extends BaseAudioHandler {
       _generateShuffledIndices();
     } else {
       _shuffledIndices = [];
+      _shuffleIndicesController.add([]);
     }
     // Update playback state to reflect shuffle mode change
     playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
+  }
+
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    _repeatMode = repeatMode;
+    // Update playback state to reflect repeat mode change
+    playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
+  }
+
+  @override
+  Future<void> addQueueItem(MediaItem mediaItem) async {
+    final currentQueue = queue.value;
+    final newQueue = [...currentQueue, mediaItem];
+
+    if (_shuffleMode == AudioServiceShuffleMode.all) {
+      final newIndex = newQueue.length - 1;
+      _shuffledIndices.add(newIndex);
+      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
+    }
+
+    queue.add(newQueue);
+  }
+
+  @override
+  Future<void> removeQueueItem(MediaItem mediaItem) async {
+    final id = mediaItem.id;
+    final currentQueue = List<MediaItem>.from(queue.value);
+    
+    // Find all occurrences
+    final indicesToRemove = <int>[];
+    for (int i = 0; i < currentQueue.length; i++) {
+      if (currentQueue[i].id == id) {
+        indicesToRemove.add(i);
+      }
+    }
+
+    if (indicesToRemove.isEmpty) return;
+
+    // Process removals from back to front to keep indices valid
+    for (final index in indicesToRemove.reversed) {
+      currentQueue.removeAt(index);
+
+      // Update shuffled indices if they exist
+      if (_shuffledIndices.isNotEmpty) {
+        _shuffledIndices.remove(index);
+        for (int i = 0; i < _shuffledIndices.length; i++) {
+          if (_shuffledIndices[i] > index) {
+            _shuffledIndices[i]--;
+          }
+        }
+      }
+
+      // Adjust _currentIndex if we removed something before or at it
+      if (index < _currentIndex) {
+        _currentIndex--;
+      } else if (index == _currentIndex) {
+        if (_currentIndex >= currentQueue.length) {
+          _currentIndex = currentQueue.isNotEmpty ? currentQueue.length - 1 : 0;
+        }
+      }
+    }
+
+    if (_shuffledIndices.isNotEmpty) {
+      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
+    }
+
+    queue.add(currentQueue);
+  }
+
+  Future<void> insertQueueItem(int index, MediaItem mediaItem) async {
+    final currentQueue = List<MediaItem>.from(queue.value);
+    if (index < 0) index = 0;
+    if (index > currentQueue.length) index = currentQueue.length;
+
+    currentQueue.insert(index, mediaItem);
+
+    // Update shuffled indices if they exist
+    if (_shuffledIndices.isNotEmpty) {
+      // Increment all indices >= the insertion index
+      for (int i = 0; i < _shuffledIndices.length; i++) {
+        if (_shuffledIndices[i] >= index) {
+          _shuffledIndices[i]++;
+        }
+      }
+
+      // If it's a "Play Next" (implicitly determined by caller but we can handle it here)
+      // Usually, the caller wants it to be the next song in the current sequence.
+      // If shuffle is on, we find current index in shuffled list and insert there.
+      final currentShuffledPos = _shuffledIndices.indexOf(_currentIndex);
+      if (currentShuffledPos != -1) {
+        _shuffledIndices.insert(currentShuffledPos + 1, index);
+      } else {
+        _shuffledIndices.add(index);
+      }
+      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
+    }
+
+    // Adjust _currentIndex if we inserted before the current position
+    if (index <= _currentIndex) {
+      _currentIndex++;
+    }
+
+    queue.add(currentQueue);
   }
 
   void _generateShuffledIndices() {
@@ -221,26 +335,40 @@ class MyAudioHandler extends BaseAudioHandler {
     _shuffledIndices = List.generate(count, (i) => i);
     _shuffledIndices.shuffle();
 
-    // Ensure current song is at the current position in shuffled list if possible
-    // or just let it be random. Usually, if you toggle shuffle while playing,
-    // you want the current song to stay, and the NEXT songs to be random.
     if (count > 0) {
       _shuffledIndices.remove(_currentIndex);
       _shuffledIndices.insert(0, _currentIndex);
     }
+    _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
   }
 
   int _getNextIndex() {
+    final count = queue.value.length;
+    if (count == 0) return 0;
+
+    if (_repeatMode == AudioServiceRepeatMode.one) {
+      return _currentIndex;
+    }
+
     if (_shuffleMode == AudioServiceShuffleMode.none ||
         _shuffledIndices.isEmpty) {
-      return (_currentIndex + 1) % queue.value.length;
+      final nextIndex = _currentIndex + 1;
+      if (nextIndex < count) {
+        return nextIndex;
+      } else {
+        return _repeatMode == AudioServiceRepeatMode.all ? 0 : _currentIndex;
+      }
     }
+
     final currentShuffledPos = _shuffledIndices.indexOf(_currentIndex);
     if (currentShuffledPos != -1 &&
         currentShuffledPos < _shuffledIndices.length - 1) {
       return _shuffledIndices[currentShuffledPos + 1];
     }
-    return _shuffledIndices[0]; // Loop back
+
+    return _repeatMode == AudioServiceRepeatMode.all
+        ? _shuffledIndices[0]
+        : _currentIndex;
   }
 
   int _getPreviousIndex() {
@@ -255,10 +383,28 @@ class MyAudioHandler extends BaseAudioHandler {
     return _shuffledIndices.last; // Loop back
   }
 
+  bool get _isAtEnd {
+    final count = queue.value.length;
+    if (count == 0) return true;
+    if (_shuffleMode == AudioServiceShuffleMode.all && _shuffledIndices.isNotEmpty) {
+      return _shuffledIndices.last == _currentIndex;
+    }
+    return _currentIndex == count - 1;
+  }
+
   @override
   Future<void> skipToNext() async {
     if (queue.value.isEmpty) return;
-    _currentIndex = _getNextIndex();
+    if (_repeatMode == AudioServiceRepeatMode.none && _isAtEnd) {
+      // If repeat is off and we're at the end, maybe stop or loop back to first but don't play?
+      // Standard behavior: clicking next at end usually loops back or stays at last.
+      // Let's loop back but keep it playing if it was playing, or just move index.
+      _currentIndex = _shuffleMode == AudioServiceShuffleMode.all && _shuffledIndices.isNotEmpty
+          ? _shuffledIndices[0]
+          : 0;
+    } else {
+      _currentIndex = _getNextIndex();
+    }
     await _playCurrent();
   }
 
@@ -404,6 +550,7 @@ class MyAudioHandler extends BaseAudioHandler {
       await sub.cancel();
     }
     _subscriptions.clear();
+    await _shuffleIndicesController.close();
 
     // Dispose the player
     await _player.dispose();

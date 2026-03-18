@@ -7,6 +7,7 @@ class Song {
   final String? lyrics;
   final Duration? duration;
   final int? bitrate; // in kbps
+  final DateTime? modifiedAt;
 
   Song({
     required this.path,
@@ -17,6 +18,7 @@ class Song {
     this.lyrics,
     this.duration,
     this.bitrate,
+    this.modifiedAt,
   });
 
   // Extract title from filename
@@ -27,7 +29,7 @@ class Song {
         ? fileName.substring(0, lastDotIndex)
         : fileName;
 
-    return Song(path: path, title: titleWithoutExt, artist: 'Unknown Artist');
+    return Song(path: path, title: titleWithoutExt, artist: 'Unknown Artist', modifiedAt: DateTime.now());
   }
 
   Song copyWith({
@@ -38,6 +40,7 @@ class Song {
     String? lyrics,
     Duration? duration,
     int? bitrate,
+    DateTime? modifiedAt,
   }) {
     return Song(
       path: path,
@@ -48,6 +51,7 @@ class Song {
       lyrics: lyrics ?? this.lyrics,
       duration: duration ?? this.duration,
       bitrate: bitrate ?? this.bitrate,
+      modifiedAt: modifiedAt ?? this.modifiedAt,
     );
   }
 }

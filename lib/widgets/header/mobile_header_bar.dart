@@ -66,6 +66,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     if (route == '/settings/playback') return 'Playback';
     if (route == '/settings/library') return 'Library';
     if (route == '/settings/about') return 'About';
+    if (route == '/settings/appearance/actions-layout') return 'Actions Layout';
     if (route.startsWith('/explorer/')) return 'Folders';
     if (route.startsWith('/playlist/')) {
       // Try to find playlist name
@@ -211,7 +212,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                         color: Theme.of(
                                           context,
                                         ).colorScheme.secondary,
-                                        fontSize: 18,
+                                        fontSize: 22,
                                         fontWeight: FontWeight.w600,
                                       ),
                                       maxLines: 1,

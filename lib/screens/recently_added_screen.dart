@@ -47,7 +47,6 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
             SliverToBoxAdapter(
               child: PageHeader(
                 title: 'Recently Added',
-                showBackButton: true,
                 actions: [
                   IconButton(
                     onPressed: () => _isGridView.value = !isGrid,
@@ -166,7 +165,7 @@ class _GridSongCard extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface,
+            color: Theme.of(context).colorScheme.secondary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -176,7 +175,9 @@ class _GridSongCard extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.54),
+            color: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.7),
             fontSize: 12,
           ),
         ),

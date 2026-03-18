@@ -1,16 +1,11 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
-import '../signals/navigation_signal.dart';
 import '../signals/audio_signal.dart';
 
 class PageHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
-  final bool showBackButton;
-  final VoidCallback? onBack;
   final List<Widget>? actions;
   final Widget? leading;
 
@@ -18,13 +13,10 @@ class PageHeader extends StatelessWidget {
     super.key,
     required this.title,
     this.subtitle,
-    this.showBackButton = false,
-    this.onBack,
     this.actions,
     this.leading,
   });
 
-  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +30,7 @@ class PageHeader extends StatelessWidget {
       final progress = audioSignal.headerTitleProgress.value;
 
       // Interpolate: large title shrinks and fades as it morphs into the header
-      final fontSize = lerpDouble(28.0, 18.0, progress)!;
+      final fontSize = lerpDouble(32.0, 22.0, progress)!;
       final titleOpacity = (1.0 - progress * 1.5).clamp(0.0, 1.0);
 
       return Padding(
@@ -53,17 +45,6 @@ class PageHeader extends StatelessWidget {
           children: [
             Row(
               children: [
-                if (showBackButton && !_isMobile) ...[
-                  IconButton(
-                    onPressed: onBack ?? () => navigationSignal.goBack(context),
-                    icon: FaIcon(
-                      FontAwesomeIcons.chevronLeft,
-                      color: Theme.of(context).colorScheme.secondary,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
                 if (leading != null) ...[
                   Opacity(
                     opacity: titleOpacity,
@@ -100,7 +81,7 @@ class PageHeader extends StatelessWidget {
                             style: TextStyle(
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.54),
+                              ).colorScheme.secondary.withValues(alpha: 0.7),
                               fontSize: 14,
                             ),
                             maxLines: 1,

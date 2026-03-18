@@ -9,6 +9,7 @@ import '../models/song.dart';
 import '../signals/audio_signal.dart';
 import '../widgets/page_header.dart';
 
+import '../widgets/song_actions_sheet.dart';
 import '../widgets/song_list_view.dart';
 
 class PlaylistScreen extends StatefulWidget {
@@ -174,25 +175,23 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                         } else if (value == 'delete') {
                           showDialog(
                             context: context,
-                            builder: (context) => AlertDialog(
+                            builder: (dialogContext) => AlertDialog(
                               title: const Text('Delete Playlist'),
                               content: Text(
                                 'Are you sure you want to delete "${currentPlaylist.name}"?',
                               ),
                               actions: [
                                 TextButton(
-                                  onPressed: () => Navigator.pop(context),
+                                  onPressed: () => Navigator.pop(dialogContext),
                                   child: const Text('Cancel'),
                                 ),
                                 TextButton(
                                   onPressed: () {
+                                    Navigator.pop(dialogContext); // Close dialog
+                                    context.go('/playlists'); // Go back from screen safely
                                     audioSignal.deletePlaylist(
                                       currentPlaylist.id,
                                     );
-                                    Navigator.pop(context); // Close dialog
-                                    Navigator.pop(
-                                      context,
-                                    ); // Go back from screen
                                   },
                                   child: const Text(
                                     'Delete',
@@ -255,7 +254,25 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             // Song List
             SongListView(
               songs: songs,
-              showIndex: true,
+              showIndex: false,
+              trailingBuilder: (context, song, index) {
+                return IconButton(
+                  onPressed: () {
+                    showSongMoreActionsSheet(
+                      context: context,
+                      song: song,
+                      playlistId: currentPlaylist.id,
+                    );
+                  },
+                  icon: FaIcon(
+                    FontAwesomeIcons.ellipsisVertical,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38),
+                    size: 16,
+                  ),
+                );
+              },
               emptyMessage: 'This playlist is empty',
               playlistId: currentPlaylist.id,
             ),

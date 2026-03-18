@@ -605,13 +605,14 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           ),
           FilledButton(
             onPressed: () async {
-              if (controller.text.isNotEmpty) {
-                final name = controller.text;
-                // We need to wait for creation to get the ID if we want to auto-pin
-                // But createPlaylist is currently void. Let's assume the user
-                // will pin it from the manage dialog or we can update createPlaylist.
-                await audioSignal.createPlaylist(name);
-                if (context.mounted) Navigator.pop(context);
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                try {
+                  await audioSignal.createPlaylist(name);
+                  if (context.mounted) Navigator.pop(context);
+                } catch (e) {
+                  print('Error creating playlist: $e');
+                }
               }
             },
             style: FilledButton.styleFrom(shape: const StadiumBorder()),

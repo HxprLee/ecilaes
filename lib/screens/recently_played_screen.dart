@@ -63,7 +63,6 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
             SliverToBoxAdapter(
               child: PageHeader(
                 title: 'Recently Played',
-                showBackButton: true,
                 actions: [
                   IconButton(
                     onPressed: () =>
@@ -209,7 +208,7 @@ class _GridSongCard extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface,
+            color: Theme.of(context).colorScheme.secondary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -221,7 +220,7 @@ class _GridSongCard extends StatelessWidget {
           style: TextStyle(
             color: Theme.of(
               context,
-            ).colorScheme.onSurface.withValues(alpha: 0.54),
+            ).colorScheme.secondary.withValues(alpha: 0.7),
             fontSize: 12,
           ),
         ),

@@ -116,7 +116,7 @@ class DesktopHeaderBar extends StatelessWidget {
                       pageTitle,
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.secondary,
-                        fontSize: 16,
+                        fontSize: 20,
                         fontWeight: FontWeight.w600,
                       ),
                     ),

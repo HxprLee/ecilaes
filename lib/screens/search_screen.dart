@@ -148,12 +148,11 @@ class _SearchScreenState extends State<SearchScreen> {
                         title: Text(
                           song.title,
                           style: TextStyle(
-                            color: isCurrent
-                                ? Theme.of(context).colorScheme.secondary
-                                : Theme.of(context).colorScheme.onSurface,
+                            color: Theme.of(context).colorScheme.secondary,
                             fontWeight: isCurrent
                                 ? FontWeight.bold
-                                : FontWeight.normal,
+                                : FontWeight.w600,
+                            fontSize: 14,
                           ),
                         ),
                         subtitle: Text(
@@ -161,7 +160,8 @@ class _SearchScreenState extends State<SearchScreen> {
                           style: TextStyle(
                             color: Theme.of(
                               context,
-                            ).colorScheme.onSurface.withOpacity(0.54),
+                            ).colorScheme.secondary.withValues(alpha: 0.7),
+                            fontSize: 12,
                           ),
                         ),
                         trailing: Text(

@@ -59,7 +59,7 @@ class _QuickActionCardState extends State<QuickActionCard> {
                 color: Theme.of(
                   context,
                 ).colorScheme.secondary.withValues(alpha: 0.8),
-                fontSize: 14,
+                fontSize: 12,
                 fontWeight: FontWeight.w400,
               ),
             ),
@@ -234,7 +234,7 @@ class _SongCardState extends State<SongCard> {
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.secondary,
                   fontWeight: FontWeight.w600,
-                  fontSize: 16,
+                  fontSize: 14,
                 ),
               ),
               const SizedBox(height: 2),
@@ -246,7 +246,7 @@ class _SongCardState extends State<SongCard> {
                   color: Theme.of(
                     context,
                   ).colorScheme.secondary.withValues(alpha: 0.7),
-                  fontSize: 13,
+                  fontSize: 12,
                 ),
               ),
             ],

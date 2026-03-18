@@ -8,6 +8,7 @@ import 'package:signals_flutter/signals_flutter.dart';
 import 'package:flutter/cupertino.dart';
 import '../theme/app_theme_extensions.dart';
 import 'playlist_dialogs.dart';
+import 'common/flyout_sheet.dart';
 
 void showSongMoreActionsSheet({
   required BuildContext context,
@@ -26,82 +27,50 @@ void showSongMoreActionsSheet({
       duration: const Duration(milliseconds: 500),
     ),
     builder: (context) {
-      return Align(
-        alignment: Alignment.bottomCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-            child: BackdropFilter(
-              filter: settingsSignal.enableGlobalBlur.value
-                  ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
-                  : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .extension<AppThemeExtension>()!
-                      .sidebarBackground
-                      .withValues(
-                        alpha: settingsSignal.enableGlobalBlur.value
-                            ? 0.67
-                            : 1.0,
-                      ),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(8),
-                  ),
-                  border: Border(
-                    top: BorderSide(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: 0.15),
-                    ),
-                    left: BorderSide(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: 0.15),
-                    ),
-                    right: BorderSide(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: 0.15),
-                    ),
-                  ),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Handle
-                    Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.secondary.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    // Song Header in Sheet
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(28, 16, 28, 8),
-                      child: Row(
+      return FlyoutSheet(
+        maxWidth: 600,
+        showHandle: true,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 18),
+          child: Watch((context) {
+            final quickActions = settingsSignal.actionsSheetQuickActions.value;
+            final listActions = settingsSignal.actionsSheetListActions.value;
+            final showLabels = settingsSignal.actionsSheetShowLabels.value;
+            final artDir = audioSignal.albumArtDir.value;
+
+            File? effectiveArt = albumArt;
+            if (effectiveArt == null && song.hasAlbumArt && artDir != null) {
+              final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
+              final file = File(artPath);
+              if (file.existsSync()) {
+                effectiveArt = file;
+              }
+            }
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Song Header & Quick Actions
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 16, 28, 8),
+                  child: Column(
+                    children: [
+                      Row(
                         children: [
                           Container(
                             width: 54,
                             height: 54,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(4),
-                              image: albumArt != null
+                              image: effectiveArt != null
                                   ? DecorationImage(
-                                      image: FileImage(albumArt),
+                                      image: FileImage(effectiveArt),
                                       fit: BoxFit.cover,
                                     )
                                   : null,
                               color: Theme.of(context).colorScheme.secondary,
                             ),
-                            child: albumArt == null
+                            child: effectiveArt == null
                                 ? Icon(
                                     Icons.music_note,
                                     color: Theme.of(context)
@@ -146,84 +115,215 @@ void showSongMoreActionsSheet({
                           ),
                         ],
                       ),
-                    ),
-                    Divider(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: 0.2),
-                      height: 36,
-                    ),
-                    _buildSheetItem(
-                      context: context,
-                      icon: Icons.playlist_add,
-                      label: 'Add to playlist',
-                      onTap: () {
-                        PlaylistPickerDialog.show(context, song: song);
-                      },
-                      closeOnTap: false,
-                    ),
-                    if (playlistId != null && playlistId != 'favorites')
-                      _buildSheetItem(
-                        context: context,
-                        icon: Icons.playlist_remove,
-                        label: 'Remove from playlist',
-                        onTap: () {
-                          audioSignal.removeSongFromPlaylist(
-                            playlistId,
-                            song.path,
-                          );
-                        },
-                      ),
-                    _buildSheetItem(
-                      context: context,
-                      icon: Icons.album_outlined,
-                      label: 'Go to album',
-                      onTap: () {},
-                    ),
-                    _buildSheetItem(
-                      context: context,
-                      icon: Icons.person_outline,
-                      label: 'Go to artist',
-                      onTap: () {},
-                    ),
-                    Watch((context) {
-                      final remaining = audioSignal.sleepTimerRemaining.value;
-                      final timerText = remaining != null
-                          ? '${remaining.inMinutes}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')}'
-                          : 'Sleep timer';
-
-                      return _buildSheetItem(
-                        context: context,
-                        icon: Icons.timer_outlined,
-                        label: timerText,
-                        onTap: () {
-                          _showSleepTimerDialog(context);
-                        },
-                        closeOnTap: false,
-                      );
-                    }),
-                    _buildSheetItem(
-                      context: context,
-                      icon: Icons.info_outline,
-                      label: 'Song info',
-                      onTap: () {},
-                    ),
-                    _buildSheetItem(
-                      context: context,
-                      icon: Icons.share_outlined,
-                      label: 'Share',
-                      onTap: () {},
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+                      if (quickActions.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: quickActions.map((id) {
+                            return Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                child: _buildQuickAction(
+                                  context: context,
+                                  song: song,
+                                  actionId: id,
+                                  showLabel: showLabels,
+                                  playlistId: playlistId,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-            ),
-          ),
+
+                Divider(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.2),
+                  height: 36,
+                ),
+
+                // List Actions
+                ...listActions.map(
+                  (id) => _buildSheetAction(
+                    context: context,
+                    song: song,
+                    actionId: id,
+                    playlistId: playlistId,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            );
+          }),
         ),
       );
     },
   );
+}
+
+Widget _buildQuickAction({
+  required BuildContext context,
+  required Song song,
+  required String actionId,
+  required bool showLabel,
+  String? playlistId,
+}) {
+  final info = _getActionInfo(actionId);
+  if (info == null) return const SizedBox();
+
+  return Container(
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: InkWell(
+      onTap: () {
+        if (info.closeOnTap) Navigator.pop(context);
+        info.onTap(context, song, playlistId);
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              info.icon,
+              color: Theme.of(context).colorScheme.secondary,
+              size: 24,
+            ),
+            if (showLabel) ...[
+              const SizedBox(height: 4),
+              Text(
+                info.label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.7),
+                  fontSize: 10,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildSheetAction({
+  required BuildContext context,
+  required Song song,
+  required String actionId,
+  String? playlistId,
+}) {
+  final info = _getActionInfo(actionId);
+  if (info == null) return const SizedBox();
+
+  // Special case for remove from playlist item which only shows if playlistId is provided
+  if (actionId == 'remove_from_playlist' &&
+      (playlistId == null || playlistId == 'favorites')) {
+    return const SizedBox();
+  }
+
+  return _buildSheetItem(
+    context: context,
+    icon: info.icon,
+    label: info.label,
+    onTap: () => info.onTap(context, song, playlistId),
+    closeOnTap: info.closeOnTap,
+  );
+}
+
+class ActionInfo {
+  final IconData icon;
+  final String label;
+  final Function(BuildContext, Song, String?) onTap;
+  final bool closeOnTap;
+
+  ActionInfo({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.closeOnTap = true,
+  });
+}
+
+ActionInfo? _getActionInfo(String id) {
+  switch (id) {
+    case 'add_to_playlist':
+      return ActionInfo(
+        icon: Icons.playlist_add,
+        label: 'Add to playlist',
+        onTap: (context, song, _) =>
+            PlaylistPickerDialog.show(context, song: song),
+        closeOnTap: false,
+      );
+    case 'play_next':
+      return ActionInfo(
+        icon: Icons.playlist_play,
+        label: 'Play next',
+        onTap: (context, song, _) => audioSignal.playNext(song),
+      );
+    case 'add_to_queue':
+      return ActionInfo(
+        icon: Icons.queue_music,
+        label: 'Add to queue',
+        onTap: (context, song, _) => audioSignal.addToQueue(song),
+      );
+    case 'remove_from_playlist':
+      return ActionInfo(
+        icon: Icons.playlist_remove,
+        label: 'Remove from playlist',
+        onTap: (context, song, playlistId) {
+          if (playlistId != null) {
+            audioSignal.removeSongFromPlaylist(playlistId, song.path);
+          }
+        },
+      );
+    case 'go_to_album':
+      return ActionInfo(
+        icon: Icons.album_outlined,
+        label: 'Go to album',
+        onTap: (context, song, _) {},
+      );
+    case 'go_to_artist':
+      return ActionInfo(
+        icon: Icons.person_outline,
+        label: 'Go to artist',
+        onTap: (context, song, _) {},
+      );
+    case 'sleep_timer':
+      return ActionInfo(
+        icon: Icons.timer_outlined,
+        label: 'Sleep timer',
+        onTap: (context, song, _) => _showSleepTimerDialog(context),
+        closeOnTap: false,
+      );
+    case 'info':
+      return ActionInfo(
+        icon: Icons.info_outline,
+        label: 'Song info',
+        onTap: (context, song, _) {},
+      );
+    case 'share':
+      return ActionInfo(
+        icon: Icons.share_outlined,
+        label: 'Share',
+        onTap: (context, song, _) {},
+      );
+    default:
+      return null;
+  }
 }
 
 Widget _buildSheetItem({

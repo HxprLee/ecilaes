@@ -28,6 +28,19 @@ class SettingsSignal {
     'downloaded',
   ]);
   final pinnedPlaylistIds = signal<List<String>>(['favorites']);
+  final actionsSheetQuickActions = listSignal<String>([
+    'add_to_playlist',
+    'play_next',
+    'add_to_queue',
+  ]);
+  final actionsSheetListActions = listSignal<String>([
+    'go_to_album',
+    'go_to_artist',
+    'sleep_timer',
+    'info',
+    'share',
+  ]);
+  final actionsSheetShowLabels = signal<bool>(false);
 
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -66,6 +79,19 @@ class SettingsSignal {
     if (pinnedPlaylists != null) {
       pinnedPlaylistIds.value = pinnedPlaylists;
     }
+
+    final quick = prefs.getStringList('actionsSheetQuickActions');
+    if (quick != null) {
+      actionsSheetQuickActions.value = quick;
+    }
+
+    final list = prefs.getStringList('actionsSheetListActions');
+    if (list != null) {
+      actionsSheetListActions.value = list;
+    }
+
+    actionsSheetShowLabels.value =
+        prefs.getBool('actionsSheetShowLabels') ?? false;
   }
 
   Future<void> updateMusicDirectory(String? value) async {
@@ -190,6 +216,34 @@ class SettingsSignal {
     pinnedPlaylistIds.value = ids;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList('pinnedPlaylistIds', ids);
+  }
+
+  Future<void> unpinPlaylist(String playlistId) async {
+    final current = List<String>.from(pinnedPlaylistIds.value);
+    if (current.contains(playlistId)) {
+      current.remove(playlistId);
+      pinnedPlaylistIds.value = current;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('pinnedPlaylistIds', current);
+    }
+  }
+
+  Future<void> updateActionsSheetQuickActions(List<String> actions) async {
+    actionsSheetQuickActions.value = actions;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('actionsSheetQuickActions', actions);
+  }
+
+  Future<void> updateActionsSheetListActions(List<String> actions) async {
+    actionsSheetListActions.value = actions;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('actionsSheetListActions', actions);
+  }
+
+  Future<void> updateActionsSheetShowLabels(bool value) async {
+    actionsSheetShowLabels.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('actionsSheetShowLabels', value);
   }
 }
 

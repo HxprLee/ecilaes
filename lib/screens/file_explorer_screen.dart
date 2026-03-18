@@ -205,8 +205,9 @@ class _FolderTile extends StatelessWidget {
       title: Text(
         name,
         style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface,
+          color: Theme.of(context).colorScheme.secondary,
           fontSize: 14,
+          fontWeight: FontWeight.w600,
         ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -354,8 +355,9 @@ class _FileTileState extends State<_FileTile> {
       title: Text(
         _song!.title,
         style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface,
+          color: Theme.of(context).colorScheme.secondary,
           fontSize: 14,
+          fontWeight: FontWeight.w600,
         ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -363,7 +365,9 @@ class _FileTileState extends State<_FileTile> {
       subtitle: Text(
         _song!.artist,
         style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.54),
+          color: Theme.of(
+            context,
+          ).colorScheme.secondary.withValues(alpha: 0.7),
           fontSize: 12,
         ),
         maxLines: 1,

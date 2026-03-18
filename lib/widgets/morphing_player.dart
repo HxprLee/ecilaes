@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
+import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 import '../services/album_art_cache.dart';
 import '../signals/audio_signal.dart';
@@ -11,6 +12,7 @@ import '../signals/settings_signal.dart';
 import '../theme/app_theme_extensions.dart';
 import 'marquee_text.dart';
 import 'song_actions_sheet.dart';
+import 'player/queue_view.dart';
 
 class MorphingPlayer extends StatefulWidget {
   final double bottomOffset;
@@ -107,6 +109,17 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         _visibilityController.reverse();
       }
     });
+
+    // Listener for back button minimization from shell
+    effect(() {
+      final _ = audioSignal.minimizePlayerTrigger.value;
+      if (_controller.value > 0) {
+        _controller.animateTo(
+          0.0,
+          curve: Curves.fastLinearToSlowEaseIn,
+        );
+      }
+    });
   }
 
   @override
@@ -136,22 +149,26 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   void _handleDragUpdate(DragUpdateDetails details) {
     if (_controller.value == 0 && settingsSignal.swipeDownToStop.value) {
       final delta = details.primaryDelta!;
-      // Only handle as a "swipe down to stop" if we are dragging down
-      // OR we have already moved the bar down.
       if (delta > 0 || _dragDownOffset > 0) {
         setState(() {
           _dragDownOffset += delta;
           if (_dragDownOffset < 0) _dragDownOffset = 0;
         });
-
-        // If we still have a downward offset, consume the event.
-        // If we've returned to 0, let it fall through to handle expansion.
         if (_dragDownOffset > 0) return;
       }
     }
 
     final screenHeight = MediaQuery.of(context).size.height;
-    _controller.value -= details.primaryDelta! / screenHeight;
+    final delta = details.primaryDelta!;
+
+    // Case 1: Player is expanded and we are swiping down to close the player
+    if (_controller.value == 1.0 && delta > 0) {
+      _controller.value -= delta / screenHeight;
+      return;
+    }
+
+    // Default: Handle main player expansion/collapse
+    _controller.value -= delta / screenHeight;
   }
 
   void _handleDragEnd(DragEndDetails details) {
@@ -377,6 +394,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         animation: Listenable.merge([_controller, _visibilityController]),
         builder: (context, child) {
           final value = _controller.value;
+          
           final topPadding = MediaQuery.of(context).padding.top;
           final bottomPadding = MediaQuery.of(context).padding.bottom;
           final currentTopPadding = lerpDouble(0, topPadding, value)!;
@@ -393,6 +411,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           );
 
           final currentHeight = lerpDouble(_barHeight, screenHeight, value)!;
+          final currentBottom = lerpDouble(
+            widget.bottomOffset + margin,
+            0,
+            value,
+          )!;
 
           // Calculate collapsed state values
           final availableWidth = screenWidth - widget.leftOffset;
@@ -407,11 +430,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           final currentWidth = lerpDouble(collapsedWidth, screenWidth, value)!;
 
           final currentLeft = lerpDouble(collapsedLeft, 0, value)!;
-          final currentBottom = lerpDouble(
-            widget.bottomOffset + margin,
-            0,
-            value,
-          )!;
 
           // Opacities
           final fullOpacity = ((value - 0.2) * 5).clamp(0.0, 1.0);
@@ -449,18 +467,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             width: currentWidth,
             bottom: effectiveBottom,
             height: currentHeight,
-            child: PopScope(
-              canPop: value == 0,
-              onPopInvokedWithResult: (didPop, result) {
-                if (didPop) return;
-                if (value > 0) {
-                  _controller.animateTo(
-                    0.0,
-                    curve: Curves.fastLinearToSlowEaseIn,
-                  );
-                }
-              },
-              child: GestureDetector(
+            child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onVerticalDragStart: _handleDragStart,
                 onVerticalDragUpdate: _handleDragUpdate,
@@ -492,11 +499,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                       ? 0.92
                                       : 1.0,
                                 ),
-                            Color.lerp(
-                              Theme.of(context).colorScheme.surface,
-                              Theme.of(context).colorScheme.surface,
-                              value,
-                            )!,
+                            Theme.of(context).colorScheme.surface,
                             value,
                           ),
                           borderRadius: BorderRadius.circular(
@@ -548,7 +551,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                       );
                                     }),
                                   ),
-
                                   // 3. Song Info (Text)
                                   _buildMorphingText(
                                     value,
@@ -617,6 +619,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                   ),
                                 ),
                               ),
+
+                            // 8. Reserved Space for Morphings (removed redundancy)
                           ],
                         ),
                       ),
@@ -624,12 +628,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   ),
                 ),
               ),
-            ),
-          );
-        },
-      );
-    });
-  }
+            );
+          },
+        );
+      });
+    }
 
   Widget _buildBackground(Song currentSong, double fullOpacity) {
     if (fullOpacity <= 0) return const SizedBox.shrink();
@@ -1097,7 +1100,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     // Start State (Mini)
     double startRight;
     double startLeft;
-    double startTop = isMobile ? _startTop - 1.0 : _startTop;
+    double startTop = (isMobile ? _startTop - 1.0 : _startTop);
 
     double startWidth;
     double startPlayBtnSize;
@@ -1348,21 +1351,56 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                               ? Theme.of(context).colorScheme.secondary
                               : Theme.of(
                                   context,
-                                ).colorScheme.secondary.withOpacity(0.4),
+                                ).colorScheme.secondary.withValues(alpha: 0.4),
                           size: iconSize,
                         ),
                         onPressed: audioSignal.toggleShuffle,
                       );
                     }),
                     SizedBox(width: spacing),
-                    IconButton(
-                      icon: FaIcon(
-                        FontAwesomeIcons.repeat,
-                        color: Theme.of(context).colorScheme.secondary,
-                        size: iconSize,
-                      ),
-                      onPressed: () {},
-                    ),
+                    Watch((context) {
+                      final mode = audioSignal.repeatMode.value;
+                      final isNone = mode == AudioServiceRepeatMode.none;
+                      final isOne = mode == AudioServiceRepeatMode.one;
+                      
+                      return IconButton(
+                        icon: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            FaIcon(
+                              FontAwesomeIcons.repeat,
+                              color: !isNone
+                                  ? Theme.of(context).colorScheme.secondary
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.secondary.withValues(alpha: 0.4),
+                              size: iconSize,
+                            ),
+                            if (isOne)
+                              Positioned(
+                                bottom: -2,
+                                right: -2,
+                                child: Container(
+                                  padding: const EdgeInsets.all(1),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).colorScheme.surface,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Text(
+                                    '1',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.secondary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        onPressed: audioSignal.toggleRepeat,
+                      );
+                    }),
                     SizedBox(width: spacing),
                     IconButton(
                       icon: FaIcon(
@@ -1370,7 +1408,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                         color: Theme.of(context).colorScheme.secondary,
                         size: iconSize,
                       ),
-                      onPressed: () {},
+                      onPressed: () {
+                        showQueueSheet(context);
+                      },
                     ),
                     SizedBox(width: spacing),
                     IconButton(

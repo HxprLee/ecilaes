@@ -26,7 +26,7 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _playerKey = GlobalKey();
   bool _isSidebarCollapsed = false;
@@ -36,6 +36,16 @@ class _HomeShellState extends State<HomeShell> {
   bool get isDesktop =>
       !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
   bool get isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -174,9 +184,18 @@ class _HomeShellState extends State<HomeShell> {
         }
 
         return PopScope(
-          canPop: !navigationSignal.canGoBack.value,
+          canPop: !navigationSignal.canGoBack.value &&
+              audioSignal.playerExpansion.value < 0.1,
           onPopInvokedWithResult: (didPop, result) {
             if (didPop) return;
+
+            // 1. Priority: Expanded Player
+            if (audioSignal.playerExpansion.value > 0.1) {
+              audioSignal.minimizePlayerTrigger.value++;
+              return;
+            }
+
+            // 2. Priority: Navigation History
             if (navigationSignal.canGoBack.value) {
               navigationSignal.goBack(context);
             }
@@ -396,9 +415,17 @@ class _HomeShellState extends State<HomeShell> {
 
                     return Stack(
                       clipBehavior: Clip.none,
-                      children: isExpanded
-                          ? [sidebar, player, bottomNavBar]
-                          : [player, sidebar, bottomNavBar],
+                      children: [
+                        if (isExpanded) ...[
+                          sidebar,
+                          player,
+                          bottomNavBar,
+                        ] else ...[
+                          player,
+                          sidebar,
+                          bottomNavBar,
+                        ],
+                      ],
                     );
                   }),
                 ),
@@ -449,9 +476,9 @@ class HeaderSnapScrollPhysics extends ScrollPhysics {
         target = 80.0;
       }
 
-      // Create a tighter, more mechanical snapping simulation
+      // Create a critically damped snapping simulation (no bounce)
       return ScrollSpringSimulation(
-        const SpringDescription(mass: 1.0, stiffness: 100, damping: 1.5),
+        const SpringDescription(mass: 1.0, stiffness: 150, damping: 25),
         position.pixels,
         target,
         velocity,

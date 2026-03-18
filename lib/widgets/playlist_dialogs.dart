@@ -16,7 +16,7 @@ class PlaylistPickerDialog extends StatelessWidget {
   static void show(BuildContext context, {Song? song, String? folderPath}) {
     showDialog(
       context: context,
-      builder: (context) =>
+      builder: (dialogContext) =>
           PlaylistPickerDialog(song: song, folderPath: folderPath),
     );
   }
@@ -205,7 +205,7 @@ class CreatePlaylistDialog extends StatefulWidget {
   static void show(BuildContext context, {Song? song, String? folderPath}) {
     showDialog(
       context: context,
-      builder: (context) =>
+      builder: (dialogContext) =>
           CreatePlaylistDialog(song: song, folderPath: folderPath),
     );
   }
@@ -335,32 +335,41 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
                             onPressed: () async {
                               final name = _controller.text.trim();
                               if (name.isNotEmpty) {
-                                await audioSignal.createPlaylist(name);
-                                final newPlaylist = audioSignal.playlists.value
-                                    .firstWhere((p) => p.name == name);
-                                if (widget.song != null) {
-                                  await audioSignal.addSongToPlaylist(
-                                    newPlaylist.id,
-                                    widget.song!.path,
-                                  );
-                                } else if (widget.folderPath != null) {
-                                  await audioSignal.addFolderToPlaylist(
-                                    newPlaylist.id,
-                                    widget.folderPath!,
-                                  );
-                                }
-                                if (context.mounted) {
-                                  Navigator.pop(context); // Close create dialog
-                                  Navigator.pop(context); // Close add dialog
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Created and added to $name',
+                                try {
+                                  final newPlaylist =
+                                      await audioSignal.createPlaylist(name);
+                                  if (widget.song != null) {
+                                    await audioSignal.addSongToPlaylist(
+                                      newPlaylist.id,
+                                      widget.song!.path,
+                                    );
+                                  } else if (widget.folderPath != null) {
+                                    await audioSignal.addFolderToPlaylist(
+                                      newPlaylist.id,
+                                      widget.folderPath!,
+                                    );
+                                  }
+                                  if (context.mounted) {
+                                    Navigator.of(context).pop(); // Close create dialog
+                                    if (widget.song != null ||
+                                        widget.folderPath != null) {
+                                      // If we came from the picker, close it too.
+                                      // We use Navigator.of(context) again which is safe
+                                      // as long as the state is still mounted.
+                                      Navigator.of(context).pop(); // Close add dialog
+                                    }
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Created and added to $name',
+                                        ),
+                                        behavior: SnackBarBehavior.floating,
+                                        width: 300,
                                       ),
-                                      behavior: SnackBarBehavior.floating,
-                                      width: 300,
-                                    ),
-                                  );
+                                    );
+                                  }
+                                } catch (e) {
+                                  print('Error creating playlist: $e');
                                 }
                               }
                             },

@@ -37,12 +37,15 @@ class AudioSignal {
   final allSongs = listSignal<Song>([]);
   final playlists = listSignal<Playlist>([]);
   final historySongs = listSignal<HistoryEntry>([]);
+  final queue = listSignal<MediaItem>([]);
   final isHistoryGridView = signal<bool>(false);
   final currentPlaylist = signal<Playlist?>(null);
   final isScanning = signal<bool>(false);
   final scanProgress = signal<double>(0.0);
   final searchQuery = signal<String>('');
   final isShuffleMode = signal<bool>(false);
+  final repeatMode = signal<AudioServiceRepeatMode>(AudioServiceRepeatMode.none);
+  final shuffledIndices = listSignal<int>([]);
   final playerExpansion = signal<double>(0.0);
   final headerShowBlur = signal<bool>(false);
   final headerTitleProgress = signal<double>(0.0);
@@ -56,6 +59,12 @@ class AudioSignal {
   final sleepTimerRemaining = signal<Duration?>(null);
   Timer? _sleepInternalTimer;
   final bottomPadding = signal<double>(0.0);
+  final minimizePlayerTrigger = signal<int>(0);
+  final albumArtDir = signal<String?>(null);
+
+  late final songMap = computed(() {
+    return {for (var s in allSongs.value) s.path: s};
+  });
   late final reservedHeight = computed(() {
     if (isDesktop) {
       // 80.0 is Player Bar, 24.0 is Player Margin
@@ -87,16 +96,39 @@ class AudioSignal {
   });
 
   late final recentlyAdded = computed(() {
-    return allSongs.value.take(50).toList();
+    final songs = List<Song>.from(allSongs.value);
+    songs.sort((a, b) {
+      final aDate = a.modifiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = b.modifiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+    return songs.take(50).toList();
   });
 
   late final recentlyPlayed = computed(() {
-    return historySongs.value.take(6).map((h) {
-      return allSongs.value.firstWhere(
-        (s) => s.path == h.songPath,
-        orElse: () => Song.fromPath(h.songPath),
-      );
-    }).toList();
+    final map = songMap.value;
+    return historySongs.value.take(10).map((h) => map[h.songPath]).whereType<Song>().toList();
+  });
+
+  late final effectiveQueue = computed(() {
+    final q = queue.value;
+    final indices = shuffledIndices.value;
+
+    if (indices.isNotEmpty && q.isNotEmpty && indices.length == q.length) {
+      try {
+        return indices.map((i) => q[i]).toList();
+      } catch (_) {
+        return q;
+      }
+    }
+    return q;
+  });
+
+  late final currentQueueIndex = computed(() {
+    final q = effectiveQueue.value;
+    final current = currentSong.value;
+    if (current == null || q.isEmpty) return -1;
+    return q.indexWhere((item) => item.id == current.path);
   });
 
   bool get isDesktop =>
@@ -110,27 +142,41 @@ class AudioSignal {
         _updateDiscordPresence();
       });
     }
+    // Initialize album art directory
+    unawaited(SongCache.artDir.then((path) {
+      albumArtDir.value = path;
+    }));
 
     // Listen to streams
     _audioHandler.playbackState.listen((state) {
       isPlaying.value = state.playing;
       isShuffleMode.value = state.shuffleMode == AudioServiceShuffleMode.all;
+      repeatMode.value = state.repeatMode;
     });
-
     _audioHandler.mediaItem.listen((item) {
       if (item != null) {
         duration.value = item.duration ?? Duration.zero;
         try {
-          final song = allSongs.value.firstWhere((s) => s.path == item.id);
-          currentSong.value = song;
-          _updateDynamicTheme(song);
+          final song = songMap.value[item.id];
+          if (song != null) {
+            currentSong.value = song;
+            _updateDynamicTheme(song);
+          }
         } catch (_) {}
       }
     });
 
+    _audioHandler.queue.listen((items) {
+      queue.value = items;
+    });
+
     if (_audioHandler is MyAudioHandler) {
-      _audioHandler.player.positionStream.listen((pos) {
+      final myHandler = _audioHandler;
+      myHandler.player.positionStream.listen((pos) {
         position.value = pos;
+      });
+      myHandler.shuffleIndicesStream.listen((indices) {
+        shuffledIndices.value = indices;
       });
     }
 
@@ -360,26 +406,68 @@ class AudioSignal {
     await _audioHandler.stop();
   }
 
-  Future<void> playSong(Song song) async {
+  Future<void> playSong(Song song, {List<Song>? fromList}) async {
     if (_audioHandler is MyAudioHandler) {
-      final queue = _audioHandler.queue.value;
-      final isInQueue = queue.any((item) => item.id == song.path);
+      final handler = _audioHandler;
 
-      if (!isInQueue) {
-        // Song not in current queue (playlist), switch context
-        final isInLibrary = allSongs.value.any((s) => s.path == song.path);
+      if (fromList != null) {
+        // Use the provided list as the new queue context
+        await handler.setPlaylist(fromList);
+      } else {
+        final queue = handler.queue.value;
+        final isInQueue = queue.any((item) => item.id == song.path);
 
-        if (isInLibrary) {
-          // Switch to All Songs
-          await _audioHandler.setPlaylist(allSongs.value);
-        } else {
-          // Play just this song (external file)
-          await _audioHandler.setPlaylist([song]);
+        if (!isInQueue) {
+          // Song not in current queue, fallback to library or single song
+          final isInLibrary = allSongs.value.any((s) => s.path == song.path);
+          if (isInLibrary) {
+            await handler.setPlaylist(allSongs.value);
+          } else {
+            await handler.setPlaylist([song]);
+          }
         }
       }
 
-      await _audioHandler.playSong(song);
+      await handler.playSong(song);
       _updateDynamicTheme(song);
+    }
+  }
+
+  Future<void> playNext(Song song) async {
+    if (_audioHandler is MyAudioHandler) {
+      final handler = _audioHandler;
+
+      final mediaItem = MediaItem(
+        id: song.path,
+        album: song.album ?? "Unknown Album",
+        title: song.title,
+        artist: song.artist,
+        artUri: null,
+        extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
+      );
+
+      // Remove existing instances of this song first
+      await handler.removeQueueItem(mediaItem);
+
+      final currentIndex = handler.playbackState.value.queueIndex ?? 0;
+      await handler.insertQueueItem(currentIndex + 1, mediaItem);
+    }
+  }
+
+  Future<void> addToQueue(Song song) async {
+    if (_audioHandler is MyAudioHandler) {
+      final handler = _audioHandler;
+
+      final mediaItem = MediaItem(
+        id: song.path,
+        album: song.album ?? "Unknown Album",
+        title: song.title,
+        artist: song.artist,
+        artUri: null,
+        extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
+      );
+
+      await handler.addQueueItem(mediaItem);
     }
   }
 
@@ -447,6 +535,27 @@ class AudioSignal {
     await _audioHandler.setShuffleMode(newMode);
   }
 
+  Future<void> toggleRepeat() async {
+    final currentMode = repeatMode.value;
+    AudioServiceRepeatMode newMode;
+
+    switch (currentMode) {
+      case AudioServiceRepeatMode.none:
+        newMode = AudioServiceRepeatMode.all;
+        break;
+      case AudioServiceRepeatMode.all:
+        newMode = AudioServiceRepeatMode.one;
+        break;
+      case AudioServiceRepeatMode.one:
+        newMode = AudioServiceRepeatMode.none;
+        break;
+      default:
+        newMode = AudioServiceRepeatMode.none;
+    }
+
+    await _audioHandler.setRepeatMode(newMode);
+  }
+
   // Playlist Management
   Future<void> _loadPlaylists() async {
     final loaded = await PlaylistService.loadPlaylists();
@@ -466,7 +575,7 @@ class AudioSignal {
     playlists.value = loaded;
   }
 
-  Future<void> createPlaylist(String name) async {
+  Future<Playlist> createPlaylist(String name) async {
     final playlist = Playlist(
       id: const Uuid().v4(),
       name: name,
@@ -475,9 +584,19 @@ class AudioSignal {
     );
     playlists.add(playlist);
     await PlaylistService.savePlaylists(playlists.value);
+    return playlist;
   }
 
   Future<void> deletePlaylist(String id) async {
+    // 1. Clear current if active
+    if (currentPlaylist.value?.id == id) {
+      currentPlaylist.value = null;
+    }
+
+    // 2. Unpin from sidebar
+    await settingsSignal.unpinPlaylist(id);
+
+    // 3. Remove and save
     playlists.removeWhere((p) => p.id == id);
     await PlaylistService.savePlaylists(playlists.value);
   }
@@ -705,6 +824,7 @@ class AudioSignal {
         artist: metadata['artist'] ?? 'Unknown Artist',
         album: metadata['album'],
         duration: metadata['duration'],
+        modifiedAt: await file.lastModified(),
       );
       _explorerSongCache[file.path] = song;
       return song;
@@ -854,6 +974,7 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
               ? Duration(milliseconds: metadata.durationMs!.toInt())
               : null,
           bitrate: bitrate,
+          modifiedAt: File(path).lastModifiedSync(),
         );
 
         sendPort.send(song);
