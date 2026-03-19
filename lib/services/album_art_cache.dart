@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:metadata_god/metadata_god.dart';
+import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// LRU cache for album art - keeps only a limited number in memory
@@ -17,8 +17,7 @@ class AlbumArtCache {
   // Directory paths
   String? _artDirPath;
 
-  // Static flag to prevent double MetadataGod initialization
-  static bool _metadataInitialized = false;
+
 
   /// Initialize the cache directory
   Future<void> init() async {
@@ -29,10 +28,7 @@ class AlbumArtCache {
     if (!await artDir.exists()) {
       await artDir.create(recursive: true);
     }
-    if (!_metadataInitialized) {
-      MetadataGod.initialize();
-      _metadataInitialized = true;
-    }
+
   }
 
   /// Get the file path for a song's album art
@@ -83,9 +79,9 @@ class AlbumArtCache {
 
     // Fall back to extracting from audio file
     try {
-      final metadata = await MetadataGod.readMetadata(file: songPath);
-      if (metadata.picture != null) {
-        final art = metadata.picture!.data;
+      final metadata = readMetadata(File(songPath));
+      if (metadata.pictures.isNotEmpty) {
+        final art = metadata.pictures.first.bytes;
         // Cache to disk for future use
         await _saveArtToDisk(songPath, art);
         return artFile;
@@ -126,9 +122,9 @@ class AlbumArtCache {
 
     // Try to extract and cache
     try {
-      final metadata = await MetadataGod.readMetadata(file: songPath);
-      if (metadata.picture != null) {
-        final art = metadata.picture!.data;
+      final metadata = readMetadata(File(songPath));
+      if (metadata.pictures.isNotEmpty) {
+        final art = metadata.pictures.first.bytes;
         await _saveArtToDisk(songPath, art);
         return artFile.uri;
       }

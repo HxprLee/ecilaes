@@ -18,6 +18,7 @@ import 'screens/settings/playback_section.dart';
 import 'screens/settings/library_section.dart';
 import 'screens/settings/about_section.dart';
 import 'screens/settings/actions_layout_section.dart';
+import 'screens/settings/lyrics_appearance_section.dart';
 
 /// Creates the GoRouter configuration.
 final GoRouter router = GoRouter(
@@ -124,6 +125,13 @@ final GoRouter router = GoRouter(
                   pageBuilder: (context, state) => _buildPageWithTransition(
                     state,
                     const ActionsLayoutSection(),
+                  ),
+                ),
+                GoRoute(
+                  path: 'lyrics-layout',
+                  pageBuilder: (context, state) => _buildPageWithTransition(
+                    state,
+                    const LyricsAppearanceSection(),
                   ),
                 ),
               ],

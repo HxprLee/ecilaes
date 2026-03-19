@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -14,6 +15,8 @@ import 'marquee_text.dart';
 import 'song_actions_sheet.dart';
 import 'player/queue_view.dart';
 import '../services/youtube_service.dart';
+import 'mobile_lyrics_view.dart';
+import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 
 class MorphingPlayer extends StatefulWidget {
   final double bottomOffset;
@@ -29,6 +32,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     with TickerProviderStateMixin {
   late AnimationController _controller;
   late AnimationController _visibilityController;
+  late AnimationController _lyricsController;
   File? _currentAlbumArt;
   String? _currentSongPath;
   bool _isSeeking = false;
@@ -54,6 +58,69 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   double _dragDownOffset = 0.0;
   late AnimationController _dragResetController;
 
+  static final _bitrateCache = <String, String>{};
+
+  String _getCodecAndBitrate(Song song) {
+    if (song.path.startsWith('yt:')) {
+      final mime = youtubeService.lastStreamMimeType ?? 'audio/mp4';
+      final codecLabel = mime.contains('mp4') ? 'M4A' : mime.contains('webm') ? 'WEBM' : mime.split('/').last.toUpperCase();
+      final kbps = youtubeService.lastStreamBitrateKbps ?? '—';
+      return 'YT $codecLabel | ${kbps}Kbps';
+    }
+    
+    final ext = song.path.split('.').last.toUpperCase();
+    if (_bitrateCache.containsKey(song.path)) {
+      return '$ext | ${_bitrateCache[song.path]}Kbps';
+    }
+    
+    try {
+      final file = File(song.path);
+      if (file.existsSync()) {
+        final metadata = readMetadata(file, getImage: false);
+        if (metadata.bitrate != null) {
+          final br = '${(metadata.bitrate! / 1000).round()}';
+          _bitrateCache[song.path] = br;
+          return '$ext | ${br}Kbps';
+        }
+      }
+    } catch (_) {}
+    
+    final fallback = song.bitrate?.toString() ?? '---';
+    _bitrateCache[song.path] = fallback;
+    return '$ext | ${fallback}Kbps';
+  }
+
+  Timer? _immersionTimer;
+  bool _showControls = true;
+
+  void _resetImmersionTimer() {
+    _immersionTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _showControls = true;
+      });
+    }
+
+    final lyrics = audioSignal.currentLyrics.value;
+    final hasSyncedLyrics = lyrics != null && RegExp(r'\[\d{2}:\d{2}').hasMatch(lyrics);
+    
+    // Desktop layout (wide screens) doesn't auto-hide controls
+    final isDesktopLayout = MediaQuery.of(context).size.width >= 900;
+
+    if (audioSignal.showLyrics.value && 
+        audioSignal.isPlaying.value && 
+        hasSyncedLyrics && 
+        !isDesktopLayout) {
+      _immersionTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted) {
+          setState(() {
+            _showControls = false;
+          });
+        }
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -70,12 +137,29 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               FocusManager.instance.primaryFocus != null) {
             FocusManager.instance.primaryFocus?.unfocus();
           }
+
+          // Automatically disable lyrics when minimized
+          if (_controller.value < 1.0 && audioSignal.showLyrics.value) {
+            audioSignal.showLyrics.value = false;
+          }
         });
 
     _visibilityController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
+
+    _lyricsController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    effect(() {
+      if (audioSignal.showLyrics.value) {
+        _lyricsController.forward();
+      } else {
+        _lyricsController.reverse();
+      }
+    });
 
     _dragResetController =
         AnimationController(
@@ -115,10 +199,25 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     effect(() {
       final _ = audioSignal.minimizePlayerTrigger.value;
       if (_controller.value > 0) {
-        _controller.animateTo(
-          0.0,
-          curve: Curves.fastLinearToSlowEaseIn,
-        );
+        _controller.animateTo(0.0, curve: Curves.fastLinearToSlowEaseIn);
+      }
+    });
+
+    // Listener for Immersion Mode
+    effect(() {
+      final showLyrics = audioSignal.showLyrics.value;
+      final isPlaying = audioSignal.isPlaying.value;
+      
+      if (showLyrics && isPlaying) {
+        _resetImmersionTimer();
+      } else {
+        // Force show and cancel timer when lyrics are dismissed OR playback is paused
+        _immersionTimer?.cancel();
+        if (mounted && !_showControls) {
+          setState(() {
+            _showControls = true;
+          });
+        }
       }
     });
   }
@@ -128,6 +227,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     _controller.dispose();
     _visibilityController.dispose();
     _dragResetController.dispose();
+    _lyricsController.dispose();
+    _immersionTimer?.cancel();
     super.dispose();
   }
 
@@ -272,7 +373,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     );
 
     // 3. Calculate Album Art Position (Top Anchored & Scaled)
-    const maxArtSize = 550.0;
+    const maxArtSize = 600.0;
     const sidePadding = 32.0;
     final availableWidth = screenWidth - (sidePadding * 2);
 
@@ -392,23 +493,58 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           : _fullPadding + _leftControlsWidth + _artSpacing;
 
       return AnimatedBuilder(
-        animation: Listenable.merge([_controller, _visibilityController]),
+        animation: Listenable.merge([
+          _controller,
+          _visibilityController,
+          _lyricsController,
+        ]),
         builder: (context, child) {
           final value = _controller.value;
-          
+
           final topPadding = MediaQuery.of(context).padding.top;
           final bottomPadding = MediaQuery.of(context).padding.bottom;
           final currentTopPadding = lerpDouble(0, topPadding, value)!;
           final currentBottomPadding = lerpDouble(0, bottomPadding, value)!;
 
+          final rawLyricsValue = const Cubic(0.76, 0, 0.24, 1).transform(_lyricsController.value);
+          // Layout mode: Desktop if width >= 900, otherwise Mobile
+          final isDesktopLayoutMode = screenWidth >= 900;
+          
+          // On desktop side-by-side, don't morph the art/text — keep them in place
+          final lyricsValue = isDesktopLayoutMode ? 0.0 : rawLyricsValue;
+
           // --- Layout Interpolation ---
-          // Calculate target layout for expanded state
-          final expandedLayout = _calculateExpandedLayout(
-            screenWidth,
+          // Clamping and Centering Logic for Desktop
+          const paneGap = 48.0;
+          final maxPaneWidth = ((screenWidth - paneGap - 64.0) / 2).clamp(0.0, 600.0);
+          
+          // Calculate the target width for the player part
+          final playerWidth = isDesktopLayoutMode 
+              ? lerpDouble(screenWidth, maxPaneWidth, rawLyricsValue)!
+              : screenWidth;
+          
+          // Calculate how much to shift the player to the left to center the group
+          final groupWidth = maxPaneWidth * 2 + paneGap;
+          final groupLeft = (screenWidth - groupWidth) / 2;
+          final playerShift = isDesktopLayoutMode
+              ? lerpDouble(0, groupLeft, rawLyricsValue)!
+              : 0.0;
+          
+          final rawLayout = _calculateExpandedLayout(
+            playerWidth,
             screenHeight,
             currentTopPadding,
             currentBottomPadding,
             isCompact || isMobile,
+          );
+          
+          // Shift the layout Rects for side-by-side grouping
+          final expandedLayout = (
+            art: rawLayout.art.shift(Offset(playerShift, 0)),
+            info: rawLayout.info.shift(Offset(playerShift, 0)),
+            seekbar: rawLayout.seekbar.shift(Offset(playerShift, 0)),
+            controls: rawLayout.controls.shift(Offset(playerShift, 0)),
+            actions: rawLayout.actions.shift(Offset(playerShift, 0)),
           );
 
           final currentHeight = lerpDouble(_barHeight, screenHeight, value)!;
@@ -437,21 +573,50 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
           // Art Layout
           final startArtTop = 13.3; // Perfectly centered in 80px bar: (80-50)/2
-          final artTop = lerpDouble(
+          final baseArtTop = lerpDouble(
             startArtTop,
             expandedLayout.art.top,
             value,
           )!;
-          final artLeft = lerpDouble(
+          final baseArtLeft = lerpDouble(
             startArtLeft,
             expandedLayout.art.left,
             value,
           )!;
-          final artSize = lerpDouble(
+          final baseArtSize = lerpDouble(
             _miniArtSize,
             expandedLayout.art.width,
             value,
           )!;
+
+          final targetLyricsArtLeft = expandedLayout.info.left;
+          final targetLyricsArtTop = expandedLayout.art.top;
+          final targetLyricsArtSize = 56.0;
+
+          final artTop = lerpDouble(
+            baseArtTop,
+            targetLyricsArtTop,
+            lyricsValue,
+          )!;
+          final artLeft = lerpDouble(
+            baseArtLeft,
+            targetLyricsArtLeft,
+            lyricsValue,
+          )!;
+          final artSize = lerpDouble(
+            baseArtSize,
+            targetLyricsArtSize,
+            lyricsValue,
+          )!;
+
+          final targetLyricsInfoLeft =
+              targetLyricsArtLeft + targetLyricsArtSize + 16.0;
+          final targetLyricsInfoRect = Rect.fromLTWH(
+            targetLyricsInfoLeft,
+            targetLyricsArtTop,
+            expandedLayout.info.right - targetLyricsInfoLeft,
+            targetLyricsArtSize,
+          );
 
           // --- Visibility Interpolation ---
           final visibilityCurve = Curves.easeInOut;
@@ -469,171 +634,219 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             bottom: effectiveBottom,
             height: currentHeight,
             child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onVerticalDragStart: _handleDragStart,
-                onVerticalDragUpdate: _handleDragUpdate,
-                onVerticalDragEnd: _handleDragEnd,
-                onTap: value == 0
-                    ? () => _controller.animateTo(
-                        1.0,
-                        curve: Curves.fastLinearToSlowEaseIn,
-                      )
-                    : null,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(
-                      lerpDouble(50, 0, value)!,
-                    ),
-                    child: BackdropFilter(
-                      filter: settingsSignal.enableGlobalBlur.value
-                          ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
-                          : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Color.lerp(
-                            Theme.of(context)
-                                .extension<AppThemeExtension>()!
-                                .playerBarBackground
-                                .withValues(
-                                  alpha: settingsSignal.enableGlobalBlur.value
-                                      ? 0.92
-                                      : 1.0,
-                                ),
-                            Theme.of(context).colorScheme.surface,
-                            value,
-                          ),
-                          borderRadius: BorderRadius.circular(
-                            lerpDouble(50, 0, value)!,
-                          ),
-                          border: Border.all(
-                            color: Color.lerp(
-                              Theme.of(
-                                context,
-                              ).colorScheme.secondary.withValues(alpha: 0.15),
-                              Colors.transparent,
-                              value,
-                            )!,
-                            width: lerpDouble(2, 0, value)!,
-                          ),
-                          boxShadow: [
-                            if (value > 0)
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 10,
-                                offset: const Offset(0, -2),
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragStart: _handleDragStart,
+              onVerticalDragUpdate: _handleDragUpdate,
+              onVerticalDragEnd: _handleDragEnd,
+              onTap: value == 0
+                  ? () => _controller.animateTo(
+                      1.0,
+                      curve: Curves.fastLinearToSlowEaseIn,
+                    )
+                  : () {
+                      if (audioSignal.showLyrics.value) {
+                        _resetImmersionTimer();
+                      }
+                    },
+              child: Material(
+                type: MaterialType.transparency,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(
+                    lerpDouble(50, 0, value)!,
+                  ),
+                  child: BackdropFilter(
+                    filter: settingsSignal.enableGlobalBlur.value
+                        ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
+                        : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Color.lerp(
+                          Theme.of(context)
+                              .extension<AppThemeExtension>()!
+                              .playerBarBackground
+                              .withValues(
+                                alpha: settingsSignal.enableGlobalBlur.value
+                                    ? 0.92
+                                    : 1.0,
                               ),
-                          ],
+                          Theme.of(context).colorScheme.surface,
+                          value,
                         ),
-                        child: Stack(
-                          children: [
-                            // 2. Full Screen Background
-                            if (currentSong != null)
-                              _buildBackground(currentSong, fullOpacity),
+                        borderRadius: BorderRadius.circular(
+                          lerpDouble(50, 0, value)!,
+                        ),
+                        border: Border.all(
+                          color: Color.lerp(
+                            Theme.of(
+                              context,
+                            ).colorScheme.secondary.withValues(alpha: 0.15),
+                            Colors.transparent,
+                            value,
+                          )!,
+                          width: lerpDouble(2, 0, value)!,
+                        ),
+                        boxShadow: [
+                          if (value > 0)
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, -2),
+                            ),
+                        ],
+                      ),
+                      child: Stack(
+                        children: [
+                          // 2. Full Screen Background
+                          if (currentSong != null)
+                            _buildBackground(currentSong, fullOpacity),
 
-                            Positioned.fill(
-                              child: Stack(
-                                children: [
-                                  // 2. Album Art
-                                  Positioned(
-                                    top: artTop,
-                                    left: artLeft,
-                                    width: artSize,
-                                    height: artSize,
-                                    child: Watch((context) {
-                                      final position = audioSignal.position.value;
-                                      return _buildMorphingArt(
+                          Positioned.fill(
+                            child: Stack(
+                              children: [
+                                // 2. Lyrics Body
+                                // Mobile: overlay that fades in/out
+                                // Desktop Layout: side-by-side panel on the right half of the group
+                                if (!isDesktopLayoutMode && rawLyricsValue > 0.0)
+                                  Opacity(
+                                    opacity: rawLyricsValue,
+                                    child: IgnorePointer(
+                                      ignoring: rawLyricsValue < 0.8,
+                                      child: _buildLyricsBody(
                                         currentSong,
-                                        value,
-                                        artSize,
-                                        isPlaying,
-                                        duration,
-                                        position,
-                                      );
-                                    }),
+                                        screenWidth,
+                                        expandedLayout,
+                                        isDesktopLayout: false,
+                                      ),
+                                    ),
                                   ),
-                                  // 3. Song Info (Text)
-                                  _buildMorphingText(
-                                    value,
-                                    screenWidth,
-                                    currentSong,
-                                    isPlaying,
-                                    expandedLayout.info,
-                                    isCompact,
-                                    isMobile,
-                                  ),
-
-                                  // 4. Playback Controls
-                                  _buildMorphingControls(
-                                    value,
-                                    screenWidth,
-                                    collapsedWidth,
-                                    isPlaying,
-                                    isCompact,
-                                    expandedLayout.controls,
+                                if (isDesktopLayoutMode && rawLyricsValue > 0.0)
+                                  Positioned(
+                                    top: 0,
+                                    bottom: 0,
+                                    // Slide in from the right relative to the group
+                                    left: lerpDouble(screenWidth, groupLeft + maxPaneWidth + paneGap, rawLyricsValue)!,
+                                    width: maxPaneWidth,
+                                    child: Opacity(
+                                      opacity: rawLyricsValue,
+                                      child: IgnorePointer(
+                                        ignoring: rawLyricsValue < 0.8,
+                                        child: _buildLyricsBody(
+                                          currentSong,
+                                          maxPaneWidth,
+                                          expandedLayout,
+                                          isDesktopLayout: true,
+                                        ),
+                                      ),
+                                    ),
                                   ),
 
-                                  // 5. Seekbar
-                                  Watch((context) {
+                                // 3. Album Art
+                                Positioned(
+                                  top: artTop,
+                                  left: artLeft,
+                                  width: artSize,
+                                  height: artSize,
+                                  child: Watch((context) {
                                     final position = audioSignal.position.value;
-                                    return _buildMorphingSeekbar(
-                                      isMobile,
+                                    return _buildMorphingArt(
+                                      currentSong,
                                       value,
-                                      position,
+                                      artSize,
+                                      isPlaying,
                                       duration,
-                                      screenWidth,
-                                      expandedLayout.seekbar,
+                                      position,
                                     );
                                   }),
+                                ),
 
-                                  // 6. Expanded Content (Actions)
-                                  _buildMorphingActions(
-                                    currentSong,
+                                // 4. Song Info (Text)
+                                _buildMorphingText(
+                                  value,
+                                  lyricsValue,
+                                  screenWidth,
+                                  currentSong,
+                                  isPlaying,
+                                  expandedLayout.info,
+                                  targetLyricsInfoRect,
+                                  isCompact,
+                                  isMobile,
+                                ),
+
+                                // 4. Playback Controls
+                                _buildMorphingControls(
+                                  value,
+                                  screenWidth,
+                                  collapsedWidth,
+                                  isPlaying,
+                                  isCompact,
+                                  expandedLayout.controls,
+                                ),
+
+                                // 5. Seekbar
+                                Watch((context) {
+                                  final position = audioSignal.position.value;
+                                  final hasLyrics =
+                                      audioSignal.currentLyrics.value != null;
+                                  return _buildMorphingSeekbar(
+                                    isMobile,
                                     value,
-                                    expandedLayout.actions,
-                                    collapsedWidth,
-                                    isCompact,
+                                    lyricsValue,
+                                    hasLyrics,
+                                    position,
+                                    duration,
+                                    screenWidth,
+                                    expandedLayout.seekbar,
+                                  );
+                                }),
+
+                                // 6. Expanded Content (Actions)
+                                _buildMorphingActions(
+                                  currentSong,
+                                  value,
+                                  expandedLayout.actions,
+                                  collapsedWidth,
+                                  isCompact,
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // 7. Collapse Button
+                          if (fullOpacity > 0)
+                            Positioned(
+                              top: 8 + currentTopPadding,
+                              left: screenWidth / 2 - 24,
+                              child: Opacity(
+                                opacity: fullOpacity,
+                                child: IconButton(
+                                  icon: Icon(
+                                    Icons.keyboard_arrow_down,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.secondary,
+                                    size: 24,
                                   ),
-                                ],
+                                  onPressed: () => _controller.animateTo(
+                                    0.0,
+                                    curve: Curves.fastLinearToSlowEaseIn,
+                                  ),
+                                ),
                               ),
                             ),
 
-                            // 7. Collapse Button
-                            if (fullOpacity > 0)
-                              Positioned(
-                                top: 8 + currentTopPadding,
-                                left: screenWidth / 2 - 24,
-                                child: Opacity(
-                                  opacity: fullOpacity,
-                                  child: IconButton(
-                                    icon: Icon(
-                                      Icons.keyboard_arrow_down,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.secondary,
-                                      size: 24,
-                                    ),
-                                    onPressed: () => _controller.animateTo(
-                                      0.0,
-                                      curve: Curves.fastLinearToSlowEaseIn,
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                            // 8. Reserved Space for Morphings (removed redundancy)
-                          ],
-                        ),
+                          // 8. Reserved Space for Morphings (removed redundancy)
+                        ],
                       ),
                     ),
                   ),
                 ),
               ),
-            );
-          },
-        );
-      });
-    }
+            ),
+          );
+        },
+      );
+    });
+  }
 
   Widget _buildBackground(Song currentSong, double fullOpacity) {
     if (fullOpacity <= 0) return const SizedBox.shrink();
@@ -650,18 +863,26 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                 if (!isBlurEnabled) return const SizedBox.shrink();
 
                 final isYoutube = currentSong.path.startsWith('yt:');
-                final ytThumbnailUrl = isYoutube ? 'https://img.youtube.com/vi/${currentSong.path.substring(3)}/hqdefault.jpg' : null;
+                final ytThumbnailUrl = isYoutube
+                    ? 'https://img.youtube.com/vi/${currentSong.path.substring(3)}/hqdefault.jpg'
+                    : null;
 
                 return Positioned.fill(
                   child: ImageFiltered(
                     imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
                     child: isYoutube
-                        ? Image.network(ytThumbnailUrl!, fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: Theme.of(context).colorScheme.surface))
+                        ? Image.network(
+                            ytThumbnailUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (c, e, s) => Container(
+                              color: Theme.of(context).colorScheme.surface,
+                            ),
+                          )
                         : _currentAlbumArt != null
-                            ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
-                            : Container(
-                                color: Theme.of(context).colorScheme.surface,
-                              ),
+                        ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
+                        : Container(
+                            color: Theme.of(context).colorScheme.surface,
+                          ),
                   ),
                 );
               }),
@@ -718,12 +939,21 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   Widget _buildMorphingSeekbar(
     bool isMobile,
     double value,
+    double lyricsValue,
+    bool hasLyrics,
     Duration position,
     Duration duration,
     double screenWidth,
     Rect targetRect,
   ) {
     if (value < 0.9) return const SizedBox.shrink();
+
+    // Fade out seekbar if lyrics are showing AND they exist
+    final effectLyricsOpacity = hasLyrics ? lyricsValue : 0.0;
+    final seekbarOpacity =
+        ((value - 0.9) * 10).clamp(0.0, 1.0) * (1.0 - effectLyricsOpacity);
+
+    if (seekbarOpacity <= 0) return const SizedBox.shrink();
 
     // Interpolate
     // Start state isn't really visible, so we can just interpolate to target
@@ -736,9 +966,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       left: currentLeft,
       width: currentWidth,
       child: IgnorePointer(
-        ignoring: value < 0.9, // Only interactive when fully expanded
+        ignoring:
+            value < 0.9 ||
+            effectLyricsOpacity >
+                0.5, // Only interactive when fully expanded and lyrics hidden
         child: Opacity(
-          opacity: ((value - 0.9) * 10).clamp(0.0, 1.0),
+          opacity: seekbarOpacity,
           child: Column(
             spacing: 6,
             children: [
@@ -821,10 +1054,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
   Widget _buildMorphingText(
     double value,
+    double lyricsValue,
     double screenWidth,
     Song? currentSong,
     bool isPlaying,
     Rect targetRect,
+    Rect lyricsTargetRect,
     bool isCompact,
     bool isMobile,
   ) {
@@ -838,26 +1073,40 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
     // Calculate start width based on layout (Compact vs Full)
     final rightControlsWidth = isCompact
-        ? 120.0 // 100px controls + 20px padding
-        : 260.0; // Increased for desktop
+        ? 150.0 // Safer buffer for mobile/compact (100px controls + 50px buffer)
+        : 400.0; // Very safe buffer for desktop (280px controls + padding + margin)
     final availableWidth = screenWidth - widget.leftOffset;
     final margin = isMobile ? _compactMargin : _fullMargin;
     final collapsedWidth = (availableWidth - (margin * 2)).clamp(0.0, 1200.0);
     final fixedStartWidth =
-        collapsedWidth - fixedStartLeft - rightControlsWidth;
+        (collapsedWidth - fixedStartLeft - rightControlsWidth).clamp(100.0, 1200.0);
 
-    // Interpolation
-    final currentLeft = lerpDouble(fixedStartLeft, targetRect.left, value)!;
-    final currentTop = lerpDouble(fixedStartTop, targetRect.top, value)!;
-    final currentWidth = lerpDouble(fixedStartWidth, targetRect.width, value)!;
+    // Interpolation (Mini -> Expanded)
+    final baseLeft = lerpDouble(fixedStartLeft, targetRect.left, value)!;
+    final baseTop = lerpDouble(fixedStartTop, targetRect.top, value)!;
+    final baseWidth = lerpDouble(fixedStartWidth, targetRect.width, value)!;
+    final baseHeight = lerpDouble(fixedStartHeight, targetRect.height, value)!;
+
+    // Interpolation (Expanded -> Lyrics Header)
+    final currentLeft = lerpDouble(
+      baseLeft,
+      lyricsTargetRect.left,
+      lyricsValue,
+    )!;
+    final currentTop = lerpDouble(baseTop, lyricsTargetRect.top, lyricsValue)!;
+    final currentWidth = lerpDouble(
+      baseWidth,
+      lyricsTargetRect.width,
+      lyricsValue,
+    )!;
     final currentHeight = lerpDouble(
-      fixedStartHeight,
-      targetRect.height,
-      value,
+      baseHeight,
+      lyricsTargetRect.height,
+      lyricsValue,
     )!;
 
-    // Text Styles
-    final titleStyle = TextStyle.lerp(
+    // Text Styles (Mini -> Expanded)
+    final baseTitleStyle = TextStyle.lerp(
       TextStyle(
         color: Theme.of(context).colorScheme.secondary,
         fontWeight: FontWeight.w500,
@@ -868,12 +1117,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         color: Theme.of(context).colorScheme.secondary,
         fontSize: 20,
         fontWeight: FontWeight.w600,
-        height: 1.2,
+        height: 1.4,
       ),
       value,
     )!;
 
-    final artistStyle = TextStyle.lerp(
+    final baseArtistStyle = TextStyle.lerp(
       TextStyle(
         color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.8),
         fontSize: 12,
@@ -883,9 +1132,34 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
         fontWeight: FontWeight.w500,
         fontSize: 16,
-        height: 1.2,
+        height: 1.4,
       ),
       value,
+    )!;
+
+    // Morph to Lyrics Header Styles
+    final lyricsTitleStyle = TextStyle(
+      color: Theme.of(context).colorScheme.secondary,
+      fontWeight: FontWeight.bold,
+      fontSize: 20,
+      height: 1.3,
+    );
+    final lyricsArtistStyle = TextStyle(
+      color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+      fontWeight: FontWeight.w500,
+      fontSize: 16,
+      height: 1.3,
+    );
+
+    final titleStyle = TextStyle.lerp(
+      baseTitleStyle,
+      lyricsTitleStyle,
+      lyricsValue,
+    )!;
+    final artistStyle = TextStyle.lerp(
+      baseArtistStyle,
+      lyricsArtistStyle,
+      lyricsValue,
     )!;
 
     return Positioned(
@@ -976,18 +1250,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        value > 0.5
-            ? MarqueeText(
-                text: currentSong?.title ?? 'No song playing',
-                style: titleStyle,
-                isPlaying: isPlaying,
-              )
-            : Text(
-                currentSong?.title ?? 'No song playing',
-                style: titleStyle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+        MarqueeText(
+          text: currentSong?.title ?? 'No song playing',
+          style: titleStyle,
+          isPlaying: isPlaying,
+        ),
         SizedBox(height: 6),
         Text(
           currentSong?.artist ?? '',
@@ -1008,7 +1275,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     Duration position,
   ) {
     final isYoutube = currentSong?.path.startsWith('yt:') ?? false;
-    final ytThumbnailUrl = isYoutube ? 'https://img.youtube.com/vi/${currentSong!.path.substring(3)}/hqdefault.jpg' : null;
+    final ytThumbnailUrl = isYoutube
+        ? 'https://img.youtube.com/vi/${currentSong!.path.substring(3)}/hqdefault.jpg'
+        : null;
 
     return IgnorePointer(
       ignoring:
@@ -1068,26 +1337,36 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(value == 0 ? 50 : 8),
                     child: isYoutube
-                        ? Image.network(ytThumbnailUrl!, fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: Colors.grey[800], child: Icon(Icons.music_note, color: Theme.of(context).colorScheme.onSurface)))
-                        : _currentAlbumArt != null
-                            ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
-                            : (value == 0)
-                            ? Center(
-                                child: FaIcon(
-                                  isPlaying
-                                      ? FontAwesomeIcons.pause
-                                      : FontAwesomeIcons.play,
-                                  color: Theme.of(context).colorScheme.secondary,
-                                  size: 14,
-                                ),
-                              )
-                            : Container(
-                                color: Colors.grey[800],
-                                child: Icon(
-                                  Icons.music_note,
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                ),
+                        ? Image.network(
+                            ytThumbnailUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (c, e, s) => Container(
+                              color: Colors.grey[800],
+                              child: Icon(
+                                Icons.music_note,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
+                            ),
+                          )
+                        : _currentAlbumArt != null
+                        ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
+                        : (value == 0)
+                        ? Center(
+                            child: FaIcon(
+                              isPlaying
+                                  ? FontAwesomeIcons.pause
+                                  : FontAwesomeIcons.play,
+                              color: Theme.of(context).colorScheme.secondary,
+                              size: 14,
+                            ),
+                          )
+                        : Container(
+                            color: Colors.grey[800],
+                            child: Icon(
+                              Icons.music_note,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -1097,7 +1376,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       ),
     );
   }
-
 
   Widget _buildMorphingControls(
     double value,
@@ -1167,6 +1445,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     final song = audioSignal.currentSong.value;
     final hasSong = song != null;
 
+    final show = _showControls || value < 0.9;
+
     return Positioned(
       top: currentTop,
       left: currentLeft,
@@ -1176,10 +1456,17 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         targetRect.height,
         value,
       ), // Use full bar height in mini mode
-      child: RepaintBoundary(
-        child: Row(
-          mainAxisAlignment:
-              MainAxisAlignment.center, // Always center to prevent snapping
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 300),
+        opacity: show ? 1.0 : 0.0,
+        child: IgnorePointer(
+          ignoring: !show,
+          child: Listener(
+            onPointerDown: (_) => _resetImmersionTimer(),
+            child: RepaintBoundary(
+              child: Row(
+            mainAxisAlignment:
+                MainAxisAlignment.center, // Always center to prevent snapping
           children: [
             IconButton(
               padding: buttonPadding,
@@ -1259,6 +1546,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           ],
         ),
       ),
+      ),
+      ),
+      ),
     );
   }
 
@@ -1278,7 +1568,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     final startRight = 16.0;
     final startTop = 15.0; // Moved up by 1px
     final startWidth =
-        220.0; // Increased width to prevent overflow (200 was too tight)
+        280.0; // Fits: Shuffle, Repeat, Lyrics, Queue, More
     final startLeft = collapsedWidth - startRight - startWidth;
 
     // End State (Expanded)
@@ -1302,18 +1592,23 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     // Interpolate Spacing
     final spacing = lerpDouble(12, 18, value)!;
 
+    final show = _showControls || value < 0.9;
+
     return Positioned(
       top: currentTop,
       left: currentLeft,
       width: currentWidth,
       height: currentHeight,
-      child: Opacity(
-        opacity: actionsOpacity,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 300),
+        opacity: show ? actionsOpacity : 0.0,
         child: IgnorePointer(
-          ignoring: isCompact && value < 0.05,
-          child: Stack(
-            alignment: Alignment.bottomCenter, // Align to bottom
-            children: [
+          ignoring: (isCompact && value < 0.05) || !show,
+          child: Listener(
+            onPointerDown: (_) => _resetImmersionTimer(),
+            child: Stack(
+              alignment: Alignment.bottomCenter, // Align to bottom
+              children: [
               // Format Badge (Positioned above buttons)
               if (currentSong != null)
                 Positioned(
@@ -1334,22 +1629,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                           ).colorScheme.secondary.withOpacity(0.2),
                         ),
                       ),
-                        child: Text(
-                          () {
-                            if (currentSong.path.startsWith('yt:')) {
-                              // Derive a short codec label from the mime type
-                              // e.g. "audio/mp4" -> "M4A", "audio/webm" -> "WEBM"
-                              final mime = youtubeService.lastStreamMimeType ?? 'audio/mp4';
-                              final codecLabel = mime.contains('mp4')
-                                  ? 'M4A'
-                                  : mime.contains('webm')
-                                      ? 'WEBM'
-                                      : mime.split('/').last.toUpperCase();
-                              final kbps = youtubeService.lastStreamBitrateKbps ?? '—';
-                              return 'YT $codecLabel | ${kbps}Kbps';
-                            }
-                            return '${currentSong.path.split('.').last.toUpperCase()} | ${currentSong.bitrate ?? '---'}Kbps';
-                          }(),
+                      child: Text(
+                        _getCodecAndBitrate(currentSong),
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onSecondary,
                           fontWeight: FontWeight.w900,
@@ -1389,7 +1670,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                       final mode = audioSignal.repeatMode.value;
                       final isNone = mode == AudioServiceRepeatMode.none;
                       final isOne = mode == AudioServiceRepeatMode.one;
-                      
+
                       return IconButton(
                         icon: Stack(
                           alignment: Alignment.center,
@@ -1398,9 +1679,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                               FontAwesomeIcons.repeat,
                               color: !isNone
                                   ? Theme.of(context).colorScheme.secondary
-                                  : Theme.of(
-                                      context,
-                                    ).colorScheme.secondary.withValues(alpha: 0.4),
+                                  : Theme.of(context).colorScheme.secondary
+                                        .withValues(alpha: 0.4),
                               size: iconSize,
                             ),
                             if (isOne)
@@ -1410,7 +1690,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 child: Container(
                                   padding: const EdgeInsets.all(1),
                                   decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.surface,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surface,
                                     shape: BoxShape.circle,
                                   ),
                                   child: Text(
@@ -1418,7 +1700,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.secondary,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.secondary,
                                     ),
                                   ),
                                 ),
@@ -1426,6 +1710,22 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                           ],
                         ),
                         onPressed: audioSignal.toggleRepeat,
+                      );
+                    }),
+                    SizedBox(width: spacing),
+                    Watch((context) {
+                      final showLyrics = audioSignal.showLyrics.value;
+                      return IconButton(
+                        icon: FaIcon(
+                          FontAwesomeIcons.music,
+                          color: showLyrics
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.secondary,
+                          size: iconSize,
+                        ),
+                        onPressed: () {
+                          audioSignal.showLyrics.value = !showLyrics;
+                        },
                       );
                     }),
                     SizedBox(width: spacing),
@@ -1462,7 +1762,85 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             ],
           ),
         ),
+        ),
       ),
     );
+  }
+
+  Widget _buildLyricsBody(
+    Song? currentSong,
+    double screenWidth,
+    dynamic expandedLayout, {
+    bool isDesktopLayout = false,
+  }) {
+    if (currentSong == null) return const SizedBox.shrink();
+
+    // For mobile overlays, lyrics start below the shifted album art.
+    // For desktop side-by-side, lyrics take up the full panel.
+    final topPadding = isDesktopLayout ? 80.0 : (expandedLayout.art.top + 46.0);
+
+    return Watch((context) {
+      final lyrics = audioSignal.currentLyrics.value;
+      final hasLyrics = lyrics != null;
+
+      final bottomEdge = isDesktopLayout
+          ? MediaQuery.of(context).size.height
+          : (hasLyrics
+              ? (_showControls
+                  ? expandedLayout.controls.top
+                  : MediaQuery.of(context).size.height - 24.0)
+              : expandedLayout.seekbar.top);
+              
+      final availableHeight = bottomEdge - topPadding;
+
+      Widget content;
+      if (!hasLyrics) {
+        final loadingHeight = expandedLayout.seekbar.top - topPadding;
+        content = SizedBox(
+          width: screenWidth,
+          height: loadingHeight,
+          child: Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Theme.of(
+                  context,
+                ).colorScheme.secondary.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+        );
+      } else {
+        final alignment = settingsSignal.lyricsAlignment.value;
+        final isCentered = alignment == TextAlign.center;
+
+        final lyricsWidget = MobileLyricsView(
+          lyricsText: lyrics,
+          onUserScrollDown: _resetImmersionTimer,
+        );
+
+        content = AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          width: screenWidth,
+          height: availableHeight,
+          child: isDesktopLayout || isCentered
+              ? lyricsWidget
+              : Center(
+                  child: SizedBox(
+                    width: expandedLayout.info.width,
+                    child: lyricsWidget,
+                  ),
+                ),
+        );
+      }
+
+      return Padding(
+        padding: EdgeInsets.only(top: topPadding),
+        child: content,
+      );
+    });
   }
 }

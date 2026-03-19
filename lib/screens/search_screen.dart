@@ -166,29 +166,39 @@ class _ResultsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (songs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FaIcon(
-              isSearching ? FontAwesomeIcons.magnifyingGlass : FontAwesomeIcons.music,
-              size: 48,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isSearching ? emptyMessage : 'Start typing to search',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    return Watch((context) {
+      final isSearchingYoutube = audioSignal.isSearchingYoutube.value;
+      final showLoading = isSearchingYoutube && songs.isEmpty;
 
-    return CustomScrollView(
+      if (showLoading) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      }
+
+      if (songs.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              FaIcon(
+                isSearching ? FontAwesomeIcons.magnifyingGlass : FontAwesomeIcons.music,
+                size: 48,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                isSearching ? emptyMessage : 'Start typing to search',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      return CustomScrollView(
       slivers: [
         SuperSliverList(
           delegate: SliverChildBuilderDelegate((context, index) {
@@ -265,5 +275,6 @@ class _ResultsList extends StatelessWidget {
         ),
       ],
     );
+    });
   }
 }

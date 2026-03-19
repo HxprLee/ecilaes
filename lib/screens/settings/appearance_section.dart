@@ -522,6 +522,44 @@ class AppearanceSection extends StatelessWidget {
                               context.go('/settings/appearance/actions-layout');
                             },
                           ),
+                          Divider(
+                            height: 1,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.05),
+                            indent: 16,
+                            endIndent: 16,
+                          ),
+                          ListTile(
+                            title: Text(
+                              'Lyrics View Layout',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface,
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Customize lyrics alignment and font sizes',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.54),
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: Icon(
+                              Icons.chevron_right,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.3),
+                            ),
+                            onTap: () {
+                              context.go('/settings/appearance/lyrics-layout');
+                            },
+                          ),
                         ],
                       ),
                     ),

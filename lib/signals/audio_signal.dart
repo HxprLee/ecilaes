@@ -7,9 +7,10 @@ import 'package:audio_service/audio_service.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:palette_generator/palette_generator.dart';
+import 'package:http/http.dart' as http;
 import 'settings_signal.dart';
 import 'package:uuid/uuid.dart';
-import 'package:metadata_god/metadata_god.dart';
+import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 
 import '../models/song.dart';
 import '../models/playlist.dart';
@@ -21,6 +22,9 @@ import '../services/playlist_service.dart';
 import '../services/playback_history_service.dart';
 import '../services/youtube_service.dart';
 import '../models/history_entry.dart';
+import '../services/metadata_service.dart';
+import '../services/album_art_cache.dart';
+import '../services/lyrics_service.dart';
 
 class AudioSignal {
   static final AudioSignal _instance = AudioSignal._internal();
@@ -62,6 +66,8 @@ class AudioSignal {
   final bottomPadding = signal<double>(0.0);
   final minimizePlayerTrigger = signal<int>(0);
   final albumArtDir = signal<String?>(null);
+  final currentLyrics = signal<String?>(null);
+  final showLyrics = signal<bool>(false);
 
   late final songMap = computed(() {
     return {for (var s in allSongs.value) s.path: s};
@@ -83,6 +89,7 @@ class AudioSignal {
   final Map<String, Song> _explorerSongCache = {};
 
   final youtubeSearchResults = listSignal<Song>([]);
+  final isSearchingYoutube = signal<bool>(false);
   Timer? _searchDebounce;
 
   // Computed for backward compatibility or simple checks
@@ -185,6 +192,13 @@ class AudioSignal {
           if (song != null) {
             currentSong.value = song;
             _updateDynamicTheme(song);
+            _loadLyricsForSong(song);
+
+            // Lazy metadata fix for untagged local songs
+            if (!song.path.startsWith('yt:') &&
+                (song.artist == 'Unknown Artist' || song.album == null)) {
+              unawaited(_refreshMetadata(song));
+            }
           }
         } catch (_) {}
       }
@@ -216,10 +230,20 @@ class AudioSignal {
 
       _searchDebounce = Timer(const Duration(milliseconds: 700), () async {
         try {
-          final results = await youtubeService.searchSongs(query);
+          final trimmedQuery = query.trim();
+          if (trimmedQuery.isEmpty) return;
+
+          isSearchingYoutube.value = true;
+          debugPrint(
+              'AudioSignal: Debounced search for "$trimmedQuery" starting...');
+          final results = await youtubeService.searchSongs(trimmedQuery);
           youtubeSearchResults.value = results;
+          debugPrint(
+              'AudioSignal: Search results updated (${results.length} songs)');
         } catch (e) {
-          print('YouTube search error: $e');
+          debugPrint('AudioSignal: YouTube search error: $e');
+        } finally {
+          isSearchingYoutube.value = false;
         }
       });
     });
@@ -228,6 +252,74 @@ class AudioSignal {
     unawaited(_loadCacheAndScan());
     unawaited(_loadPlaylists());
     unawaited(_loadHistory());
+  }
+
+  Future<void> _refreshMetadata(Song song) async {
+    final parsed = MetadataService().parseFromFilename(song.path);
+    final online = await MetadataService().fetchOnlineMetadata(
+      parsed['artist'] ?? song.artist,
+      parsed['title'] ?? song.title,
+    );
+
+    if (online != null) {
+      final updatedSong = song.copyWith(
+        title: online['title'] ?? song.title,
+        artist: online['artist'] ?? song.artist,
+        album: online['album'] ?? song.album,
+        duration: online['duration'] ?? song.duration,
+      );
+
+      // Update in all signals/maps
+      batch(() {
+        if (this.currentSong.value?.path == song.path) {
+          this.currentSong.value = updatedSong;
+        }
+
+        final index = allSongs.value.indexWhere((s) => s.path == song.path);
+        if (index != -1) {
+          final newList = List<Song>.from(allSongs.value);
+          newList[index] = updatedSong;
+          allSongs.value = newList;
+        }
+
+        final newMap = Map<String, Song>.from(songMap.value);
+        newMap[song.path] = updatedSong;
+        // songMap is a Computed, it updates automatically when allSongs changes
+      });
+
+      // Persist to cache
+      await SongCache.saveCache(allSongs.value);
+
+      // If we found a new artwork URL and the song didn't have art, we could fetch it too
+      if (!song.hasAlbumArt && online['artworkUrl'] != null) {
+        try {
+          final artResponse = await http.get(Uri.parse(online['artworkUrl']));
+          if (artResponse.statusCode == 200) {
+            final artDir = await SongCache.artDir;
+            final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
+            await File(artPath).writeAsBytes(artResponse.bodyBytes);
+
+            // Mark as having art and update again
+            final withArt = updatedSong.copyWith(hasAlbumArt: true);
+            batch(() {
+              if (currentSong.value?.path == song.path) {
+                currentSong.value = withArt;
+              }
+              final idx = allSongs.value.indexWhere((s) => s.path == song.path);
+              if (idx != -1) {
+                final newList = List<Song>.from(allSongs.value);
+                newList[idx] = withArt;
+                allSongs.value = newList;
+              }
+            });
+            await SongCache.saveCache(allSongs.value);
+            _updateDynamicTheme(withArt);
+          }
+        } catch (e) {
+          debugPrint('Error fetching online artwork: $e');
+        }
+      }
+    }
   }
 
   Future<void> _loadHistory() async {
@@ -522,7 +614,7 @@ class AudioSignal {
     }
 
     try {
-      ImageProvider imageProvider;
+      ImageProvider? imageProvider;
 
       if (song.path.startsWith('yt:')) {
         // Use YouTube thumbnail for palette generation
@@ -531,30 +623,24 @@ class AudioSignal {
           'https://img.youtube.com/vi/$videoId/hqdefault.jpg',
         );
       } else {
-        final artDir = await SongCache.artDir;
-        final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
-        final file = File(artPath);
-        if (!await file.exists()) {
-          batch(() {
-            dynamicThemeSeed.value = null;
-            dominantColor.value = null;
-            mutedColor.value = null;
-          });
-          return;
+        // Use AlbumArtCache to get the file (handles extraction if needed)
+        final file = await AlbumArtCache().getArt(song.path);
+        if (file != null && await file.exists() && await file.length() > 0) {
+          imageProvider = FileImage(file);
         }
-        imageProvider = FileImage(file);
+      }
+
+      if (imageProvider == null) {
+        _resetTheme();
+        return;
       }
 
       final palette = await PaletteGenerator.fromImageProvider(
         imageProvider,
-        maximumColorCount: 10,
+        maximumColorCount: 16,
       );
 
-      // Try dominant color, fallback to vibrant
-      final color =
-          palette.vibrantColor?.color ??
-          palette.dominantColor?.color ??
-          palette.mutedColor?.color;
+      final color = _selectBestSeedColor(palette);
 
       batch(() {
         dominantColor.value = palette.dominantColor?.color;
@@ -563,14 +649,52 @@ class AudioSignal {
         dynamicThemeSeed.value = color;
       });
     } catch (e) {
-      print('Error updating dynamic theme: $e');
-      batch(() {
-        dynamicThemeSeed.value = null;
-        dominantColor.value = null;
-        mutedColor.value = null;
-      });
+      debugPrint('Error updating dynamic theme for ${song.title}: $e');
+      _resetTheme();
     }
   }
+
+  void _resetTheme() {
+    batch(() {
+      dynamicThemeSeed.value = null;
+      dominantColor.value = null;
+      mutedColor.value = null;
+    });
+  }
+
+  Future<void> _loadLyricsForSong(Song song) async {
+    // Reset state initially
+    currentLyrics.value = null;
+
+    final lyrics = await LyricsService().getLyrics(
+      path: song.path,
+      title: song.title,
+      artist: song.artist,
+      duration: song.duration,
+    );
+
+    // Ensure the song hasn't changed while we were fetching
+    if (currentSong.value?.path == song.path) {
+      currentLyrics.value = lyrics;
+    }
+  }
+
+  /// Picks the most dominant color from a palette to use as a theme seed.
+  Color? _selectBestSeedColor(PaletteGenerator palette) {
+    final dominant = palette.dominantColor?.color;
+    if (dominant == null) return null;
+    return _boostSaturation(dominant);
+  }
+
+  Color _boostSaturation(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    // If saturation is low but not gray, boost it for a more vibrant theme
+    if (hsl.saturation > 0.1 && hsl.saturation < 0.4) {
+      return hsl.withSaturation((hsl.saturation * 1.5).clamp(0.0, 1.0)).toColor();
+    }
+    return color;
+  }
+
 
   Future<void> playFile(File file) async {
     try {
@@ -933,8 +1057,7 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
   final String artDir = params['artDir'];
 
   try {
-    print('ISOLATE_DEBUG: Initializing MetadataGod');
-    MetadataGod.initialize();
+    print('ISOLATE_DEBUG: Indexing initialized');
 
     final dir = Directory(musicPath);
     print('ISOLATE_DEBUG: Scanning directory: $musicPath');
@@ -993,15 +1116,15 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
           'total': filesToProcess.length,
         });
 
-        final metadata = await MetadataGod.readMetadata(file: path);
+        final metadata = readMetadata(File(path));
 
         bool hasArt = false;
-        if (metadata.picture != null) {
+        if (metadata.pictures.isNotEmpty) {
           try {
             final artPath = '$artDir/${path.hashCode.abs()}.jpg';
             final artFile = File(artPath);
             if (!await artFile.exists()) {
-              await artFile.writeAsBytes(metadata.picture!.data);
+              await artFile.writeAsBytes(metadata.pictures.first.bytes);
             }
             hasArt = true;
           } catch (e) {
@@ -1009,25 +1132,25 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
           }
         }
 
-        // Calculate bitrate from file size and duration (lightweight)
-        int? bitrate;
-        if (metadata.durationMs != null && metadata.durationMs! > 0) {
+        // Use bitrate from metadata if available, otherwise calculate from file size
+        int? bitrate = metadata.bitrate != null ? (metadata.bitrate! / 1000).round() : null;
+        if (bitrate == null && metadata.duration != null && metadata.duration!.inSeconds > 0) {
           final fileSizeBytes = await File(path).length();
-          final durationSeconds = metadata.durationMs! / 1000;
+          final durationSeconds = metadata.duration!.inSeconds;
           bitrate = ((fileSizeBytes * 8) / durationSeconds / 1000).round();
         }
 
+        final parsed = MetadataService().parseFromFilename(path);
+        final hasTitle = metadata.title != null && metadata.title!.trim().isNotEmpty;
+        final hasArtist = metadata.artist != null && metadata.artist != 'Unknown Artist';
+
         final song = Song(
           path: path,
-          title: (metadata.title != null && metadata.title!.trim().isNotEmpty)
-              ? metadata.title!
-              : Song.fromPath(path).title,
-          artist: metadata.artist ?? 'Unknown Artist',
+          title: hasTitle ? metadata.title! : parsed['title']!,
+          artist: hasArtist ? metadata.artist! : parsed['artist']!,
           album: metadata.album,
           hasAlbumArt: hasArt,
-          duration: metadata.durationMs != null
-              ? Duration(milliseconds: metadata.durationMs!.toInt())
-              : null,
+          duration: metadata.duration,
           bitrate: bitrate,
           modifiedAt: File(path).lastModifiedSync(),
         );
@@ -1050,13 +1173,12 @@ Future<Map<String, dynamic>> _extractMetadata(
   String? artDir,
 ) async {
   try {
-    MetadataGod.initialize();
-    final metadata = await MetadataGod.readMetadata(file: path);
+    final metadata = readMetadata(File(path));
 
-    if (metadata.picture != null && artDir != null) {
+    if (metadata.pictures.isNotEmpty && artDir != null) {
       try {
         final artPath = '$artDir/${path.hashCode.abs()}.jpg';
-        await File(artPath).writeAsBytes(metadata.picture!.data);
+        await File(artPath).writeAsBytes(metadata.pictures.first.bytes);
       } catch (_) {}
     }
 
@@ -1066,9 +1188,7 @@ Future<Map<String, dynamic>> _extractMetadata(
           : null,
       'artist': metadata.artist,
       'album': metadata.album,
-      'duration': metadata.durationMs != null
-          ? Duration(milliseconds: metadata.durationMs!.toInt())
-          : null,
+      'duration': metadata.duration,
     };
   } catch (_) {
     return {};

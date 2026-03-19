@@ -77,9 +77,7 @@ class _MarqueeTextState extends State<MarqueeText> {
     _animationId++;
     _isScrolling = false;
     if (_scrollController.hasClients) {
-      try {
-        _scrollController.jumpTo(0);
-      } catch (_) {}
+      _scrollController.jumpTo(0);
     }
     _startScrolling();
   }
@@ -96,15 +94,13 @@ class _MarqueeTextState extends State<MarqueeText> {
 
     // Wait for layout and attachment
     await Future.delayed(const Duration(milliseconds: 100));
-    if (!mounted || !widget.isPlaying) return;
+    if (!mounted || !widget.isPlaying || _isScrolling) return;
 
     if (!_scrollController.hasClients) {
-      // Try again shortly
       Future.delayed(const Duration(milliseconds: 200), _startScrolling);
       return;
     }
 
-    // Check overflow with a small buffer
     if (_textWidth <= _lastAvailableWidth + 1.0) return;
 
     _runAnimation(_animationId);
@@ -117,49 +113,38 @@ class _MarqueeTextState extends State<MarqueeText> {
     while (mounted && widget.isPlaying && id == _animationId) {
       if (!_scrollController.hasClients) {
         await Future.delayed(const Duration(milliseconds: 500));
-        if (!mounted || !widget.isPlaying || id != _animationId) break;
         continue;
       }
 
       try {
-        // Ensure we are at start
+        // Ensure starting point
         _scrollController.jumpTo(0);
 
-        // Pause at start
+        // Initial pause
         await Future.delayed(widget.pauseDuration);
-        if (!mounted ||
-            !widget.isPlaying ||
-            id != _animationId ||
-            !_scrollController.hasClients)
-          break;
+        if (!mounted || !widget.isPlaying || id != _animationId) break;
 
-        // Calculate distance for seamless loop: exactly textWidth + gap
         final distance = _textWidth + widget.gap;
         final duration = Duration(
           milliseconds: (distance / widget.pixelsPerSecond * 1000).toInt(),
         );
 
-        // Scroll forward
+        // Scroll
         await _scrollController.animateTo(
           distance,
           duration: duration,
           curve: Curves.linear,
         );
 
-        if (!mounted ||
-            !widget.isPlaying ||
-            id != _animationId ||
-            !_scrollController.hasClients)
-          break;
+        if (!mounted || !widget.isPlaying || id != _animationId) break;
 
-        // Jump back to start instantly
+        // Reset instantly for the next loop
         _scrollController.jumpTo(0);
-
-        // Very short delay to let the jump settle
+        
+        // Wait a tiny bit to make the loop look continuous
         await Future.delayed(const Duration(milliseconds: 50));
       } catch (e) {
-        // If any scroll error occurs, wait and retry
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 1000));
       }
     }
 
@@ -172,9 +157,7 @@ class _MarqueeTextState extends State<MarqueeText> {
     _animationId++;
     _isScrolling = false;
     if (_scrollController.hasClients) {
-      try {
-        _scrollController.jumpTo(0);
-      } catch (_) {}
+      _scrollController.jumpTo(0);
     }
   }
 
@@ -186,12 +169,15 @@ class _MarqueeTextState extends State<MarqueeText> {
 
         if (_lastAvailableWidth != availableWidth) {
           _lastAvailableWidth = availableWidth;
-          // Re-check scrolling on layout change
-          if (_textWidth > availableWidth + 1.0) {
-            Future.microtask(() => _startScrolling());
-          } else {
-            Future.microtask(() => _stopScrolling());
-          }
+          // Defer to avoid "setState during build"
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (_textWidth > availableWidth + 1.0) {
+              _startScrolling();
+            } else {
+              _stopScrolling();
+            }
+          });
         }
 
         if (_textWidth <= availableWidth + 1.0) {
@@ -203,17 +189,22 @@ class _MarqueeTextState extends State<MarqueeText> {
           );
         }
 
-        return SingleChildScrollView(
-          controller: _scrollController,
-          scrollDirection: Axis.horizontal,
-          physics: const NeverScrollableScrollPhysics(),
-          child: Row(
-            children: [
-              Text(widget.text, style: widget.style, maxLines: 1),
-              SizedBox(width: widget.gap),
-              Text(widget.text, style: widget.style, maxLines: 1),
-              SizedBox(width: widget.gap),
-            ],
+        return Container(
+          // Clip to avoid text bleeding out
+          clipBehavior: Clip.hardEdge,
+          decoration: const BoxDecoration(),
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            child: Row(
+              children: [
+                Text(widget.text, style: widget.style, maxLines: 1),
+                SizedBox(width: widget.gap),
+                Text(widget.text, style: widget.style, maxLines: 1),
+                SizedBox(width: widget.gap),
+              ],
+            ),
           ),
         );
       },

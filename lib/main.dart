@@ -6,6 +6,7 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter_single_instance/flutter_single_instance.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:romanize/romanize.dart';
 import 'router.dart';
 
 import 'package:audio_service/audio_service.dart';
@@ -32,6 +33,9 @@ Future<void> main() async {
 
   // Initialize Signals (Load settings early for single instance check)
   await settingsSignal.loadSettings();
+
+  // Preload romanization dictionaries
+  TextRomanizer.ensureInitialized();
 
   // Single Instance Support
   if (isDesktop && settingsSignal.useSingleInstance.value) {

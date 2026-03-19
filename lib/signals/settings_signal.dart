@@ -42,6 +42,12 @@ class SettingsSignal {
   ]);
   final actionsSheetShowLabels = signal<bool>(false);
 
+  final lyricsAlignment = signal<TextAlign>(TextAlign.center);
+  final lyricsActiveFontSize = signal<double>(28.0);
+  final lyricsInactiveFontSize = signal<double>(22.0);
+  final plainLyricsFontSize = signal<double>(18.0);
+  final showRomanizedLyrics = signal<bool>(false);
+
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     textScaleFactor.value = prefs.getDouble('textScaleFactor') ?? 1.0;
@@ -92,6 +98,16 @@ class SettingsSignal {
 
     actionsSheetShowLabels.value =
         prefs.getBool('actionsSheetShowLabels') ?? false;
+
+    final alignIndex = prefs.getInt('lyricsAlignment');
+    if (alignIndex != null && alignIndex >= 0 && alignIndex < TextAlign.values.length) {
+      lyricsAlignment.value = TextAlign.values[alignIndex];
+    }
+    lyricsActiveFontSize.value = prefs.getDouble('lyricsActiveFontSize') ?? 28.0;
+    lyricsInactiveFontSize.value = prefs.getDouble('lyricsInactiveFontSize') ?? 22.0;
+    plainLyricsFontSize.value = prefs.getDouble('plainLyricsFontSize') ?? 18.0;
+
+    showRomanizedLyrics.value = prefs.getBool('showRomanizedLyrics') ?? false;
   }
 
   Future<void> updateMusicDirectory(String? value) async {
@@ -244,6 +260,36 @@ class SettingsSignal {
     actionsSheetShowLabels.value = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('actionsSheetShowLabels', value);
+  }
+
+  Future<void> updateLyricsAlignment(TextAlign align) async {
+    lyricsAlignment.value = align;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('lyricsAlignment', align.index);
+  }
+
+  Future<void> updateLyricsActiveFontSize(double size) async {
+    lyricsActiveFontSize.value = size;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('lyricsActiveFontSize', size);
+  }
+
+  Future<void> updateLyricsInactiveFontSize(double size) async {
+    lyricsInactiveFontSize.value = size;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('lyricsInactiveFontSize', size);
+  }
+
+  Future<void> updatePlainLyricsFontSize(double size) async {
+    plainLyricsFontSize.value = size;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('plainLyricsFontSize', size);
+  }
+
+  Future<void> updateShowRomanizedLyrics(bool value) async {
+    showRomanizedLyrics.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('showRomanizedLyrics', value);
   }
 }
 

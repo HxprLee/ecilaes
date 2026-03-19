@@ -9,6 +9,7 @@ import 'package:flutter/cupertino.dart';
 import '../theme/app_theme_extensions.dart';
 import 'playlist_dialogs.dart';
 import 'common/flyout_sheet.dart';
+import 'song_info_dialog.dart';
 
 void showSongMoreActionsSheet({
   required BuildContext context,
@@ -321,7 +322,7 @@ ActionInfo? _getActionInfo(String id) {
       return ActionInfo(
         icon: Icons.info_outline,
         label: 'Song info',
-        onTap: (context, song, _) {},
+        onTap: (context, song, _) => showSongInfoDialog(context, song),
       );
     case 'share':
       return ActionInfo(
