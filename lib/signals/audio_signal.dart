@@ -25,6 +25,8 @@ import '../models/history_entry.dart';
 import '../services/metadata_service.dart';
 import '../services/album_art_cache.dart';
 import '../services/lyrics_service.dart';
+import '../models/library_models.dart';
+import '../services/artist_art_cache.dart';
 
 class AudioSignal {
   static final AudioSignal _instance = AudioSignal._internal();
@@ -68,9 +70,20 @@ class AudioSignal {
   final albumArtDir = signal<String?>(null);
   final currentLyrics = signal<String?>(null);
   final showLyrics = signal<bool>(false);
+  final artistPictures = mapSignal<String, String?>(
+    {},
+  ); // artistName -> localPath
+  final artistArtCache = ArtistArtCache();
 
   late final songMap = computed(() {
     return {for (var s in allSongs.value) s.path: s};
+  });
+  late final storageStats = computed(() {
+    int totalSize = 0;
+    for (final song in allSongs.value) {
+      totalSize += song.size ?? 0;
+    }
+    return {'count': allSongs.value.length, 'size': totalSize};
   });
   late final reservedHeight = computed(() {
     if (isDesktop) {
@@ -123,6 +136,49 @@ class AudioSignal {
   late final recentlyPlayed = computed(() {
     final map = songMap.value;
     return historySongs.value.take(10).map((h) => map[h.songPath]).whereType<Song>().toList();
+  });
+
+  late final artists = computed(() {
+    final map = <String, List<Song>>{};
+    for (final song in allSongs.value) {
+      if (song.path.startsWith('yt:')) continue; // Skip YouTube for now
+      
+      // Split by common delimiters like , and &
+      final parts = song.artist.split(RegExp(r'[,&]'));
+      for (final part in parts) {
+        final name = part.trim();
+        if (name.isNotEmpty && name.toLowerCase() != 'unknown artist') {
+          map.putIfAbsent(name, () => []).add(song);
+        }
+      }
+    }
+    return map.entries.map((e) {
+      final name = e.key;
+      return Artist(
+        name: name,
+        songs: e.value,
+        picturePath: artistPictures.value[name],
+      );
+    }).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  });
+
+  late final albums = computed(() {
+    final map = <String, List<Song>>{};
+    for (final song in allSongs.value) {
+      if (song.path.startsWith('yt:')) continue; // Skip YouTube for now
+      final key = "${song.artist}__${song.album ?? 'Unknown Album'}";
+      map.putIfAbsent(key, () => []).add(song);
+    }
+    return map.entries.map((e) {
+      final songs = e.value;
+      return Album(
+        name: songs.first.album ?? 'Unknown Album',
+        artist: songs.first.artist,
+        songs: songs,
+      );
+    }).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   });
 
   late final effectiveQueue = computed(() {
@@ -252,6 +308,31 @@ class AudioSignal {
     unawaited(_loadCacheAndScan());
     unawaited(_loadPlaylists());
     unawaited(_loadHistory());
+    unawaited(_fetchArtistPictures());
+  }
+
+  Future<void> _fetchArtistPictures() async {
+    // Wait for allSongs to be populated
+    if (allSongs.value.isEmpty) {
+      await Future.delayed(const Duration(seconds: 2));
+    }
+
+    final uniqueArtists = artists.value.map((a) => a.name).toSet();
+    for (final name in uniqueArtists) {
+      // Check local cache first
+      final path = await artistArtCache.getArtPath(name);
+      if (path != null) {
+        artistPictures.update(name, (_) => path);
+      } else {
+        // Fetch from Deezer if not cached
+        final newPath = await artistArtCache.fetchAndCache(name);
+        if (newPath != null) {
+          artistPictures.update(name, (_) => newPath);
+        }
+        // Small delay to be nice to the API
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+    }
   }
 
   Future<void> _refreshMetadata(Song song) async {
@@ -446,15 +527,17 @@ class AudioSignal {
 
       final cachedPaths = allSongs.value.map((s) => s.path).toSet();
       final artDir = await SongCache.artDir;
+      final excludedPaths = settingsSignal.excludedPaths.value.toSet();
 
       print(
-        'SCAN_DEBUG: Starting background scan. cachedCount=${cachedPaths.length}, artDir=$artDir',
+        'SCAN_DEBUG: Starting background scan. cachedCount=${cachedPaths.length}, artDir=$artDir, excludedCount=${excludedPaths.length}',
       );
 
       isolate = await Isolate.spawn(_indexingIsolateEntry, {
         'sendPort': receivePort.sendPort,
         'musicPath': musicPath,
         'cachedPaths': cachedPaths,
+        'excludedPaths': excludedPaths,
         'artDir': artDir,
       });
 
@@ -525,6 +608,28 @@ class AudioSignal {
     allSongs.value = []; // Clear in-memory
     await SongCache.clearCache(); // Clear disk cache
     await scanMusicDirectory(); // Rescan
+  }
+
+  Future<void> clearMissingFiles() async {
+    if (isScanning.value) return;
+    
+    final currentSongs = List<Song>.from(allSongs.value);
+    final List<Song> existingSongs = [];
+    bool changed = false;
+
+    for (final song in currentSongs) {
+      if (song.path.startsWith('yt:') || File(song.path).existsSync()) {
+        existingSongs.add(song);
+      } else {
+        changed = true;
+        debugPrint('AudioSignal: Removing missing file: ${song.path}');
+      }
+    }
+
+    if (changed) {
+      allSongs.value = existingSongs;
+      await SongCache.saveCache(allSongs.value);
+    }
   }
 
   // Removed _scanDirectory in favor of _performFullScan in isolate
@@ -635,9 +740,18 @@ class AudioSignal {
         return;
       }
 
-      final palette = await PaletteGenerator.fromImageProvider(
+      // Optimize: Resize the image to a tiny size for palette generation
+      // 100x100 is more than enough for a seed color and it's much faster
+      final resizedProvider = ResizeImage(
         imageProvider,
-        maximumColorCount: 16,
+        width: 100,
+        height: 100,
+        policy: ResizeImagePolicy.fit,
+      );
+
+      final palette = await PaletteGenerator.fromImageProvider(
+        resizedProvider,
+        maximumColorCount: 8, // Reduced from 16
       );
 
       final color = _selectBestSeedColor(palette);
@@ -1054,6 +1168,7 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
   final SendPort sendPort = params['sendPort'];
   final String musicPath = params['musicPath'];
   final Set<String> cachedPaths = params['cachedPaths'];
+  final Set<String> excludedPaths = params['excludedPaths'] ?? {};
   final String artDir = params['artDir'];
 
   try {
@@ -1078,9 +1193,21 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
           in dir.list(recursive: true, followLinks: false).handleError((e) {
             // print('ISOLATE_DEBUG: Skipping restricted folder/file: $e');
           })) {
-        if (entity is File && _isSupportedAudio(entity.path)) {
-          if (!cachedPaths.contains(entity.path)) {
-            filesToProcess.add(entity.path);
+        final path = entity.path;
+        
+        // Check exclusions
+        bool isExcluded = false;
+        for (final excluded in excludedPaths) {
+          if (path.startsWith(excluded)) {
+            isExcluded = true;
+            break;
+          }
+        }
+        if (isExcluded) continue;
+
+        if (entity is File && _isSupportedAudio(path)) {
+          if (!cachedPaths.contains(path)) {
+            filesToProcess.add(path);
             foundCount++;
 
             // Periodic progress update during discovery
@@ -1116,7 +1243,142 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
           'total': filesToProcess.length,
         });
 
-        final metadata = readMetadata(File(path));
+        // Use a robust metadata reader that ensures file handles are closed
+        AudioMetadata? metadata;
+        try {
+          // Open the file ourselves to ensure we can close it if the parser fails
+          final reader = File(path).openSync();
+          try {
+            // Check if it's ID3 (covers v2.2, v2.3, v2.4)
+            if (ID3v2Parser.canUserParser(reader)) {
+              // ID3v2Parser.parse will close the reader on success, 
+              // but we wrap it in a try-finally just in case it throws before/after.
+              final mp3Meta = ID3v2Parser(fetchImage: true).parse(reader) as Mp3Metadata;
+              metadata = AudioMetadata(
+                file: File(path),
+                album: mp3Meta.album,
+                artist: mp3Meta.bandOrOrchestra ?? mp3Meta.leadPerformer ?? mp3Meta.originalArtist,
+                bitrate: mp3Meta.bitrate,
+                duration: mp3Meta.duration,
+                title: mp3Meta.songName,
+                trackNumber: mp3Meta.trackNumber,
+                trackTotal: mp3Meta.trackTotal,
+                year: DateTime(mp3Meta.originalReleaseYear ?? mp3Meta.year ?? 0),
+                discNumber: mp3Meta.discNumber,
+              );
+              metadata.pictures = mp3Meta.pictures;
+
+              // Fallback for ID3v2.2 (PIC frame) if no pictures found
+              if (metadata.pictures.isEmpty) {
+                try {
+                  reader.setPositionSync(0);
+                  final header = reader.readSync(10);
+                  if (header[3] == 2) { // ID3v2.2
+                    // Brute force search for PIC frame in the first 128KB
+                    final bytes = reader.lengthSync() < 128000 
+                        ? reader.readSync(reader.lengthSync())
+                        : reader.readSync(128000);
+                    
+                    int picIndex = -1;
+                    for (int j = 0; j < bytes.length - 3; j++) {
+                      if (bytes[j] == 80 && bytes[j+1] == 73 && bytes[j+2] == 67) { // "PIC"
+                        picIndex = j;
+                        break;
+                      }
+                    }
+
+                    if (picIndex != -1) {
+                      // PIC frame header is 6 bytes: ID(3), Size(3)
+                      final size = (bytes[picIndex+3] << 16) | (bytes[picIndex+4] << 8) | bytes[picIndex+5];
+                      if (size > 0 && picIndex + 6 + size <= bytes.length) {
+                        final frameData = bytes.sublist(picIndex + 6, picIndex + 6 + size);
+                        // Skip encoding(1) and fixed format(3) and picture type(1) and description(var)
+                        // This is a rough estimation, but usually the image data follows a null terminator or fixed offset
+                        int imgOffset = 5; // encoding(1) + format(3) + type(1)
+                        if (imgOffset < frameData.length) {
+                          metadata.pictures.add(Picture(
+                            frameData.sublist(imgOffset),
+                            'image/jpeg',
+                            PictureType.coverFront,
+                          ));
+                        }
+                      }
+                    }
+                  }
+                } catch (_) {}
+              }
+            } else if (FlacParser.canUserParser(reader)) {
+              final vorbisMeta = FlacParser(fetchImage: true).parse(reader) as VorbisMetadata;
+              metadata = AudioMetadata(
+                file: File(path),
+                album: vorbisMeta.album.firstOrNull,
+                artist: vorbisMeta.artist.firstOrNull,
+                bitrate: vorbisMeta.bitrate,
+                duration: vorbisMeta.duration,
+                title: vorbisMeta.title.firstOrNull,
+                trackNumber: vorbisMeta.trackNumber.firstOrNull,
+                trackTotal: vorbisMeta.trackTotal,
+                year: vorbisMeta.date.firstOrNull,
+                discNumber: vorbisMeta.discNumber,
+              );
+              metadata.pictures = vorbisMeta.pictures;
+            } else if (MP4Parser.canUserParser(reader)) {
+              final mp4Meta = MP4Parser(fetchImage: true).parse(reader) as Mp4Metadata;
+              metadata = AudioMetadata(
+                file: File(path),
+                album: mp4Meta.album,
+                artist: mp4Meta.artist,
+                bitrate: mp4Meta.bitrate,
+                duration: mp4Meta.duration,
+                title: mp4Meta.title,
+                trackNumber: mp4Meta.trackNumber,
+                trackTotal: mp4Meta.totalTracks,
+                year: mp4Meta.year,
+                discNumber: mp4Meta.discNumber,
+              );
+              if (mp4Meta.picture != null) metadata.pictures.add(mp4Meta.picture!);
+            } else if (OGGParser.canUserParser(reader)) {
+              final oggMeta = OGGParser(fetchImage: true).parse(reader) as VorbisMetadata;
+              metadata = AudioMetadata(
+                file: File(path),
+                album: oggMeta.album.firstOrNull,
+                artist: oggMeta.artist.firstOrNull,
+                bitrate: oggMeta.bitrate,
+                duration: oggMeta.duration,
+                title: oggMeta.title.firstOrNull,
+                trackNumber: oggMeta.trackNumber.firstOrNull,
+                trackTotal: oggMeta.trackTotal,
+                year: oggMeta.date.firstOrNull,
+                discNumber: oggMeta.discNumber,
+              );
+              metadata.pictures.addAll(oggMeta.pictures);
+            } else {
+              // Fallback to the package's default readMetadata which might leak on error
+              // but at least we tried to be safe for most cases.
+              reader.closeSync(); // Close our reader first
+              metadata = readMetadata(File(path), getImage: true);
+            }
+          } finally {
+            // Ensure reader is closed if it wasn't already by the parser
+            try {
+              reader.closeSync();
+            } catch (_) {
+              // Already closed on success, that's fine
+            }
+          }
+        } catch (e) {
+          // If our manual parsing fails, try the standard way as a last resort
+          try {
+            metadata = readMetadata(File(path), getImage: true);
+          } catch (_) {
+            metadata = null;
+          }
+        }
+
+        if (metadata == null) {
+          sendPort.send(Song.fromPath(path));
+          continue;
+        }
 
         bool hasArt = false;
         if (metadata.pictures.isNotEmpty) {
@@ -1124,18 +1386,65 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
             final artPath = '$artDir/${path.hashCode.abs()}.jpg';
             final artFile = File(artPath);
             if (!await artFile.exists()) {
-              await artFile.writeAsBytes(metadata.pictures.first.bytes);
+              Picture selectedPic;
+              try {
+                selectedPic = metadata.pictures.firstWhere(
+                  (p) => p.pictureType == PictureType.coverFront,
+                );
+              } catch (_) {
+                selectedPic = metadata.pictures.first;
+              }
+              
+              // Robust check: find the real start of image data (Magic Bytes)
+              // The library often skips too many or too few bytes for the description offset.
+              Uint8List bytes = selectedPic.bytes;
+              int imageStart = -1;
+              for (int j = 0; j < bytes.length - 8; j++) {
+                // JPEG: FF D8 FF
+                if (bytes[j] == 0xFF && bytes[j+1] == 0xD8 && bytes[j+2] == 0xFF) {
+                  imageStart = j;
+                  break;
+                }
+                // PNG: 89 50 4E 47
+                if (bytes[j] == 0x89 && bytes[j+1] == 0x50 && bytes[j+2] == 0x4E && bytes[j+3] == 0x47) {
+                  imageStart = j;
+                  break;
+                }
+              }
+
+              if (imageStart != -1 && imageStart > 0) {
+                bytes = bytes.sublist(imageStart);
+              }
+
+              await artFile.writeAsBytes(bytes);
+              hasArt = true;
+            } else {
+              hasArt = true;
             }
-            hasArt = true;
           } catch (e) {
             // Silently fail artwork, but song is still indexed
           }
         }
 
+        // Fallback to sidecar art if still no art
+        if (!hasArt) {
+          final sidecar = _findSidecarArt(path);
+          if (sidecar != null) {
+            try {
+              final artPath = '$artDir/${path.hashCode.abs()}.jpg';
+              await sidecar.copy(artPath);
+              hasArt = true;
+            } catch (_) {}
+          }
+        }
+
+        final file = File(path);
+        final fileSizeBytes = await file.length();
+        final modifiedAt = file.lastModifiedSync();
+
         // Use bitrate from metadata if available, otherwise calculate from file size
         int? bitrate = metadata.bitrate != null ? (metadata.bitrate! / 1000).round() : null;
         if (bitrate == null && metadata.duration != null && metadata.duration!.inSeconds > 0) {
-          final fileSizeBytes = await File(path).length();
           final durationSeconds = metadata.duration!.inSeconds;
           bitrate = ((fileSizeBytes * 8) / durationSeconds / 1000).round();
         }
@@ -1152,7 +1461,8 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
           hasAlbumArt: hasArt,
           duration: metadata.duration,
           bitrate: bitrate,
-          modifiedAt: File(path).lastModifiedSync(),
+          size: fileSizeBytes,
+          modifiedAt: modifiedAt,
         );
 
         sendPort.send(song);
@@ -1173,12 +1483,23 @@ Future<Map<String, dynamic>> _extractMetadata(
   String? artDir,
 ) async {
   try {
-    final metadata = readMetadata(File(path));
+    final metadata = readMetadata(File(path), getImage: true);
 
     if (metadata.pictures.isNotEmpty && artDir != null) {
       try {
         final artPath = '$artDir/${path.hashCode.abs()}.jpg';
-        await File(artPath).writeAsBytes(metadata.pictures.first.bytes);
+        final artFile = File(artPath);
+        if (!await artFile.exists()) {
+          Picture selectedPic;
+          try {
+            selectedPic = metadata.pictures.firstWhere(
+              (p) => p.pictureType == PictureType.coverFront,
+            );
+          } catch (_) {
+            selectedPic = metadata.pictures.first;
+          }
+          await artFile.writeAsBytes(selectedPic.bytes);
+        }
       } catch (_) {}
     }
 
@@ -1193,4 +1514,47 @@ Future<Map<String, dynamic>> _extractMetadata(
   } catch (_) {
     return {};
   }
+}
+
+File? _findSidecarArt(String audioPath) {
+  try {
+    final file = File(audioPath);
+    final directory = file.parent;
+    if (!directory.existsSync()) return null;
+
+    final sidecarNames = [
+      'cover.jpg',
+      'cover.png',
+      'cover.jpeg',
+      'folder.jpg',
+      'folder.png',
+      'folder.jpeg',
+      'album.jpg',
+      'album.png',
+      '.folder.jpg',
+      '.folder.png',
+    ];
+
+    for (final name in sidecarNames) {
+      final sidecar = File('${directory.path}/$name');
+      if (sidecar.existsSync()) return sidecar;
+    }
+
+    // Try case-insensitive matching if not found
+    final list = directory.listSync();
+    for (final entity in list) {
+      if (entity is File) {
+        final name = entity.path.split('/').last.toLowerCase();
+        if (name == 'cover.jpg' ||
+            name == 'cover.png' ||
+            name == 'folder.jpg' ||
+            name == 'folder.png' ||
+            name == 'album.jpg' ||
+            name == 'album.png') {
+          return entity;
+        }
+      }
+    }
+  } catch (_) {}
+  return null;
 }

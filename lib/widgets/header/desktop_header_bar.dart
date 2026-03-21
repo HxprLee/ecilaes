@@ -26,7 +26,7 @@ class DesktopHeaderBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 50,
+      height: 80,
       padding: EdgeInsets.only(left: 2 + leftOffset, right: 2),
       child: Row(
         children: [

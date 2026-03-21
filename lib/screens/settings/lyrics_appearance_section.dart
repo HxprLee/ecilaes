@@ -167,7 +167,7 @@ class LyricsAppearanceSection extends StatelessWidget {
                                 style: TextStyle(
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.onSurface.withOpacity(0.54),
+                                  ).colorScheme.onSurface.withValues(alpha: 0.54),
                                   fontSize: 12,
                                 ),
                               ),
@@ -184,6 +184,73 @@ class LyricsAppearanceSection extends StatelessWidget {
                     ),
                   ),
                   
+                  const SizedBox(height: 24),
+                  _sectionLabel('Lyrics Providers', context),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Card(
+                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Watch((context) {
+                        final providers = settingsSignal.lyricsProviders.value;
+                        final enabled = settingsSignal.enabledLyricsProviders.value;
+
+                        return ReorderableListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: providers.length,
+                          onReorder: (oldIndex, newIndex) {
+                            if (oldIndex < newIndex) {
+                              newIndex -= 1;
+                            }
+                            final items = List<String>.from(providers);
+                            final item = items.removeAt(oldIndex);
+                            items.insert(newIndex, item);
+                            settingsSignal.updateLyricsProviders(items);
+                          },
+                          itemBuilder: (context, index) {
+                            final id = providers[index];
+                            final name = _getProviderName(id);
+                            final isEnabled = enabled.contains(id);
+
+                            return ListTile(
+                              key: ValueKey(id),
+                              title: Text(
+                                name,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              leading: ReorderableDragStartListener(
+                                index: index,
+                                child: Icon(
+                                  Icons.drag_indicator,
+                                  size: 20,
+                                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              trailing: Switch(
+                                value: isEnabled,
+                                activeThumbColor: Theme.of(context).colorScheme.secondary,
+                                onChanged: (value) => settingsSignal.toggleLyricsProvider(id),
+                              ),
+                              contentPadding: const EdgeInsets.only(left: 8, right: 16),
+                            );
+                          },
+                        );
+                      }),
+                    ),
+                  ),
+
                   const SizedBox(height: 24),
                   Watch(
                     (context) =>
@@ -333,5 +400,20 @@ class LyricsAppearanceSection extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _getProviderName(String id) {
+    switch (id) {
+      case 'lrclib':
+        return 'LrcLib';
+      case 'simpmusic':
+        return 'SimpMusic';
+      case 'better_lyrics':
+        return 'BetterLyrics';
+      case 'kugou':
+        return 'KuGou';
+      default:
+        return id;
+    }
   }
 }

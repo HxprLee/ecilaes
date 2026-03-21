@@ -93,7 +93,7 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
       return Center(
         child: Text(
           'No lyrics available.',
-          style: TextStyle(
+          style: Theme.of(context).textTheme.bodyMedium!.copyWith(
             color: Theme.of(
               context,
             ).colorScheme.secondary.withValues(alpha: 0.5),
@@ -200,7 +200,7 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
                             child: AnimatedDefaultTextStyle(
                               duration: const Duration(milliseconds: 300),
                               curve: Curves.easeOut,
-                              style: TextStyle(
+                              style: Theme.of(context).textTheme.bodyMedium!.copyWith(
                                 color: (isActive || !_isSynced)
                                     ? Theme.of(context).colorScheme.secondary
                                     : Theme.of(
@@ -235,7 +235,7 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
                               child: AnimatedDefaultTextStyle(
                                 duration: const Duration(milliseconds: 300),
                                 curve: Curves.easeOut,
-                                style: TextStyle(
+                                style: Theme.of(context).textTheme.bodyMedium!.copyWith(
                                   color: (isActive || !_isSynced)
                                       ? Theme.of(context)
                                             .colorScheme

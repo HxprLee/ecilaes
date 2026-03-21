@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +5,8 @@ import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../widgets/page_header.dart';
 import '../widgets/playlist_dialogs.dart';
+import '../widgets/playlist_cover.dart';
+import '../models/playlist.dart';
 
 class PlaylistsScreen extends StatelessWidget {
   const PlaylistsScreen({super.key});
@@ -40,7 +41,12 @@ class PlaylistsScreen extends StatelessWidget {
                 delegate: SliverChildBuilderDelegate((context, index) {
                   if (index == allPlaylists.length) {
                     return _PlaylistCard(
-                      title: 'Create Playlist',
+                      playlist: Playlist(
+                        id: 'create',
+                        name: 'Create Playlist',
+                        songPaths: [],
+                        createdAt: DateTime.now(),
+                      ),
                       icon: FontAwesomeIcons.plus,
                       isAction: true,
                       onTap: () => CreatePlaylistDialog.show(context),
@@ -48,11 +54,10 @@ class PlaylistsScreen extends StatelessWidget {
                   }
                   final playlist = allPlaylists[index];
                   return _PlaylistCard(
-                    title: playlist.name,
+                    playlist: playlist,
                     icon: playlist.id == 'favorites'
                         ? FontAwesomeIcons.solidHeart
                         : FontAwesomeIcons.list,
-                    imagePath: playlist.imagePath,
                     onTap: () => context.go('/playlist/${playlist.id}'),
                   );
                 }, childCount: allPlaylists.length + 1),
@@ -71,18 +76,16 @@ class PlaylistsScreen extends StatelessWidget {
 }
 
 class _PlaylistCard extends StatelessWidget {
-  final String title;
+  final Playlist playlist;
   final IconData icon;
   final VoidCallback onTap;
   final bool isAction;
-  final String? imagePath;
 
   const _PlaylistCard({
-    required this.title,
+    required this.playlist,
     required this.icon,
     required this.onTap,
     this.isAction = false,
-    this.imagePath,
   });
 
   @override
@@ -94,47 +97,16 @@ class _PlaylistCard extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(12),
-            child: Container(
-              decoration: BoxDecoration(
-                color: isAction
-                    ? Theme.of(context).colorScheme.onSurface.withOpacity(0.05)
-                    : Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isAction
-                      ? Theme.of(context).colorScheme.onSurface.withOpacity(0.1)
-                      : Theme.of(
-                          context,
-                        ).colorScheme.secondary.withValues(alpha: 0.15),
-                ),
-                image: imagePath != null
-                    ? DecorationImage(
-                        image: FileImage(File(imagePath!)),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              child: imagePath == null
-                  ? Center(
-                      child: FaIcon(
-                        icon,
-                        color: isAction
-                            ? Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.38)
-                            : Theme.of(context).colorScheme.secondary,
-                        size: 48,
-                      ),
-                    )
-                  : null,
+            child: PlaylistCover(
+              playlist: playlist,
+              borderRadius: 12,
+              iconOverride: icon,
             ),
           ),
         ),
         const SizedBox(height: 12),
         Text(
-          title,
+          playlist.name,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(

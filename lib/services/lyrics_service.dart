@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:romanize/romanize.dart';
 import 'dart:io';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
+import '../signals/settings_signal.dart';
+import 'song_cache.dart';
 
 /// Service to fetch lyrics from embedded metadata or online sources.
 class LyricsService {
@@ -13,6 +15,19 @@ class LyricsService {
 
   // In-memory cache to avoid redundant lookups within a session
   final Map<String, String?> _cache = {};
+
+  Future<String> get _cacheDir async {
+    final baseDir = await SongCache.cacheDir;
+    final dir = Directory('$baseDir/lyrics');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir.path;
+  }
+
+  String _getCacheFilename(String songPath) {
+    return '${songPath.hashCode.abs()}.lrc';
+  }
 
   /// Try to get lyrics for a song. Priority:
   /// 1. In-memory cache
@@ -44,16 +59,64 @@ class LyricsService {
       }
     }
 
-    // 3. Online fallback via lrclib.net (free, no API key needed)
+    // 2.5 Try persistent file cache
     try {
-      final result = await _fetchFromLrclib(title, artist, duration);
-      _cache[path] = result; // Cache even null to avoid re-fetching
-      return result;
+      final dir = await _cacheDir;
+      final file = File('$dir/${_getCacheFilename(path)}');
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        _cache[path] = content;
+        debugPrint('LyricsService: Found lyrics in persistent cache');
+        return content;
+      }
     } catch (e) {
-      debugPrint('LyricsService: Online lyrics fetch error: $e');
-      _cache[path] = null;
-      return null;
+      debugPrint('LyricsService: Error reading persistent cache: $e');
     }
+
+    // 3. Fallback chain
+    // We try multiple providers in order of reliability/quality
+    final videoId = path.startsWith('yt:') ? path.substring(3) : null;
+
+    final providersPref = settingsSignal.lyricsProviders.value;
+    final enabledPrefs = settingsSignal.enabledLyricsProviders.value;
+
+    for (final providerId in providersPref) {
+      if (!enabledPrefs.contains(providerId)) continue;
+
+      Future<String?> Function()? fetcher;
+      switch (providerId) {
+        case 'lrclib':
+          fetcher = () => _fetchFromLrclib(title, artist, duration);
+          break;
+        case 'simpmusic':
+          if (videoId != null) {
+            fetcher = () => _fetchFromSimpMusic(videoId);
+          }
+          break;
+        case 'better_lyrics':
+          fetcher = () => _fetchFromBetterLyrics(title, artist);
+          break;
+        case 'kugou':
+          fetcher = () => _fetchFromKuGou(title, artist, duration);
+          break;
+      }
+
+      if (fetcher != null) {
+        try {
+          final result = await fetcher();
+          if (result != null && result.trim().isNotEmpty) {
+            _cache[path] = result;
+            _saveToFileCache(path, result);
+            return result;
+          }
+        } catch (e) {
+          debugPrint('LyricsService: Provider $providerId error: $e');
+        }
+      }
+    }
+
+    _cache[path] = null;
+    return null;
   }
 
   /// Fetch synced LRC lyrics from lrclib.net
@@ -63,14 +126,8 @@ class LyricsService {
     Duration? duration,
   ) async {
     // Clean title: remove bracketed info like [Official Video]
-    final cleanTitle = title
-        .replaceAll(RegExp(r'\[.*?\]'), '')
-        .replaceAll(RegExp(r'\(.*?\)'), '')
-        .trim();
-    final cleanArtist = artist
-        .replaceAll(RegExp(r'\[.*?\]'), '')
-        .replaceAll(RegExp(r'\(.*?\)'), '')
-        .trim();
+    final cleanTitle = _cleanQuery(title);
+    final cleanArtist = _cleanQuery(artist);
 
     final query = Uri.encodeQueryComponent('$cleanArtist $cleanTitle');
     final url = 'https://lrclib.net/api/search?q=$query';
@@ -112,6 +169,131 @@ class LyricsService {
     return null;
   }
 
+  /// Fetch from SimpMusic API (videoId based)
+  Future<String?> _fetchFromSimpMusic(String videoId) async {
+    final url = 'https://api.simpmusic.org/lyrics?videoId=$videoId';
+
+    debugPrint('LyricsService: Searching SimpMusic for videoId: $videoId');
+
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'User-Agent': 'MusicApp/1.0'},
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final lyrics = data['syncedLyrics'] as String?;
+        if (lyrics != null && lyrics.trim().isNotEmpty) {
+          debugPrint('LyricsService: Found lyrics on SimpMusic');
+          return lyrics;
+        }
+      }
+    } catch (e) {
+      debugPrint('LyricsService: SimpMusic error: $e');
+    }
+    return null;
+  }
+
+  /// Fetch from KuGou API
+  Future<String?> _fetchFromKuGou(
+    String title,
+    String artist,
+    Duration? duration,
+  ) async {
+    final cleanTitle = _cleanQuery(title);
+    final cleanArtist = _cleanQuery(artist);
+    final keyword = Uri.encodeQueryComponent('$cleanArtist - $cleanTitle');
+    final durationMs = duration?.inMilliseconds ?? 0;
+
+    // 1. Search for candidates
+    final searchUrl =
+        'http://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword=$keyword&duration=$durationMs&hash=';
+
+    debugPrint('LyricsService: Searching KuGou for "$cleanArtist - $cleanTitle"');
+
+    try {
+      final searchResponse = await http.get(
+        Uri.parse(searchUrl),
+        headers: {'User-Agent': 'MusicApp/1.0'},
+      ).timeout(const Duration(seconds: 8));
+
+      if (searchResponse.statusCode == 200) {
+        final searchData = jsonDecode(searchResponse.body);
+        final List<dynamic> candidates = searchData['candidates'] ?? [];
+        if (candidates.isEmpty) return null;
+
+        // Pick the first candidate (usually the best match)
+        final candidate = candidates.first;
+        final id = candidate['id'];
+        final accesskey = candidate['accesskey'];
+
+        if (id == null || accesskey == null) return null;
+
+        // 2. Download lyrics
+        final downloadUrl =
+            'http://lyrics.kugou.com/download?ver=1&client=pc&id=$id&accesskey=$accesskey&fmt=lrc&charset=utf8';
+
+        debugPrint('LyricsService: Downloading from KuGou id=$id');
+
+        final downloadResponse = await http.get(
+          Uri.parse(downloadUrl),
+          headers: {'User-Agent': 'MusicApp/1.0'},
+        ).timeout(const Duration(seconds: 8));
+
+        if (downloadResponse.statusCode == 200) {
+          final downloadData = jsonDecode(downloadResponse.body);
+          final base64Content = downloadData['content'] as String?;
+          if (base64Content != null && base64Content.isNotEmpty) {
+            final decoded = utf8.decode(base64.decode(base64Content));
+            debugPrint('LyricsService: Found lyrics on KuGou');
+            return decoded;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('LyricsService: KuGou error: $e');
+    }
+    return null;
+  }
+
+  /// Fetch from BetterLyrics API
+  Future<String?> _fetchFromBetterLyrics(String title, String artist) async {
+    final cleanTitle = _cleanQuery(title);
+    final cleanArtist = _cleanQuery(artist);
+
+    final query = Uri.encodeQueryComponent('a=$cleanArtist&s=$cleanTitle');
+    final url = 'https://better-lyrics.vercel.app/api/getLyrics?$query';
+
+    debugPrint('LyricsService: Searching BetterLyrics for "$cleanArtist - $cleanTitle"');
+
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'User-Agent': 'MusicApp/1.0'},
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final lyrics = data['lyrics'] as String?;
+        if (lyrics != null && lyrics.trim().isNotEmpty) {
+          debugPrint('LyricsService: Found lyrics on BetterLyrics');
+          return lyrics;
+        }
+      }
+    } catch (e) {
+      debugPrint('LyricsService: BetterLyrics error: $e');
+    }
+    return null;
+  }
+
+  String _cleanQuery(String text) {
+    return text
+        .replaceAll(RegExp(r'\[.*?\]'), '')
+        .replaceAll(RegExp(r'\(.*?\)'), '')
+        .trim();
+  }
+
   /// Convert plain text lyrics to a basic LRC format
   /// Each line gets a timestamp spaced 5 seconds apart (approximation)
   String _plainToLrc(String plain) {
@@ -129,6 +311,16 @@ class LyricsService {
   /// Clear the in-memory cache (e.g., on library rescan)
   void clearCache() {
     _cache.clear();
+  }
+
+  Future<void> _saveToFileCache(String songPath, String content) async {
+    try {
+      final dir = await _cacheDir;
+      final file = File('$dir/${_getCacheFilename(songPath)}');
+      await file.writeAsString(content);
+    } catch (e) {
+      debugPrint('LyricsService: Error saving to persistent cache: $e');
+    }
   }
 }
 

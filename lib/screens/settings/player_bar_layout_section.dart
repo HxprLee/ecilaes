@@ -6,8 +6,8 @@ import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
 import '../../widgets/subpage_header.dart';
 
-class ActionsLayoutSection extends StatelessWidget {
-  const ActionsLayoutSection({super.key});
+class PlayerBarLayoutSection extends StatelessWidget {
+  const PlayerBarLayoutSection({super.key});
 
   bool get _isDesktop =>
       !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
@@ -46,54 +46,19 @@ class ActionsLayoutSection extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SubpageHeader(title: 'Actions Sheet Layout'),
+                  const SubpageHeader(title: 'Player Bar Layout'),
                   const SizedBox(height: 24),
 
-                  _sectionLabel('Quick Actions Row', context),
+                  _sectionLabel('Player Bar Actions', context),
                   _buildActionsList(
                     context: context,
-                    actionsSignal: settingsSignal.actionsSheetQuickActions,
-                    collectionId: 'quick',
-                    isRow: true,
-                  ),
-
-
-                  const SizedBox(height: 32),
-                  _sectionLabel('Menu List Actions', context),
-                  _buildActionsList(
-                    context: context,
-                    actionsSignal: settingsSignal.actionsSheetListActions,
-                    collectionId: 'list',
-                    isRow: false,
+                    actionsSignal: settingsSignal.playerBarActions,
+                    collectionId: 'player',
                   ),
 
                   const SizedBox(height: 32),
                   _buildHiddenActions(context),
 
-                  const SizedBox(height: 32),
-                  _sectionLabel('Options', context),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Card(
-                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(
-                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-                        ),
-                      ),
-                      child: Watch((context) {
-                        return SwitchListTile(
-                          title: const Text('Show labels in Row', style: TextStyle(fontSize: 14)),
-                          subtitle: const Text('Show text labels below icons in the quick actions row', style: TextStyle(fontSize: 12)),
-                          value: settingsSignal.actionsSheetShowLabels.value,
-                          onChanged: (value) => settingsSignal.updateActionsSheetShowLabels(value),
-                          activeThumbColor: Theme.of(context).colorScheme.secondary,
-                        );
-                      }),
-                    ),
-                  ),
                   const SizedBox(height: 32),
                   Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
                 ],
@@ -109,7 +74,6 @@ class ActionsLayoutSection extends StatelessWidget {
     required BuildContext context,
     required ListSignal<String> actionsSignal,
     required String collectionId,
-    required bool isRow,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -142,7 +106,6 @@ class ActionsLayoutSection extends StatelessWidget {
                       actionId: actions[i],
                       collectionId: collectionId,
                       index: i,
-                      isRow: isRow,
                     ),
                   ],
                   if (actions.isEmpty)
@@ -191,7 +154,6 @@ class ActionsLayoutSection extends StatelessWidget {
     required String actionId,
     required String collectionId,
     required int index,
-    required bool isRow,
   }) {
     final icon = _getSimplifiedActionIcon(actionId);
     final label = _getSimplifiedActionLabel(actionId);
@@ -203,15 +165,6 @@ class ActionsLayoutSection extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            icon: Icon(
-              isRow ? Icons.arrow_downward : Icons.arrow_upward,
-              size: 18,
-              color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5),
-            ),
-            onPressed: () => _moveAction(actionId, isRow),
-            tooltip: isRow ? 'Move to List' : 'Move to Row',
-          ),
           IconButton(
             icon: Icon(
               Icons.close,
@@ -252,58 +205,43 @@ class ActionsLayoutSection extends StatelessWidget {
   void _handleDrop(_ActionDragData data, String targetCollection, int targetIndex) {
     if (data.sourceCollection == targetCollection && data.index == targetIndex) return;
 
-    final quick = List<String>.from(settingsSignal.actionsSheetQuickActions.value);
-    final list = List<String>.from(settingsSignal.actionsSheetListActions.value);
+    final player = List<String>.from(settingsSignal.playerBarActions.value);
 
-    // Remove from source
+    // Remove from source (if it was from player)
     String? removedId;
-    if (data.sourceCollection == 'quick') {
-      removedId = quick.removeAt(data.index);
-    } else if (data.sourceCollection == 'list') {
-      removedId = list.removeAt(data.index);
+    if (data.sourceCollection == 'player') {
+      removedId = player.removeAt(data.index);
     } else if (data.sourceCollection == 'hidden') {
-      // If it's a hidden action, we just need the ID (which we have in data.id)
       removedId = data.id;
     }
 
     if (removedId == null) return;
 
-    // Adjust target index if moving within the same list and removing shifted following items
+    // Adjust target index if moving within the same list
     var adjustedIndex = targetIndex;
     if (data.sourceCollection == targetCollection && data.index < targetIndex) {
       adjustedIndex -= 1;
     }
 
     // Insert into target
-    if (targetCollection == 'quick') {
-      quick.insert(adjustedIndex.clamp(0, quick.length), removedId);
-    } else if (targetCollection == 'list') {
-      list.insert(adjustedIndex.clamp(0, list.length), removedId);
-    } else if (targetCollection == 'hidden') {
-      // Nothing else to do, it's already removed from source
+    if (targetCollection == 'player') {
+      player.insert(adjustedIndex.clamp(0, player.length), removedId);
     }
 
-    settingsSignal.updateActionsSheetQuickActions(quick);
-    settingsSignal.updateActionsSheetListActions(list);
+    settingsSignal.updatePlayerBarActions(player);
   }
 
   void _hideAction(String actionId) {
-    final quick = List<String>.from(settingsSignal.actionsSheetQuickActions.value);
-    final list = List<String>.from(settingsSignal.actionsSheetListActions.value);
-
-    quick.remove(actionId);
-    list.remove(actionId);
-
-    settingsSignal.updateActionsSheetQuickActions(quick);
-    settingsSignal.updateActionsSheetListActions(list);
+    final player = List<String>.from(settingsSignal.playerBarActions.value);
+    player.remove(actionId);
+    settingsSignal.updatePlayerBarActions(player);
   }
 
   Widget _buildHiddenActions(BuildContext context) {
     return Watch((context) {
-      final quick = settingsSignal.actionsSheetQuickActions.value;
-      final list = settingsSignal.actionsSheetListActions.value;
+      final player = settingsSignal.playerBarActions.value;
       final hidden = _allActionIds
-          .where((id) => !quick.contains(id) && !list.contains(id))
+          .where((id) => !player.contains(id))
           .toList();
 
       if (hidden.isEmpty) return const SizedBox.shrink();
@@ -377,7 +315,7 @@ class ActionsLayoutSection extends StatelessWidget {
                             color: Theme.of(context).colorScheme.secondary,
                           ),
                           onPressed: () => _addAction(id),
-                          tooltip: 'Add to Menu',
+                          tooltip: 'Add to Player Bar',
                         ),
                       );
 
@@ -416,25 +354,9 @@ class ActionsLayoutSection extends StatelessWidget {
   }
 
   void _addAction(String actionId) {
-    final list = List<String>.from(settingsSignal.actionsSheetListActions.value);
-    list.add(actionId);
-    settingsSignal.updateActionsSheetListActions(list);
-  }
-
-  void _moveAction(String actionId, bool fromRow) {
-    final quick = List<String>.from(settingsSignal.actionsSheetQuickActions.value);
-    final list = List<String>.from(settingsSignal.actionsSheetListActions.value);
-
-    if (fromRow) {
-      quick.remove(actionId);
-      list.insert(0, actionId);
-    } else {
-      list.remove(actionId);
-      quick.add(actionId);
-    }
-
-    settingsSignal.updateActionsSheetQuickActions(quick);
-    settingsSignal.updateActionsSheetListActions(list);
+    final player = List<String>.from(settingsSignal.playerBarActions.value);
+    player.add(actionId);
+    settingsSignal.updatePlayerBarActions(player);
   }
 
   Widget _sectionLabel(String label, BuildContext context) {

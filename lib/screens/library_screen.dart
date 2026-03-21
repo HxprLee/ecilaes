@@ -39,7 +39,7 @@ class LibraryScreen extends StatelessWidget {
                   _CategoryCard(
                     title: 'Albums',
                     icon: FontAwesomeIcons.compactDisc,
-                    onTap: () {}, // TODO
+                    onTap: () => context.go('/albums'),
                   ),
                   _CategoryCard(
                     title: 'Songs',
@@ -54,7 +54,7 @@ class LibraryScreen extends StatelessWidget {
                   _CategoryCard(
                     title: 'Artists',
                     icon: FontAwesomeIcons.user,
-                    onTap: () {}, // TODO
+                    onTap: () => context.go('/artists'),
                   ),
                   _CategoryCard(
                     title: 'Downloaded',

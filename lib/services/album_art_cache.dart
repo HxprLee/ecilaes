@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
@@ -17,8 +18,6 @@ class AlbumArtCache {
   // Directory paths
   String? _artDirPath;
 
-
-
   /// Initialize the cache directory
   Future<void> init() async {
     if (_artDirPath != null) return;
@@ -28,7 +27,6 @@ class AlbumArtCache {
     if (!await artDir.exists()) {
       await artDir.create(recursive: true);
     }
-
   }
 
   /// Get the file path for a song's album art
@@ -79,11 +77,125 @@ class AlbumArtCache {
 
     // Fall back to extracting from audio file
     try {
-      final metadata = readMetadata(File(songPath));
-      if (metadata.pictures.isNotEmpty) {
-        final art = metadata.pictures.first.bytes;
+      final bytes = await Isolate.run(() {
+        final file = File(songPath);
+        if (!file.existsSync()) return null;
+        // Use a robust metadata reader that ensures file handles are closed
+        try {
+          final reader = file.openSync();
+          try {
+            if (ID3v2Parser.canUserParser(reader)) {
+              final mp3Meta = ID3v2Parser(fetchImage: true).parse(reader) as Mp3Metadata;
+              
+              Picture? selectedPic;
+              if (mp3Meta.pictures.isNotEmpty) {
+                try {
+                  selectedPic = mp3Meta.pictures.firstWhere(
+                    (p) => p.pictureType == PictureType.coverFront,
+                  );
+                } catch (_) {
+                  selectedPic = mp3Meta.pictures.first;
+                }
+              }
+
+              // Fallback for ID3v2.2 PIC frame
+              if (selectedPic == null) {
+                try {
+                  reader.setPositionSync(0);
+                  final header = reader.readSync(10);
+                  if (header[3] == 2) { // ID3v2.2
+                    final bytes = reader.lengthSync() < 128000 
+                        ? reader.readSync(reader.lengthSync())
+                        : reader.readSync(128000);
+                    int picIndex = -1;
+                    for (int j = 0; j < bytes.length - 3; j++) {
+                      if (bytes[j] == 80 && bytes[j+1] == 73 && bytes[j+2] == 67) {
+                        picIndex = j;
+                        break;
+                      }
+                    }
+                    if (picIndex != -1) {
+                      final size = (bytes[picIndex+3] << 16) | (bytes[picIndex+4] << 8) | bytes[picIndex+5];
+                      if (size > 0 && picIndex + 6 + size <= bytes.length) {
+                        final frameData = bytes.sublist(picIndex + 6, picIndex + 6 + size);
+                        // Search for magic bytes in frameData
+                        int imgStart = -1;
+                        for (int k = 0; k < frameData.length - 4; k++) {
+                          if ((frameData[k] == 0xFF && frameData[k+1] == 0xD8 && frameData[k+2] == 0xFF) ||
+                              (frameData[k] == 0x89 && frameData[k+1] == 0x50 && frameData[k+2] == 0x4E && frameData[k+3] == 0x47)) {
+                            imgStart = k;
+                            break;
+                          }
+                        }
+                        if (imgStart != -1) return frameData.sublist(imgStart);
+                      }
+                    }
+                  }
+                } catch (_) {}
+              }
+
+              if (selectedPic != null) {
+                final bytes = selectedPic.bytes;
+                int imgStart = -1;
+                for (int k = 0; k < bytes.length - 4; k++) {
+                   if ((bytes[k] == 0xFF && bytes[k+1] == 0xD8 && bytes[k+2] == 0xFF) ||
+                       (bytes[k] == 0x89 && bytes[k+1] == 0x50 && bytes[k+2] == 0x4E && bytes[k+3] == 0x47)) {
+                     imgStart = k;
+                     break;
+                   }
+                }
+                return imgStart != -1 ? bytes.sublist(imgStart) : bytes;
+              }
+              return null;
+            } else if (FlacParser.canUserParser(reader)) {
+              final vorbisMeta = FlacParser(fetchImage: true).parse(reader) as VorbisMetadata;
+              if (vorbisMeta.pictures.isEmpty) return null;
+              return (vorbisMeta.pictures.firstWhere(
+                (p) => p.pictureType == PictureType.coverFront,
+                orElse: () => vorbisMeta.pictures.first,
+              )).bytes;
+            } else if (MP4Parser.canUserParser(reader)) {
+              final mp4Meta = MP4Parser(fetchImage: true).parse(reader) as Mp4Metadata;
+              return mp4Meta.picture?.bytes;
+            } else if (OGGParser.canUserParser(reader)) {
+              final oggMeta = OGGParser(fetchImage: true).parse(reader) as VorbisMetadata;
+              if (oggMeta.pictures.isEmpty) return null;
+              return oggMeta.pictures.first.bytes;
+            } else {
+              // Fallback to default
+              reader.closeSync();
+              final metadata = readMetadata(file, getImage: true);
+              if (metadata.pictures.isEmpty) return null;
+              return (metadata.pictures.firstWhere(
+                (p) => p.pictureType == PictureType.coverFront,
+                orElse: () => metadata.pictures.first,
+              )).bytes;
+            }
+          } finally {
+            try { reader.closeSync(); } catch (_) {}
+          }
+        } catch (e) {
+          // Final fallback
+          try {
+            final metadata = readMetadata(file, getImage: true);
+            if (metadata.pictures.isEmpty) return null;
+            return metadata.pictures.first.bytes;
+          } catch (_) {
+            return null;
+          }
+        }
+      });
+
+      if (bytes != null) {
         // Cache to disk for future use
-        await _saveArtToDisk(songPath, art);
+        await _saveArtToDisk(songPath, bytes);
+        return artFile;
+      }
+
+      // Fallback to sidecar (also can be heavy if directory has many files)
+      final sidecar = await Isolate.run(() => _findSidecarArt(songPath));
+      if (sidecar != null) {
+        await sidecar.copy(artPath);
         return artFile;
       }
     } catch (e) {
@@ -122,10 +234,74 @@ class AlbumArtCache {
 
     // Try to extract and cache
     try {
-      final metadata = readMetadata(File(songPath));
-      if (metadata.pictures.isNotEmpty) {
-        final art = metadata.pictures.first.bytes;
-        await _saveArtToDisk(songPath, art);
+      final bytes = await Isolate.run(() {
+        final file = File(songPath);
+        if (!file.existsSync()) return null;
+        // Use a robust metadata reader that ensures file handles are closed
+        try {
+          final reader = file.openSync();
+          try {
+            if (ID3v2Parser.canUserParser(reader)) {
+              final mp3Meta = ID3v2Parser(fetchImage: true).parse(reader) as Mp3Metadata;
+              if (mp3Meta.pictures.isEmpty) return null;
+              
+              Picture selectedPic;
+              try {
+                selectedPic = mp3Meta.pictures.firstWhere(
+                  (p) => p.pictureType == PictureType.coverFront,
+                );
+              } catch (_) {
+                selectedPic = mp3Meta.pictures.first;
+              }
+              return selectedPic.bytes;
+            } else if (FlacParser.canUserParser(reader)) {
+              final vorbisMeta = FlacParser(fetchImage: true).parse(reader) as VorbisMetadata;
+              if (vorbisMeta.pictures.isEmpty) return null;
+              return (vorbisMeta.pictures.firstWhere(
+                (p) => p.pictureType == PictureType.coverFront,
+                orElse: () => vorbisMeta.pictures.first,
+              )).bytes;
+            } else if (MP4Parser.canUserParser(reader)) {
+              final mp4Meta = MP4Parser(fetchImage: true).parse(reader) as Mp4Metadata;
+              return mp4Meta.picture?.bytes;
+            } else if (OGGParser.canUserParser(reader)) {
+              final oggMeta = OGGParser(fetchImage: true).parse(reader) as VorbisMetadata;
+              if (oggMeta.pictures.isEmpty) return null;
+              return oggMeta.pictures.first.bytes;
+            } else {
+              // Fallback to default
+              reader.closeSync();
+              final metadata = readMetadata(file, getImage: true);
+              if (metadata.pictures.isEmpty) return null;
+              return (metadata.pictures.firstWhere(
+                (p) => p.pictureType == PictureType.coverFront,
+                orElse: () => metadata.pictures.first,
+              )).bytes;
+            }
+          } finally {
+            try { reader.closeSync(); } catch (_) {}
+          }
+        } catch (e) {
+          // Final fallback
+          try {
+            final metadata = readMetadata(file, getImage: true);
+            if (metadata.pictures.isEmpty) return null;
+            return metadata.pictures.first.bytes;
+          } catch (_) {
+            return null;
+          }
+        }
+      });
+
+      if (bytes != null) {
+        await _saveArtToDisk(songPath, bytes);
+        return artFile.uri;
+      }
+
+      // Sidecar fallback
+      final sidecar = await Isolate.run(() => _findSidecarArt(songPath));
+      if (sidecar != null) {
+        await sidecar.copy(artPath);
         return artFile.uri;
       }
     } catch (e) {
@@ -140,5 +316,48 @@ class AlbumArtCache {
     for (final path in songPaths.take(10)) {
       getArt(path); // Fire and forget
     }
+  }
+
+  File? _findSidecarArt(String audioPath) {
+    try {
+      final file = File(audioPath);
+      final directory = file.parent;
+      if (!directory.existsSync()) return null;
+
+      final sidecarNames = [
+        'cover.jpg',
+        'cover.png',
+        'cover.jpeg',
+        'folder.jpg',
+        'folder.png',
+        'folder.jpeg',
+        'album.jpg',
+        'album.png',
+        '.folder.jpg',
+        '.folder.png',
+      ];
+
+      for (final name in sidecarNames) {
+        final sidecar = File('${directory.path}/$name');
+        if (sidecar.existsSync()) return sidecar;
+      }
+
+      // Case-insensitive fallback
+      final list = directory.listSync();
+      for (final entity in list) {
+        if (entity is File) {
+          final name = entity.path.split('/').last.toLowerCase();
+          if (name == 'cover.jpg' ||
+              name == 'cover.png' ||
+              name == 'folder.jpg' ||
+              name == 'folder.png' ||
+              name == 'album.jpg' ||
+              name == 'album.png') {
+            return entity;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 }

@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../signals/settings_signal.dart';
@@ -96,7 +98,7 @@ class LibrarySection extends StatelessWidget {
                                     style: TextStyle(
                                       color: Theme.of(
                                         context,
-                                      ).colorScheme.onSurface.withOpacity(0.54),
+                                      ).colorScheme.onSurface.withValues(alpha: 0.54),
                                       fontSize: 12,
                                     ),
                                     maxLines: 1,
@@ -116,7 +118,7 @@ class LibrarySection extends StatelessWidget {
                                         color: Theme.of(context)
                                             .colorScheme
                                             .onSurface
-                                            .withOpacity(0.54),
+                                            .withValues(alpha: 0.54),
                                       ),
                                       tooltip: 'Reset to default',
                                     )
@@ -166,7 +168,52 @@ class LibrarySection extends StatelessWidget {
 
                   const SizedBox(height: 16),
 
-                  // Indexing section
+                  // Storage Management
+                  _sectionLabel('Storage Management', context),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Card(
+                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      child: Watch((context) {
+                        final stats = audioSignal.storageStats.value;
+                        final count = stats['count'] as int;
+                        final size = stats['size'] as int;
+
+                        return Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Row(
+                            children: [
+                              _storageStatItem(
+                                context,
+                                Icons.audiotrack_outlined,
+                                'Songs',
+                                count.toString(),
+                              ),
+                              const SizedBox(width: 32),
+                              _storageStatItem(
+                                context,
+                                Icons.storage_outlined,
+                                'Storage',
+                                _formatSize(size),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Indexing
                   _sectionLabel('Indexing', context),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -275,6 +322,121 @@ class LibrarySection extends StatelessWidget {
 
                   const SizedBox(height: 16),
 
+                  // Maintenance
+                  _sectionLabel('Maintenance', context),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Card(
+                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        children: [
+                          ListTile(
+                            leading: Icon(Icons.cleaning_services_outlined, size: 20, color: Theme.of(context).colorScheme.secondary),
+                            title: const Text('Clear Missing Files', style: TextStyle(fontSize: 14)),
+                            subtitle: const Text('Remove non-existent files from your library', style: TextStyle(fontSize: 12)),
+                            onTap: () => _confirmClearMissing(context),
+                          ),
+                          const Divider(height: 1, indent: 56),
+                          ListTile(
+                            leading: Icon(Icons.auto_fix_high_outlined, size: 20, color: Theme.of(context).colorScheme.secondary),
+                            title: const Text('Force Full Scan', style: TextStyle(fontSize: 14)),
+                            subtitle: const Text('Re-index everything and refresh all metadata', style: TextStyle(fontSize: 12)),
+                            onTap: () => _confirmForceScan(context),
+                          ),
+                          const Divider(height: 1, indent: 56),
+                          ListTile(
+                            leading: Icon(Icons.storage_outlined, size: 20, color: Theme.of(context).colorScheme.secondary),
+                            title: const Text('Manage Caches', style: TextStyle(fontSize: 14)),
+                            subtitle: const Text('Clear cached metadata, art, and lyrics', style: TextStyle(fontSize: 12)),
+                            onTap: () => context.push('/settings/cache'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Exclusions
+                  _sectionLabel('Exclusions', context),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Card(
+                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Watch((context) {
+                        final excluded = settingsSignal.excludedPaths.value;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (excluded.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text(
+                                  'No excluded folders or files.',
+                                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                                ),
+                              )
+                            else
+                              ListView.separated(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: excluded.length,
+                                separatorBuilder: (context, index) => const Divider(height: 1, indent: 56),
+                                itemBuilder: (context, index) {
+                                  final path = excluded[index];
+                                  return ListTile(
+                                    leading: Icon(
+                                      path.contains('.') ? Icons.description_outlined : Icons.folder_off_outlined,
+                                      size: 20,
+                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                                    ),
+                                    title: Text(
+                                      path.split('/').last,
+                                      style: const TextStyle(fontSize: 14),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(path, style: const TextStyle(fontSize: 10)),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.remove_circle_outline, size: 20),
+                                      onPressed: () => settingsSignal.removeExcludedPath(path),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                                  );
+                                },
+                              ),
+                            const Divider(height: 1),
+                            ListTile(
+                              leading: Icon(Icons.add_circle_outline, size: 20, color: Theme.of(context).colorScheme.secondary),
+                              title: const Text('Add Exclusion', style: TextStyle(fontSize: 14)),
+                              onTap: () => _pickExclusion(context),
+                            ),
+                          ],
+                        );
+                      }),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
                   // Sidebar customization
                   _sectionLabel('Sidebar', context),
                   Padding(
@@ -339,7 +501,7 @@ class LibrarySection extends StatelessWidget {
                                 style: TextStyle(
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.onSurface.withOpacity(0.54),
+                                  ).colorScheme.onSurface.withValues(alpha: 0.54),
                                   fontSize: 12,
                                 ),
                               ),
@@ -427,5 +589,125 @@ class LibrarySection extends StatelessWidget {
       await settingsSignal.updateMusicDirectory(selectedDirectory);
       audioSignal.reindexLibrary();
     }
+  }
+
+  Future<void> _pickExclusion(BuildContext context) async {
+    // Show a dialog to choose between Folder or File
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Exclusion'),
+        content: const Text('Do you want to exclude a folder or a specific file?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'file'),
+            child: const Text('File'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'folder'),
+            child: const Text('Folder'),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null) return;
+
+    String? path;
+    if (choice == 'folder') {
+      path = await FilePicker.platform.getDirectoryPath(dialogTitle: 'Select Folder to Exclude');
+    } else {
+      final result = await FilePicker.platform.pickFiles(dialogTitle: 'Select File to Exclude');
+      path = result?.files.single.path;
+    }
+
+    if (path != null) {
+      await settingsSignal.addExcludedPath(path);
+    }
+  }
+
+  void _confirmClearMissing(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Missing Files'),
+        content: const Text('This will remove all songs from your library that no longer exist on your disk. Continue?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              audioSignal.clearMissingFiles();
+            },
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmForceScan(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Force Full Scan'),
+        content: const Text('This will clear your library cache and perform a complete search of your music directory. This may take a while. Continue?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              audioSignal.reindexLibrary();
+            },
+            child: const Text('Scan'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _storageStatItem(BuildContext context, IconData icon, String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 14, color: Theme.of(context).colorScheme.secondary),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const suffixes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = (math.log(bytes) / math.log(1024)).floor();
+    return '${(bytes / math.pow(1024, i)).toStringAsFixed(1)} ${suffixes[i]}';
   }
 }

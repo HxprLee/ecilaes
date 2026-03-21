@@ -10,6 +10,10 @@ import 'screens/library_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/recently_played_screen.dart';
 import 'screens/recently_added_screen.dart';
+import 'screens/artists_screen.dart';
+import 'screens/artist_detail_screen.dart';
+import 'screens/albums_screen.dart';
+import 'screens/album_detail_screen.dart';
 import 'widgets/songs_list_content.dart';
 import 'signals/audio_signal.dart';
 import 'signals/navigation_signal.dart';
@@ -18,7 +22,9 @@ import 'screens/settings/playback_section.dart';
 import 'screens/settings/library_section.dart';
 import 'screens/settings/about_section.dart';
 import 'screens/settings/actions_layout_section.dart';
+import 'screens/settings/player_bar_layout_section.dart';
 import 'screens/settings/lyrics_appearance_section.dart';
+import 'screens/settings/cache_management_screen.dart';
 
 /// Creates the GoRouter configuration.
 final GoRouter router = GoRouter(
@@ -75,9 +81,7 @@ final GoRouter router = GoRouter(
             GoRoute(
               path: ':path',
               pageBuilder: (context, state) {
-                final path = Uri.decodeComponent(
-                  state.pathParameters['path'] ?? '',
-                );
+                final path = state.pathParameters['path'] ?? '';
                 return _buildPageWithTransition(
                   state,
                   FileExplorerScreen(initialPath: path),
@@ -91,6 +95,43 @@ final GoRouter router = GoRouter(
           path: '/playlists',
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const PlaylistsScreen()),
+        ),
+        // Artists
+        GoRoute(
+          path: '/artists',
+          pageBuilder: (context, state) =>
+              _buildPageWithTransition(state, const ArtistsScreen()),
+          routes: [
+            GoRoute(
+              path: ':name',
+              pageBuilder: (context, state) {
+                final name = state.pathParameters['name'] ?? '';
+                return _buildPageWithTransition(
+                  state,
+                  ArtistDetailScreen(artistName: name),
+                );
+              },
+            ),
+          ],
+        ),
+        // Albums
+        GoRoute(
+          path: '/albums',
+          pageBuilder: (context, state) =>
+              _buildPageWithTransition(state, const AlbumsScreen()),
+          routes: [
+            GoRoute(
+              path: ':artist/:name',
+              pageBuilder: (context, state) {
+                final artist = state.pathParameters['artist'] ?? '';
+                final name = state.pathParameters['name'] ?? '';
+                return _buildPageWithTransition(
+                  state,
+                  AlbumDetailScreen(artistName: artist, albumName: name),
+                );
+              },
+            ),
+          ],
         ),
         // Playlist
         GoRoute(
@@ -128,6 +169,13 @@ final GoRouter router = GoRouter(
                   ),
                 ),
                 GoRoute(
+                  path: 'player-bar-layout',
+                  pageBuilder: (context, state) => _buildPageWithTransition(
+                    state,
+                    const PlayerBarLayoutSection(),
+                  ),
+                ),
+                GoRoute(
                   path: 'lyrics-layout',
                   pageBuilder: (context, state) => _buildPageWithTransition(
                     state,
@@ -145,6 +193,11 @@ final GoRouter router = GoRouter(
               path: 'library',
               pageBuilder: (context, state) =>
                   _buildPageWithTransition(state, const LibrarySection()),
+            ),
+            GoRoute(
+              path: 'cache',
+              pageBuilder: (context, state) =>
+                  _buildPageWithTransition(state, const CacheManagementScreen()),
             ),
             GoRoute(
               path: 'about',

@@ -15,6 +15,15 @@ class AppThemeBuilder {
   // ── Material 3 palette constant ──────────────────────────────────────
   static const _m3Seed = Color(0xFF6750A4); // Material default purple
 
+  // ── Font Fallbacks ───────────────────────────────────────────────────
+  static const _cjkFallback = <String>[
+    'Noto Sans CJK JP',
+    'Noto Sans CJK SC',
+    'Noto Sans CJK TC',
+    'Noto Sans CJK KR',
+    'Apple Color Emoji',
+  ];
+
   // ─────────────────────────────────────────────────────────────────────
   // Light theme
   // ─────────────────────────────────────────────────────────────────────
@@ -89,6 +98,7 @@ class AppThemeBuilder {
       colorScheme: scheme,
       useMaterial3: true,
       fontFamily: fontFamily,
+      fontFamilyFallback: _cjkFallback,
       extensions: const [AppThemeExtension.lightExtension],
     );
   }
@@ -115,6 +125,7 @@ class AppThemeBuilder {
       ),
       useMaterial3: true,
       fontFamily: fontFamily,
+      fontFamilyFallback: _cjkFallback,
       extensions: const [AppThemeExtension.darkExtension],
     );
   }
@@ -147,6 +158,7 @@ class AppThemeBuilder {
       colorScheme: scheme,
       useMaterial3: true,
       fontFamily: fontFamily,
+      fontFamilyFallback: _cjkFallback,
       extensions: [
         AppThemeExtension(
           songCardBackground: scheme.surfaceContainerHighest,
@@ -182,6 +194,7 @@ class AppThemeBuilder {
       colorScheme: scheme,
       useMaterial3: true,
       fontFamily: fontFamily,
+      fontFamilyFallback: _cjkFallback,
       extensions: [
         AppThemeExtension(
           songCardBackground: scheme.surfaceContainerHighest,

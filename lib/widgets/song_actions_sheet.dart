@@ -10,6 +10,7 @@ import '../theme/app_theme_extensions.dart';
 import 'playlist_dialogs.dart';
 import 'common/flyout_sheet.dart';
 import 'song_info_dialog.dart';
+import 'player/queue_view.dart';
 
 void showSongMoreActionsSheet({
   required BuildContext context,
@@ -157,13 +158,22 @@ void showSongMoreActionsSheet({
                   height: 36,
                 ),
 
-                // List Actions
-                ...listActions.map(
-                  (id) => _buildSheetAction(
-                    context: context,
-                    song: song,
-                    actionId: id,
-                    playlistId: playlistId,
+                // List Actions - Wrapped in flexible or scrollable if needed
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ...listActions.map(
+                          (id) => _buildSheetAction(
+                            context: context,
+                            song: song,
+                            actionId: id,
+                            playlistId: playlistId,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -315,7 +325,7 @@ ActionInfo? _getActionInfo(String id) {
       return ActionInfo(
         icon: Icons.timer_outlined,
         label: 'Sleep timer',
-        onTap: (context, song, _) => _showSleepTimerDialog(context),
+        onTap: (context, song, _) => showSleepTimerDialog(context),
         closeOnTap: false,
       );
     case 'info':
@@ -323,6 +333,32 @@ ActionInfo? _getActionInfo(String id) {
         icon: Icons.info_outline,
         label: 'Song info',
         onTap: (context, song, _) => showSongInfoDialog(context, song),
+      );
+    case 'shuffle':
+      return ActionInfo(
+        icon: Icons.shuffle,
+        label: 'Shuffle mode',
+        onTap: (context, song, _) => audioSignal.toggleShuffle(),
+      );
+    case 'repeat':
+      return ActionInfo(
+        icon: Icons.repeat,
+        label: 'Repeat mode',
+        onTap: (context, song, _) => audioSignal.toggleRepeat(),
+      );
+    case 'lyrics':
+      return ActionInfo(
+        icon: Icons.music_note,
+        label: 'Lyrics',
+        onTap: (context, song, _) {
+          audioSignal.showLyrics.value = !audioSignal.showLyrics.value;
+        },
+      );
+    case 'queue':
+      return ActionInfo(
+        icon: Icons.format_list_bulleted,
+        label: 'Queue',
+        onTap: (context, song, _) => showQueueSheet(context),
       );
     case 'share':
       return ActionInfo(
@@ -359,7 +395,7 @@ Widget _buildSheetItem({
   );
 }
 
-void _showSleepTimerDialog(BuildContext context) {
+void showSleepTimerDialog(BuildContext context) {
   int selectedMinutes = 30;
 
   showDialog(

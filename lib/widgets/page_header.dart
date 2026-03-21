@@ -23,7 +23,7 @@ class PageHeader extends StatelessWidget {
     final isDesktop =
         Platform.isWindows || Platform.isLinux || Platform.isMacOS;
     final topPadding = isDesktop
-        ? 50.0
+        ? 80.0 // Matches HomeShell headerHeight
         : 64.0 + MediaQuery.of(context).padding.top;
 
     return Watch((context) {
@@ -33,12 +33,22 @@ class PageHeader extends StatelessWidget {
       final fontSize = lerpDouble(32.0, 22.0, progress)!;
       final titleOpacity = (1.0 - progress * 1.5).clamp(0.0, 1.0);
 
-      return Padding(
+      // Calculate target height for snapping
+      // On Desktop: TopBar is 80px. Snap distance is 80px.
+      // At scroll 80, we want NextSliver at Screen Y = 80.
+      // NextSliver Viewport Y = 80 + 80 = 160.
+      final targetHeight = topPadding + 80.0;
+      
+      final currentTopGap = lerpDouble(24.0 + topPadding, topPadding, progress)!;
+      final currentBottomGap = lerpDouble(24.0, 0.0, progress)!;
+
+      return Container(
+        constraints: BoxConstraints(minHeight: lerpDouble(0, targetHeight, progress)!),
         padding: EdgeInsets.only(
-          top: 24.0 + topPadding,
+          top: currentTopGap,
           left: 24.0,
           right: 24.0,
-          bottom: 24.0,
+          bottom: currentBottomGap,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

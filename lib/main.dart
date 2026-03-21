@@ -13,6 +13,7 @@ import 'package:audio_service/audio_service.dart';
 import 'services/audio_handler.dart';
 import 'services/platform_service.dart';
 import 'package:music_app/theme/app_theme_builder.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
 import 'signals/audio_signal.dart';
 import 'signals/settings_signal.dart';
@@ -27,6 +28,9 @@ Future<void> main() async {
   // Ensure widgets are initialized
   WidgetsFlutterBinding.ensureInitialized();
   print('APP_START: Widgets initialized');
+
+  // Initialize JustAudioMediaKit (MPV backend)
+  JustAudioMediaKit.ensureInitialized();
 
   // Initialize Navigation Listener
   initNavigationListener();

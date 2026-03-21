@@ -176,7 +176,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                               'albums': {
                                 'icon': FontAwesomeIcons.compactDisc,
                                 'label': 'Albums',
-                                'onTap': () {}, // Placeholder
+                                'onTap': () => context.go('/albums'),
                                 'isSelected': currentLocation == '/albums',
                               },
                               'songs': {
@@ -204,7 +204,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                               'artists': {
                                 'icon': FontAwesomeIcons.user,
                                 'label': 'Artists',
-                                'onTap': () {}, // Placeholder
+                                'onTap': () => context.go('/artists'),
                                 'isSelected': currentLocation == '/artists',
                               },
                               'downloaded': {

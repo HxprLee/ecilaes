@@ -7,6 +7,7 @@ class Song {
   final String? lyrics;
   final Duration? duration;
   final int? bitrate; // in kbps
+  final int? size; // in bytes
   final DateTime? modifiedAt;
 
   Song({
@@ -18,6 +19,7 @@ class Song {
     this.lyrics,
     this.duration,
     this.bitrate,
+    this.size,
     this.modifiedAt,
   });
 
@@ -40,6 +42,7 @@ class Song {
     String? lyrics,
     Duration? duration,
     int? bitrate,
+    int? size,
     DateTime? modifiedAt,
   }) {
     return Song(
@@ -51,6 +54,7 @@ class Song {
       lyrics: lyrics ?? this.lyrics,
       duration: duration ?? this.duration,
       bitrate: bitrate ?? this.bitrate,
+      size: size ?? this.size,
       modifiedAt: modifiedAt ?? this.modifiedAt,
     );
   }

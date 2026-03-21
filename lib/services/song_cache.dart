@@ -8,28 +8,28 @@ class SongCache {
   static const String _cacheFileName = 'song_cache.json';
   static const String _artDirName = 'album_art';
 
-  static Future<String> get _cacheDir async {
+  static Future<String> get cacheDir async {
     final dir = await getApplicationDocumentsDirectory();
     return '${dir.path}/music_app_cache';
   }
 
   static Future<String> get artDir async {
-    final cache = await _cacheDir;
+    final cache = await cacheDir;
     return '$cache/$_artDirName';
   }
 
   static Future<String> get _cacheFilePath async {
-    final cache = await _cacheDir;
+    final cache = await cacheDir;
     return '$cache/$_cacheFileName';
   }
 
   /// Initialize cache directories
   static Future<void> init() async {
-    final cacheDir = Directory(await _cacheDir);
+    final cacheDirStr = await cacheDir;
     final artDirectory = Directory(await artDir);
 
-    if (!await cacheDir.exists()) {
-      await cacheDir.create(recursive: true);
+    if (!await Directory(cacheDirStr).exists()) {
+      await Directory(cacheDirStr).create(recursive: true);
     }
     if (!await artDirectory.exists()) {
       await artDirectory.create(recursive: true);
@@ -74,6 +74,7 @@ class SongCache {
                 ? Duration(milliseconds: json['durationMs'])
                 : null,
             bitrate: json['bitrate'],
+            size: json['size'],
             modifiedAt: json['modifiedAt'] != null
                 ? DateTime.fromMillisecondsSinceEpoch(json['modifiedAt'])
                 : null,
@@ -104,6 +105,7 @@ class SongCache {
           'lyrics': song.lyrics,
           'durationMs': song.duration?.inMilliseconds,
           'bitrate': song.bitrate,
+          'size': song.size,
           'modifiedAt': song.modifiedAt?.millisecondsSinceEpoch,
         });
       }
@@ -146,6 +148,15 @@ class SongCache {
       final file = File(await _cacheFilePath);
       if (await file.exists()) {
         await file.delete();
+      }
+
+      final artDirectory = Directory(await artDir);
+      if (await artDirectory.exists()) {
+        await for (final entity in artDirectory.list()) {
+          if (entity is File && !entity.path.split('/').last.startsWith('playlist_')) {
+            await entity.delete();
+          }
+        }
       }
     } catch (e) {
       print('Error clearing cache: $e');

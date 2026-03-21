@@ -10,8 +10,9 @@
 
 ### Changed
 - **Metadata Engine Migration**: Replaced `metadata_god` dependency with `audio_metadata_reader`. Improved indexing speed by a LOT.
-- **Refactored Marquee Logic**: Rebuilt the `MarqueeText` widget with a more robust animation loop and better handling of layout constraints and window resizing.
-- **Player Bar Layout Optimization**: Increased the reserved width for playback controls in the player bar to 400px on desktop
+- **Consistent Title Scrolling**: The marquee effect now applies to the **mini player title** as well. No more cut-off text — long song names now scroll elegantly in both collapsed and expanded states.
+- **Customizable Player Bar Actions**: The row of buttons in the player bar is now fully personalizable via drag-and-drop in settings.
+- **Adaptive Space-Aware Layout**: Implemented an intelligent layout switch that monitors the actual space available for the player bar. If horizontal space drops below **800px** (due to window resizing or the sidebar), the player automatically switches to a compact art-on-left layout to prevent any component overlap.
 
 ### Fixed
 - **Marquee Overlap**: Resolved a visual bug where long song titles would scroll over the playback icons in the player bar.

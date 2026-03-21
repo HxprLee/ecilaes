@@ -9,6 +9,8 @@ import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 import '../services/album_art_cache.dart';
 import '../signals/audio_signal.dart';
+import './playlist_dialogs.dart';
+import './song_info_dialog.dart';
 import '../signals/settings_signal.dart';
 import '../theme/app_theme_extensions.dart';
 import 'marquee_text.dart';
@@ -63,16 +65,20 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   String _getCodecAndBitrate(Song song) {
     if (song.path.startsWith('yt:')) {
       final mime = youtubeService.lastStreamMimeType ?? 'audio/mp4';
-      final codecLabel = mime.contains('mp4') ? 'M4A' : mime.contains('webm') ? 'WEBM' : mime.split('/').last.toUpperCase();
+      final codecLabel = mime.contains('mp4')
+          ? 'M4A'
+          : mime.contains('webm')
+          ? 'WEBM'
+          : mime.split('/').last.toUpperCase();
       final kbps = youtubeService.lastStreamBitrateKbps ?? '—';
       return 'YT $codecLabel | ${kbps}Kbps';
     }
-    
+
     final ext = song.path.split('.').last.toUpperCase();
     if (_bitrateCache.containsKey(song.path)) {
       return '$ext | ${_bitrateCache[song.path]}Kbps';
     }
-    
+
     try {
       final file = File(song.path);
       if (file.existsSync()) {
@@ -84,7 +90,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         }
       }
     } catch (_) {}
-    
+
     final fallback = song.bitrate?.toString() ?? '---';
     _bitrateCache[song.path] = fallback;
     return '$ext | ${fallback}Kbps';
@@ -102,14 +108,15 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     }
 
     final lyrics = audioSignal.currentLyrics.value;
-    final hasSyncedLyrics = lyrics != null && RegExp(r'\[\d{2}:\d{2}').hasMatch(lyrics);
-    
+    final hasSyncedLyrics =
+        lyrics != null && RegExp(r'\[\d{2}:\d{2}').hasMatch(lyrics);
+
     // Desktop layout (wide screens) doesn't auto-hide controls
     final isDesktopLayout = MediaQuery.of(context).size.width >= 900;
 
-    if (audioSignal.showLyrics.value && 
-        audioSignal.isPlaying.value && 
-        hasSyncedLyrics && 
+    if (audioSignal.showLyrics.value &&
+        audioSignal.isPlaying.value &&
+        hasSyncedLyrics &&
         !isDesktopLayout) {
       _immersionTimer = Timer(const Duration(seconds: 5), () {
         if (mounted) {
@@ -207,7 +214,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     effect(() {
       final showLyrics = audioSignal.showLyrics.value;
       final isPlaying = audioSignal.isPlaying.value;
-      
+
       if (showLyrics && isPlaying) {
         _resetImmersionTimer();
       } else {
@@ -468,15 +475,18 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
-    final isSmallScreen = screenWidth < 600;
     final isActualMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
     final isMobile = isActualMobile; // Use platform check for layout style
-    final isCompact = isSmallScreen; // Use screen width for compact elements
 
     return Watch((context) {
       final currentSong = audioSignal.currentSong.value;
       final isPlaying = audioSignal.isPlaying.value;
       final duration = audioSignal.duration.value;
+
+      // Calculate availability-based compactness
+      final availableBarWidth = screenWidth - widget.leftOffset;
+      // Switch to compact layout if space is < 800px or screen is < 600px
+      final isCompact = availableBarWidth < 700 || screenWidth < 600;
 
       if (currentSong != null) {
         _loadAlbumArt(currentSong.path);
@@ -506,30 +516,38 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           final currentTopPadding = lerpDouble(0, topPadding, value)!;
           final currentBottomPadding = lerpDouble(0, bottomPadding, value)!;
 
-          final rawLyricsValue = const Cubic(0.76, 0, 0.24, 1).transform(_lyricsController.value);
+          final rawLyricsValue = const Cubic(
+            0.76,
+            0,
+            0.24,
+            1,
+          ).transform(_lyricsController.value);
           // Layout mode: Desktop if width >= 900, otherwise Mobile
           final isDesktopLayoutMode = screenWidth >= 900;
-          
+
           // On desktop side-by-side, don't morph the art/text — keep them in place
           final lyricsValue = isDesktopLayoutMode ? 0.0 : rawLyricsValue;
 
           // --- Layout Interpolation ---
           // Clamping and Centering Logic for Desktop
           const paneGap = 48.0;
-          final maxPaneWidth = ((screenWidth - paneGap - 64.0) / 2).clamp(0.0, 600.0);
-          
+          final maxPaneWidth = ((screenWidth - paneGap - 64.0) / 2).clamp(
+            0.0,
+            600.0,
+          );
+
           // Calculate the target width for the player part
-          final playerWidth = isDesktopLayoutMode 
+          final playerWidth = isDesktopLayoutMode
               ? lerpDouble(screenWidth, maxPaneWidth, rawLyricsValue)!
               : screenWidth;
-          
+
           // Calculate how much to shift the player to the left to center the group
           final groupWidth = maxPaneWidth * 2 + paneGap;
           final groupLeft = (screenWidth - groupWidth) / 2;
           final playerShift = isDesktopLayoutMode
               ? lerpDouble(0, groupLeft, rawLyricsValue)!
               : 0.0;
-          
+
           final rawLayout = _calculateExpandedLayout(
             playerWidth,
             screenHeight,
@@ -537,7 +555,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             currentBottomPadding,
             isCompact || isMobile,
           );
-          
+
           // Shift the layout Rects for side-by-side grouping
           final expandedLayout = (
             art: rawLayout.art.shift(Offset(playerShift, 0)),
@@ -706,7 +724,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 // 2. Lyrics Body
                                 // Mobile: overlay that fades in/out
                                 // Desktop Layout: side-by-side panel on the right half of the group
-                                if (!isDesktopLayoutMode && rawLyricsValue > 0.0)
+                                if (!isDesktopLayoutMode &&
+                                    rawLyricsValue > 0.0)
                                   Opacity(
                                     opacity: rawLyricsValue,
                                     child: IgnorePointer(
@@ -724,7 +743,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                     top: 0,
                                     bottom: 0,
                                     // Slide in from the right relative to the group
-                                    left: lerpDouble(screenWidth, groupLeft + maxPaneWidth + paneGap, rawLyricsValue)!,
+                                    left: lerpDouble(
+                                      screenWidth,
+                                      groupLeft + maxPaneWidth + paneGap,
+                                      rawLyricsValue,
+                                    )!,
                                     width: maxPaneWidth,
                                     child: Opacity(
                                       opacity: rawLyricsValue,
@@ -763,7 +786,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 _buildMorphingText(
                                   value,
                                   lyricsValue,
-                                  screenWidth,
+                                  collapsedWidth,
                                   currentSong,
                                   isPlaying,
                                   expandedLayout.info,
@@ -1055,7 +1078,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   Widget _buildMorphingText(
     double value,
     double lyricsValue,
-    double screenWidth,
+    double collapsedWidth,
     Song? currentSong,
     bool isPlaying,
     Rect targetRect,
@@ -1073,13 +1096,13 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
     // Calculate start width based on layout (Compact vs Full)
     final rightControlsWidth = isCompact
-        ? 150.0 // Safer buffer for mobile/compact (100px controls + 50px buffer)
-        : 400.0; // Very safe buffer for desktop (280px controls + padding + margin)
-    final availableWidth = screenWidth - widget.leftOffset;
-    final margin = isMobile ? _compactMargin : _fullMargin;
-    final collapsedWidth = (availableWidth - (margin * 2)).clamp(0.0, 1200.0);
+        ? 130.0 // Balanced buffer for mobile (100px controls + 30px buffer)
+        : 300.0; // Balanced buffer for desktop (280px controls + padding + margin)
     final fixedStartWidth =
-        (collapsedWidth - fixedStartLeft - rightControlsWidth).clamp(100.0, 1200.0);
+        (collapsedWidth - fixedStartLeft - rightControlsWidth).clamp(
+          10.0,
+          1200.0,
+        );
 
     // Interpolation (Mini -> Expanded)
     final baseLeft = lerpDouble(fixedStartLeft, targetRect.left, value)!;
@@ -1328,7 +1351,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                     boxShadow: [
                       if (value > 0.5)
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.5),
+                          color: Colors.black.withValues(alpha: 0.5),
                           blurRadius: 30,
                           offset: const Offset(0, 10),
                         ),
@@ -1465,89 +1488,105 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             onPointerDown: (_) => _resetImmersionTimer(),
             child: RepaintBoundary(
               child: Row(
-            mainAxisAlignment:
-                MainAxisAlignment.center, // Always center to prevent snapping
-          children: [
-            IconButton(
-              padding: buttonPadding,
-              constraints: isCompact
-                  ? const BoxConstraints()
-                  : null, // Allow shrinking
-              splashColor: value > 0.05 ? Colors.transparent : null,
-              highlightColor: value > 0.05 ? Colors.transparent : null,
-              hoverColor: value > 0.05 ? Colors.transparent : null,
-              icon: FaIcon(
-                FontAwesomeIcons.backwardStep,
-                color: hasSong
-                    ? Theme.of(context).colorScheme.secondary
-                    : Theme.of(context).colorScheme.secondary.withOpacity(0.5),
-                size: lerpDouble(24, 40, value)!,
-              ),
-              onPressed: hasSong ? audioSignal.skipPrevious : null,
-            ),
+                mainAxisAlignment: MainAxisAlignment
+                    .center, // Always center to prevent snapping
+                children: [
+                  IconButton(
+                    padding: buttonPadding,
+                    constraints: isCompact
+                        ? const BoxConstraints()
+                        : null, // Allow shrinking
+                    splashColor: value > 0.05 ? Colors.transparent : null,
+                    highlightColor: value > 0.05 ? Colors.transparent : null,
+                    hoverColor: value > 0.05 ? Colors.transparent : null,
+                    icon: FaIcon(
+                      FontAwesomeIcons.backwardStep,
+                      color: hasSong
+                          ? Theme.of(context).colorScheme.secondary
+                          : Theme.of(
+                              context,
+                            ).colorScheme.secondary.withOpacity(0.5),
+                      size: lerpDouble(24, 40, value)!,
+                    ),
+                    onPressed: hasSong ? audioSignal.skipPrevious : null,
+                  ),
 
-            isMobile ? const SizedBox(width: 2) : const SizedBox(width: 0),
-            // Play/Pause Button (Morphing)
-            // Use dynamic padding to collapse the container width to 0 when hidden
-            Container(
-              alignment: Alignment.center,
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? lerpDouble(0, 6, value)! : 6,
-              ),
-              child: playBtnSize >= 24
-                  ? IconButton(
-                      // Hide if too small
-                      padding: buttonPadding,
-                      constraints: isCompact ? const BoxConstraints() : null,
-                      splashColor: value > 0.05 ? Colors.transparent : null,
-                      highlightColor: value > 0.05 ? Colors.transparent : null,
-                      hoverColor: value > 0.05 ? Colors.transparent : null,
-                      icon: FaIcon(
-                        isPlaying
-                            ? FontAwesomeIcons.pause
-                            : FontAwesomeIcons.play,
-                        color: hasSong
-                            ? Theme.of(context).colorScheme.secondary
-                            : Theme.of(
-                                context,
-                              ).colorScheme.secondary.withOpacity(0.5),
-                        size: playBtnSize,
-                      ),
-                      onPressed: hasSong
-                          ? () {
-                              if (isPlaying) {
-                                audioSignal.pause();
-                              } else {
-                                audioSignal.play();
-                              }
-                            }
-                          : null,
-                    )
-                  : null,
-            ),
+                  isMobile
+                      ? const SizedBox(width: 2)
+                      : const SizedBox(width: 0),
+                  // Play/Pause Button (Morphing)
+                  // Use dynamic padding to collapse the container width to 0 when hidden
+                  Container(
+                    alignment: Alignment.center,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isMobile ? lerpDouble(0, 6, value)! : 6,
+                    ),
+                    child: playBtnSize >= 24
+                        ? IconButton(
+                            // Hide if too small
+                            padding: buttonPadding,
+                            constraints: isCompact
+                                ? const BoxConstraints()
+                                : null,
+                            splashColor: value > 0.05
+                                ? Colors.transparent
+                                : null,
+                            highlightColor: value > 0.05
+                                ? Colors.transparent
+                                : null,
+                            hoverColor: value > 0.05
+                                ? Colors.transparent
+                                : null,
+                            icon: FaIcon(
+                              isPlaying
+                                  ? FontAwesomeIcons.pause
+                                  : FontAwesomeIcons.play,
+                              color: hasSong
+                                  ? Theme.of(context).colorScheme.secondary
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.secondary.withValues(alpha: 0.5),
+                              size: playBtnSize,
+                            ),
+                            onPressed: hasSong
+                                ? () {
+                                    if (isPlaying) {
+                                      audioSignal.pause();
+                                    } else {
+                                      audioSignal.play();
+                                    }
+                                  }
+                                : null,
+                          )
+                        : null,
+                  ),
 
-            isMobile ? const SizedBox(width: 2) : const SizedBox(width: 0),
+                  isMobile
+                      ? const SizedBox(width: 2)
+                      : const SizedBox(width: 0),
 
-            IconButton(
-              padding: buttonPadding,
-              constraints: isCompact ? const BoxConstraints() : null,
-              splashColor: value > 0.05 ? Colors.transparent : null,
-              highlightColor: value > 0.05 ? Colors.transparent : null,
-              hoverColor: value > 0.05 ? Colors.transparent : null,
-              icon: FaIcon(
-                FontAwesomeIcons.forwardStep,
-                color: hasSong
-                    ? Theme.of(context).colorScheme.secondary
-                    : Theme.of(context).colorScheme.secondary.withOpacity(0.5),
-                size: lerpDouble(24, 40, value)!,
+                  IconButton(
+                    padding: buttonPadding,
+                    constraints: isCompact ? const BoxConstraints() : null,
+                    splashColor: value > 0.05 ? Colors.transparent : null,
+                    highlightColor: value > 0.05 ? Colors.transparent : null,
+                    hoverColor: value > 0.05 ? Colors.transparent : null,
+                    icon: FaIcon(
+                      FontAwesomeIcons.forwardStep,
+                      color: hasSong
+                          ? Theme.of(context).colorScheme.secondary
+                          : Theme.of(
+                              context,
+                            ).colorScheme.secondary.withOpacity(0.5),
+                      size: lerpDouble(24, 40, value)!,
+                    ),
+                    onPressed: hasSong ? audioSignal.skipNext : null,
+                  ),
+                ],
               ),
-              onPressed: hasSong ? audioSignal.skipNext : null,
             ),
-          ],
+          ),
         ),
-      ),
-      ),
-      ),
       ),
     );
   }
@@ -1559,6 +1598,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     double collapsedWidth,
     bool isCompact,
   ) {
+    return Watch((context) {
     // Start State (Desktop Bar)
     // Right aligned: Shuffle, Repeat, List, More
     // Total width approx: 4 * 40 (icon + padding) + 3 * 12 (gap) = 160 + 36 = 196
@@ -1567,8 +1607,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
     final startRight = 16.0;
     final startTop = 15.0; // Moved up by 1px
-    final startWidth =
-        280.0; // Fits: Shuffle, Repeat, Lyrics, Queue, More
+    
+    // Calculate dynamic startWidth based on number of actions
+    // IconButton is usually 48x48, spacing is 12
+    final actionsCount = settingsSignal.playerBarActions.value.length;
+    final maxActionsWidth = isCompact ? (collapsedWidth * 0.45) : 600.0;
+    final startWidth = (actionsCount * 48.0 + (actionsCount - 1) * 12.0).clamp(0.0, maxActionsWidth);
     final startLeft = collapsedWidth - startRight - startWidth;
 
     // End State (Expanded)
@@ -1583,7 +1627,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     // Opacity for Format Badge (Only visible in expanded)
     final badgeOpacity = ((value - 0.5) * 2).clamp(0.0, 1.0);
 
-    // Opacity for Actions (Always visible on Desktop, fade in on Mobile)
+    // Opacity for Actions (Always visible on large Desktop bar, fade in on Compact/Mobile)
     final actionsOpacity = isCompact ? value : 1.0;
 
     // Interpolate Icon Size
@@ -1600,7 +1644,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       width: currentWidth,
       height: currentHeight,
       child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 300),
+        duration: const Duration(milliseconds: 150),
         opacity: show ? actionsOpacity : 0.0,
         child: IgnorePointer(
           ignoring: (isCompact && value < 0.05) || !show,
@@ -1609,162 +1653,66 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             child: Stack(
               alignment: Alignment.bottomCenter, // Align to bottom
               children: [
-              // Format Badge (Positioned above buttons)
-              if (currentSong != null)
-                Positioned(
-                  bottom: 60, // 48px (buttons) + 12px (gap)
-                  child: Opacity(
-                    opacity: badgeOpacity,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondary,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.secondary.withOpacity(0.2),
+                // Format Badge (Positioned above buttons)
+                if (currentSong != null)
+                  Positioned(
+                    bottom: 60, // 48px (buttons) + 12px (gap)
+                    child: Opacity(
+                      opacity: badgeOpacity,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
                         ),
-                      ),
-                      child: Text(
-                        _getCodecAndBitrate(currentSong),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSecondary,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 10,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.secondary,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.secondary.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Text(
+                          _getCodecAndBitrate(currentSong),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSecondary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 10,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
 
-              // Action Buttons (Pinned to bottom)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: 48,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Watch((context) {
-                      final isShuffle = audioSignal.isShuffleMode.value;
-                      return IconButton(
-                        icon: FaIcon(
-                          FontAwesomeIcons.shuffle,
-                          color: isShuffle
-                              ? Theme.of(context).colorScheme.secondary
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.secondary.withValues(alpha: 0.4),
-                          size: iconSize,
-                        ),
-                        onPressed: audioSignal.toggleShuffle,
-                      );
-                    }),
-                    SizedBox(width: spacing),
-                    Watch((context) {
-                      final mode = audioSignal.repeatMode.value;
-                      final isNone = mode == AudioServiceRepeatMode.none;
-                      final isOne = mode == AudioServiceRepeatMode.one;
-
-                      return IconButton(
-                        icon: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            FaIcon(
-                              FontAwesomeIcons.repeat,
-                              color: !isNone
-                                  ? Theme.of(context).colorScheme.secondary
-                                  : Theme.of(context).colorScheme.secondary
-                                        .withValues(alpha: 0.4),
-                              size: iconSize,
-                            ),
-                            if (isOne)
-                              Positioned(
-                                bottom: -2,
-                                right: -2,
-                                child: Container(
-                                  padding: const EdgeInsets.all(1),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.surface,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Text(
-                                    '1',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.secondary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        onPressed: audioSignal.toggleRepeat,
-                      );
-                    }),
-                    SizedBox(width: spacing),
-                    Watch((context) {
-                      final showLyrics = audioSignal.showLyrics.value;
-                      return IconButton(
-                        icon: FaIcon(
-                          FontAwesomeIcons.music,
-                          color: showLyrics
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.secondary,
-                          size: iconSize,
-                        ),
-                        onPressed: () {
-                          audioSignal.showLyrics.value = !showLyrics;
-                        },
-                      );
-                    }),
-                    SizedBox(width: spacing),
-                    IconButton(
-                      icon: FaIcon(
-                        FontAwesomeIcons.listUl,
-                        color: Theme.of(context).colorScheme.secondary,
-                        size: iconSize,
-                      ),
-                      onPressed: () {
-                        showQueueSheet(context);
-                      },
-                    ),
-                    SizedBox(width: spacing),
-                    IconButton(
-                      icon: FaIcon(
-                        FontAwesomeIcons.ellipsis,
-                        color: Theme.of(context).colorScheme.secondary,
-                        size: iconSize,
-                      ),
-                      onPressed: () {
-                        if (currentSong != null) {
-                          showSongMoreActionsSheet(
+                // Action Buttons (Pinned to bottom)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: 48,
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (int i = 0; i < actionsCount; i++) ...[
+                          if (i > 0) SizedBox(width: spacing),
+                          _buildActionById(
                             context: context,
-                            song: currentSong,
-                            albumArt: _currentAlbumArt,
-                          );
-                        }
-                      },
+                            id: settingsSignal.playerBarActions.value[i],
+                            iconSize: iconSize,
+                            currentSong: currentSong,
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-        ),
       ),
-    );
+      );
+    });
   }
 
   Widget _buildLyricsBody(
@@ -1786,11 +1734,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       final bottomEdge = isDesktopLayout
           ? MediaQuery.of(context).size.height
           : (hasLyrics
-              ? (_showControls
-                  ? expandedLayout.controls.top
-                  : MediaQuery.of(context).size.height - 24.0)
-              : expandedLayout.seekbar.top);
-              
+                ? (_showControls
+                      ? expandedLayout.controls.top
+                      : MediaQuery.of(context).size.height - 24.0)
+                : expandedLayout.seekbar.top);
+
       final availableHeight = bottomEdge - topPadding;
 
       Widget content;
@@ -1842,5 +1790,166 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         child: content,
       );
     });
+  }
+
+  Widget _buildActionById({
+    required BuildContext context,
+    required String id,
+    required double iconSize,
+    Song? currentSong,
+  }) {
+    switch (id) {
+      case 'shuffle':
+        return Watch((context) {
+          final isShuffle = audioSignal.isShuffleMode.value;
+          return IconButton(
+            icon: FaIcon(
+              FontAwesomeIcons.shuffle,
+              color: isShuffle
+                  ? Theme.of(context).colorScheme.secondary
+                  : Theme.of(context).colorScheme.secondary.withValues(alpha: 0.4),
+              size: iconSize,
+            ),
+            onPressed: audioSignal.toggleShuffle,
+          );
+        });
+      case 'repeat':
+        return Watch((context) {
+          final mode = audioSignal.repeatMode.value;
+          final isNone = mode == AudioServiceRepeatMode.none;
+          final isOne = mode == AudioServiceRepeatMode.one;
+          return IconButton(
+            icon: Stack(
+              alignment: Alignment.center,
+              children: [
+                FaIcon(
+                  FontAwesomeIcons.repeat,
+                  color: !isNone
+                      ? Theme.of(context).colorScheme.secondary
+                      : Theme.of(context).colorScheme.secondary.withValues(alpha: 0.4),
+                  size: iconSize,
+                ),
+                if (isOne)
+                  Positioned(
+                    bottom: -2,
+                    right: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(1),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '1',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.secondary,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: audioSignal.toggleRepeat,
+          );
+        });
+      case 'lyrics':
+        return Watch((context) {
+          final showLyrics = audioSignal.showLyrics.value;
+          return IconButton(
+            icon: FaIcon(
+              FontAwesomeIcons.music,
+              color: showLyrics
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.secondary,
+              size: iconSize,
+            ),
+            onPressed: () {
+              audioSignal.showLyrics.value = !showLyrics;
+            },
+          );
+        });
+      case 'queue':
+        return IconButton(
+          icon: FaIcon(
+            FontAwesomeIcons.listUl,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize,
+          ),
+          onPressed: () => showQueueSheet(context),
+        );
+      case 'more':
+        return IconButton(
+          icon: FaIcon(
+            FontAwesomeIcons.ellipsis,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize,
+          ),
+          onPressed: () {
+            if (currentSong != null) {
+              showSongMoreActionsSheet(
+                context: context,
+                song: currentSong,
+                albumArt: _currentAlbumArt,
+              );
+            }
+          },
+        );
+      case 'add_to_playlist':
+        return IconButton(
+          icon: Icon(Icons.playlist_add, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          onPressed: currentSong != null ? () => PlaylistPickerDialog.show(context, song: currentSong) : null,
+        );
+      case 'play_next':
+        return IconButton(
+          icon: Icon(Icons.playlist_play, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          onPressed: currentSong != null ? () => audioSignal.playNext(currentSong) : null,
+        );
+      case 'add_to_queue':
+        return IconButton(
+          icon: Icon(Icons.queue_music, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          onPressed: currentSong != null ? () => audioSignal.addToQueue(currentSong) : null,
+        );
+      case 'go_to_album':
+        return IconButton(
+          icon: Icon(Icons.album_outlined, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          onPressed: () {},
+        );
+      case 'go_to_artist':
+        return IconButton(
+          icon: Icon(Icons.person_outline, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          onPressed: () {},
+        );
+      case 'info':
+        return IconButton(
+          icon: Icon(Icons.info_outline, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          onPressed: currentSong != null ? () => showSongInfoDialog(context, currentSong) : null,
+        );
+      case 'share':
+        return IconButton(
+          icon: Icon(Icons.share_outlined, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          onPressed: () {},
+        );
+      case 'sleep_timer':
+        return IconButton(
+          icon: Icon(Icons.timer_outlined, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          onPressed: () => showSleepTimerDialog(context),
+        );
+      case 'remove_from_playlist':
+        return IconButton(
+          icon: Icon(Icons.playlist_remove, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          onPressed: () {
+            // How do we know which playlist we are in?
+            // currentPlaylist signal holds it if we played from a playlist
+            final playlist = audioSignal.currentPlaylist.value;
+            if (playlist != null && currentSong != null) {
+              audioSignal.removeSongFromPlaylist(playlist.id, currentSong.path);
+            }
+          },
+        );
+      default:
+        return const SizedBox.shrink();
+    }
   }
 }

@@ -4,7 +4,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
-import '../signals/navigation_signal.dart';
 import '../models/song.dart';
 import '../services/album_art_cache.dart';
 import 'package:path/path.dart' as p;
@@ -70,116 +69,145 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
     final currentPath = _currentPath ?? '';
 
     return Watch((context) {
-      return Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Padding(
-              padding: EdgeInsets.only(
-                top:
-                    24.0 +
-                    ((Platform.isAndroid || Platform.isIOS)
-                        ? (50.0 + MediaQuery.of(context).padding.top)
-                        : 50.0),
-                left: 24.0,
-                right: 24.0,
-                bottom: 24.0,
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+
+          final musicPath = await audioSignal.getMusicPath();
+          if (currentPath == musicPath) {
+            // At root, go back to library/home
+            if (context.mounted) {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/library');
+              }
+            }
+            return;
+          }
+
+          // Go up one level
+          final parent = Directory(currentPath).parent;
+          if (context.mounted) {
+            context.go('/explorer/${Uri.encodeComponent(parent.path)}');
+          }
+        },
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Padding(
+                padding: EdgeInsets.only(
+                  top:
+                      24.0 +
+                      ((Platform.isAndroid || Platform.isIOS)
+                          ? (50.0 + MediaQuery.of(context).padding.top)
+                          : 50.0),
+                  left: 24.0,
+                  right: 24.0,
+                  bottom: 24.0,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (!(Platform.isAndroid || Platform.isIOS)) ...[
+                          IconButton(
+                            icon: Icon(
+                              Icons.arrow_back,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.54),
+                            ),
+                            onPressed: () async {
+                              final musicPath = await audioSignal.getMusicPath();
+                              if (currentPath == musicPath) {
+                                if (context.mounted) {
+                                  if (context.canPop()) {
+                                    context.pop();
+                                  } else {
+                                    context.go('/library');
+                                  }
+                                }
+                              } else {
+                                final parent = Directory(currentPath).parent;
+                                if (context.mounted) {
+                                  context.go(
+                                    '/explorer/${Uri.encodeComponent(parent.path)}',
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Expanded(
+                          child: Text(
+                            currentPath,
+                            style: TextStyle(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.38),
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      if (!(Platform.isAndroid || Platform.isIOS)) ...[
-                        IconButton(
-                          icon: Icon(
-                            Icons.arrow_back,
+
+              // Explorer List
+              Expanded(
+                child: _items!.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No music files found in this folder',
+                          style: TextStyle(
                             color: Theme.of(
                               context,
                             ).colorScheme.onSurface.withOpacity(0.54),
                           ),
-                          onPressed: () {
-                            if (navigationSignal.canPopSync) {
-                              navigationSignal.goBack(context);
-                            } else {
-                              // If we can't pop, try to go up one level manually
-                              final parent = Directory(currentPath).parent;
-                              if (currentPath.endsWith('Music')) {
-                                context.go('/');
-                              } else {
-                                context.go(
-                                  '/explorer/${Uri.encodeComponent(parent.path)}',
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: EdgeInsets.fromLTRB(
+                          24,
+                          0,
+                          24,
+                          audioSignal.reservedHeight.value,
+                        ),
+                        itemCount: _items!.length,
+                        itemBuilder: (context, index) {
+                          final item = _items![index];
+                          if (item is Directory) {
+                            return _FolderTile(
+                              directory: item,
+                              onTap: () {
+                                context.push(
+                                  '/explorer/${Uri.encodeComponent(item.path)}',
                                 );
-                              }
-                            }
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Expanded(
-                        child: Text(
-                          currentPath,
-                          style: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withOpacity(0.38),
-                            fontSize: 14,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                              },
+                            );
+                          } else if (item is File) {
+                            return _FileTile(
+                              file: item,
+                              onTap: () => audioSignal.playFile(item),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
                       ),
-                    ],
-                  ),
-                ],
               ),
-            ),
-
-            // Explorer List
-            Expanded(
-              child: _items!.isEmpty
-                  ? Center(
-                      child: Text(
-                        'No music files found in this folder',
-                        style: TextStyle(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withOpacity(0.54),
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: EdgeInsets.fromLTRB(
-                        24,
-                        0,
-                        24,
-                        audioSignal.reservedHeight.value,
-                      ),
-                      itemCount: _items!.length,
-                      itemBuilder: (context, index) {
-                        final item = _items![index];
-                        if (item is Directory) {
-                          return _FolderTile(
-                            directory: item,
-                            onTap: () {
-                              context.push(
-                                '/explorer/${Uri.encodeComponent(item.path)}',
-                              );
-                            },
-                          );
-                        } else if (item is File) {
-                          return _FileTile(
-                            file: item,
-                            onTap: () => audioSignal.playFile(item),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     });

@@ -41,12 +41,32 @@ class SettingsSignal {
     'share',
   ]);
   final actionsSheetShowLabels = signal<bool>(false);
+  final playerBarActions = listSignal<String>([
+    'shuffle',
+    'repeat',
+    'lyrics',
+    'queue',
+    'more',
+  ]);
 
   final lyricsAlignment = signal<TextAlign>(TextAlign.center);
   final lyricsActiveFontSize = signal<double>(28.0);
   final lyricsInactiveFontSize = signal<double>(22.0);
   final plainLyricsFontSize = signal<double>(18.0);
   final showRomanizedLyrics = signal<bool>(false);
+  final lyricsProviders = listSignal<String>([
+    'lrclib',
+    'simpmusic',
+    'better_lyrics',
+    'kugou',
+  ]);
+  final enabledLyricsProviders = listSignal<String>([
+    'lrclib',
+    'simpmusic',
+    'better_lyrics',
+    'kugou',
+  ]);
+  final excludedPaths = listSignal<String>([]);
 
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -98,6 +118,11 @@ class SettingsSignal {
 
     actionsSheetShowLabels.value =
         prefs.getBool('actionsSheetShowLabels') ?? false;
+    
+    final playerActions = prefs.getStringList('playerBarActions');
+    if (playerActions != null) {
+      playerBarActions.value = playerActions;
+    }
 
     final alignIndex = prefs.getInt('lyricsAlignment');
     if (alignIndex != null && alignIndex >= 0 && alignIndex < TextAlign.values.length) {
@@ -108,6 +133,21 @@ class SettingsSignal {
     plainLyricsFontSize.value = prefs.getDouble('plainLyricsFontSize') ?? 18.0;
 
     showRomanizedLyrics.value = prefs.getBool('showRomanizedLyrics') ?? false;
+
+    final providers = prefs.getStringList('lyricsProviders');
+    if (providers != null) {
+      lyricsProviders.value = providers;
+    }
+
+    final enabled = prefs.getStringList('enabledLyricsProviders');
+    if (enabled != null) {
+      enabledLyricsProviders.value = enabled;
+    }
+
+    final excluded = prefs.getStringList('excludedPaths');
+    if (excluded != null) {
+      excludedPaths.value = excluded;
+    }
   }
 
   Future<void> updateMusicDirectory(String? value) async {
@@ -262,6 +302,12 @@ class SettingsSignal {
     await prefs.setBool('actionsSheetShowLabels', value);
   }
 
+  Future<void> updatePlayerBarActions(List<String> actions) async {
+    playerBarActions.value = actions;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('playerBarActions', actions);
+  }
+
   Future<void> updateLyricsAlignment(TextAlign align) async {
     lyricsAlignment.value = align;
     final prefs = await SharedPreferences.getInstance();
@@ -290,6 +336,50 @@ class SettingsSignal {
     showRomanizedLyrics.value = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('showRomanizedLyrics', value);
+  }
+
+  Future<void> updateLyricsProviders(List<String> providers) async {
+    lyricsProviders.value = providers;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('lyricsProviders', providers);
+  }
+
+  Future<void> updateEnabledLyricsProviders(List<String> enabled) async {
+    enabledLyricsProviders.value = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('enabledLyricsProviders', enabled);
+  }
+
+  Future<void> toggleLyricsProvider(String providerId) async {
+    final current = List<String>.from(enabledLyricsProviders.value);
+    if (current.contains(providerId)) {
+      current.remove(providerId);
+    } else {
+      current.add(providerId);
+    }
+    await updateEnabledLyricsProviders(current);
+  }
+
+  Future<void> updateExcludedPaths(List<String> paths) async {
+    excludedPaths.value = paths;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('excludedPaths', paths);
+  }
+
+  Future<void> addExcludedPath(String path) async {
+    final current = List<String>.from(excludedPaths.value);
+    if (!current.contains(path)) {
+      current.add(path);
+      await updateExcludedPaths(current);
+    }
+  }
+
+  Future<void> removeExcludedPath(String path) async {
+    final current = List<String>.from(excludedPaths.value);
+    if (current.contains(path)) {
+      current.remove(path);
+      await updateExcludedPaths(current);
+    }
   }
 }
 

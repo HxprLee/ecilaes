@@ -494,6 +494,44 @@ class AppearanceSection extends StatelessWidget {
                           ),
                           ListTile(
                             title: Text(
+                              'Player Bar Layout',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface,
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Customize buttons in the player bar',
+                              style: TextStyle(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.54),
+                                fontSize: 12,
+                              ),
+                            ),
+                            trailing: Icon(
+                              Icons.chevron_right,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface
+                                  .withValues(alpha: 0.3),
+                            ),
+                            onTap: () {
+                              context.go('/settings/appearance/player-bar-layout');
+                            },
+                          ),
+                          Divider(
+                            height: 1,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.05),
+                            indent: 16,
+                            endIndent: 16,
+                          ),
+                          ListTile(
+                            title: Text(
                               'Actions Sheet Layout',
                               style: TextStyle(
                                 color: Theme.of(

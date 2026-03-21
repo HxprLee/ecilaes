@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -8,7 +7,7 @@ import '../models/playlist.dart';
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
 import '../widgets/page_header.dart';
-
+import '../widgets/playlist_cover.dart';
 import '../widgets/song_actions_sheet.dart';
 import '../widgets/song_list_view.dart';
 
@@ -73,37 +72,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               child: PageHeader(
                 title: currentPlaylist.name,
                 subtitle: '${songs.length} songs',
-                leading: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurple,
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: currentPlaylist.imagePath == null
-                        ? const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Colors.deepPurple, Colors.indigo],
-                          )
-                        : null,
-                    image: currentPlaylist.imagePath != null
-                        ? DecorationImage(
-                            image: FileImage(File(currentPlaylist.imagePath!)),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                  child: currentPlaylist.imagePath == null
-                      ? Center(
-                          child: FaIcon(
-                            currentPlaylist.id == 'favorites'
-                                ? FontAwesomeIcons.solidHeart
-                                : FontAwesomeIcons.list,
-                            color: Theme.of(context).colorScheme.onSurface,
-                            size: 48,
-                          ),
-                        )
-                      : null,
+                leading: PlaylistCover(
+                  playlist: currentPlaylist,
+                  width: 140,
+                  height: 140,
+                  borderRadius: 12,
                 ),
               ),
             ),

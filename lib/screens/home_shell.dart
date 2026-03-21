@@ -164,7 +164,7 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
     }
 
     final topPadding = MediaQuery.of(context).padding.top;
-    final headerHeight = isMobile ? (64.0 + topPadding) : 74.0;
+    final headerHeight = isMobile ? (64.0 + topPadding) : 80.0;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(

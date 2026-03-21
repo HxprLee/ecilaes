@@ -295,6 +295,7 @@ class MyAudioHandler extends BaseAudioHandler {
     queue.add(currentQueue);
   }
 
+  @override
   Future<void> insertQueueItem(int index, MediaItem mediaItem) async {
     final currentQueue = List<MediaItem>.from(queue.value);
     if (index < 0) index = 0;
@@ -538,7 +539,7 @@ class MyAudioHandler extends BaseAudioHandler {
       _lastTrackId = currentId;
     }
 
-    if (isPlaying && !_hasRecordedCurrent && currentId != null) {
+    if (isPlaying && !_hasRecordedCurrent && currentId != null && !currentId.startsWith('yt:')) {
       // Start or resume timer
       _historyTimer ??= Timer(const Duration(seconds: 40), () async {
         if (mediaItem.value?.id == currentId && !_hasRecordedCurrent) {
