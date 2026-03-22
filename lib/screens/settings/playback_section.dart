@@ -33,6 +33,155 @@ class PlaybackSection extends StatelessWidget {
                   const SubpageHeader(title: 'Playback'),
                   const SizedBox(height: 24),
 
+                  // Audio section
+                  _sectionLabel('Audio', context),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Card(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surface.withValues(alpha: 0.8),
+                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondary.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        children: [
+                          Watch((context) {
+                            return SwitchListTile(
+                              title: Text(
+                                'Gapless Playback',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Seamless transitions between tracks without silence gaps',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withValues(alpha: 0.54),
+                                  fontSize: 12,
+                                ),
+                              ),
+                              value: settingsSignal.gaplessPlayback.value,
+                              onChanged: (value) {
+                                settingsSignal.updateGaplessPlayback(value);
+                                audioSignal.audioHandler.setGaplessMode(value);
+                              },
+                              activeThumbColor: Theme.of(
+                                context,
+                              ).colorScheme.secondary,
+                            );
+                          }),
+                          _divider(context),
+                          Watch((context) {
+                            return SwitchListTile(
+                              title: Text(
+                                'Volume Normalization',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Adjust volume levels for consistent loudness across tracks',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withValues(alpha: 0.54),
+                                  fontSize: 12,
+                                ),
+                              ),
+                              value: settingsSignal.audioNormalization.value,
+                              onChanged: (value) {
+                                settingsSignal.updateAudioNormalization(value);
+                                audioSignal.audioHandler.setNormalizationEnabled(value);
+                              },
+                              activeThumbColor: Theme.of(
+                                context,
+                              ).colorScheme.secondary,
+                            );
+                          }),
+                          Watch((context) {
+                            if (!settingsSignal.audioNormalization.value) {
+                              return const SizedBox.shrink();
+                            }
+                            return Column(
+                              children: [
+                                _divider(context),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Target Loudness',
+                                              style: TextStyle(
+                                                color: Theme.of(context).colorScheme.onSurface,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '${settingsSignal.normalizationTargetLufs.value.toStringAsFixed(0)} LUFS',
+                                              style: TextStyle(
+                                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 8.0, right: 8.0, bottom: 8.0),
+                                  child: SliderTheme(
+                                    data: SliderThemeData(
+                                      activeTrackColor: Theme.of(context).colorScheme.secondary,
+                                      thumbColor: Theme.of(context).colorScheme.secondary,
+                                      inactiveTrackColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
+                                      overlayColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                                    ),
+                                    child: Slider(
+                                      value: settingsSignal.normalizationTargetLufs.value,
+                                      min: -23.0,
+                                      max: -6.0,
+                                      divisions: 17,
+                                      onChanged: (value) {
+                                        settingsSignal.updateNormalizationTargetLufs(value);
+                                        audioSignal.audioHandler.setNormalizationTargetLufs(value);
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
                   // Controls section
                   _sectionLabel('Controls & Behavior', context),
                   Padding(
@@ -70,7 +219,7 @@ class PlaybackSection extends StatelessWidget {
                                 style: TextStyle(
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.onSurface.withOpacity(0.54),
+                                  ).colorScheme.onSurface.withValues(alpha: 0.54),
                                   fontSize: 12,
                                 ),
                               ),
@@ -100,7 +249,7 @@ class PlaybackSection extends StatelessWidget {
                                   style: TextStyle(
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.onSurface.withOpacity(0.54),
+                                    ).colorScheme.onSurface.withValues(alpha: 0.54),
                                     fontSize: 12,
                                   ),
                                 ),
@@ -129,7 +278,7 @@ class PlaybackSection extends StatelessWidget {
                                   style: TextStyle(
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.onSurface.withOpacity(0.54),
+                                    ).colorScheme.onSurface.withValues(alpha: 0.54),
                                     fontSize: 12,
                                   ),
                                 ),

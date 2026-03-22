@@ -54,11 +54,18 @@ class SongCache {
       final artDirPath = await artDir;
 
       final songs = <Song>[];
-      for (final json in jsonList) {
-        // Just check if album art file exists - don't load bytes
+      
+      // Perform existence checks in parallel to avoid sequential IO bottlenecks
+      final existenceChecks = jsonList.map((json) {
         final artPath = '$artDirPath/${_artFileName(json['path'])}';
-        final artFile = File(artPath);
-        final hasArt = await artFile.exists();
+        return File(artPath).exists();
+      }).toList();
+      
+      final hasArtList = await Future.wait(existenceChecks);
+
+      for (int i = 0; i < jsonList.length; i++) {
+        final json = jsonList[i];
+        final hasArt = hasArtList[i];
 
         songs.add(
           Song(
@@ -68,7 +75,7 @@ class SongCache {
                 : json['title'],
             artist: json['artist'] ?? 'Unknown Artist',
             album: json['album'],
-            hasAlbumArt: hasArt, // Lightweight flag
+            hasAlbumArt: hasArt,
             lyrics: json['lyrics'],
             duration: json['durationMs'] != null
                 ? Duration(milliseconds: json['durationMs'])
@@ -78,6 +85,10 @@ class SongCache {
             modifiedAt: json['modifiedAt'] != null
                 ? DateTime.fromMillisecondsSinceEpoch(json['modifiedAt'])
                 : null,
+            gainDb: (json['gainDb'] as num?)?.toDouble() ?? 0.0,
+            trackPeak: (json['trackPeak'] as num?)?.toDouble() ?? 1.0,
+            albumGainDb: (json['albumGainDb'] as num?)?.toDouble() ?? 0.0,
+            albumPeak: (json['albumPeak'] as num?)?.toDouble() ?? 1.0,
           ),
         );
       }
@@ -107,6 +118,10 @@ class SongCache {
           'bitrate': song.bitrate,
           'size': song.size,
           'modifiedAt': song.modifiedAt?.millisecondsSinceEpoch,
+          'gainDb': song.gainDb,
+          'trackPeak': song.trackPeak,
+          'albumGainDb': song.albumGainDb,
+          'albumPeak': song.albumPeak,
         });
       }
 

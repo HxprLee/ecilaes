@@ -185,18 +185,21 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
 
         return PopScope(
           canPop: !navigationSignal.canGoBack.value &&
-              audioSignal.playerExpansion.value < 0.1,
+              audioSignal.playerExpansion.value < 0.001,
           onPopInvokedWithResult: (didPop, result) {
             if (didPop) return;
 
-            // 1. Priority: Expanded Player
-            if (audioSignal.playerExpansion.value > 0.1) {
+            final expansion = audioSignal.playerExpansion.value;
+            final canGoBack = navigationSignal.canGoBack.value;
+
+            // 1. Priority: If player is even SLIGHTLY open, minimize it first
+            if (expansion > 0.001) {
               audioSignal.minimizePlayerTrigger.value++;
               return;
             }
 
-            // 2. Priority: Navigation History
-            if (navigationSignal.canGoBack.value) {
+            // 2. Priority: Only if player is fully closed, go back in history
+            if (canGoBack) {
               navigationSignal.goBack(context);
             }
           },
@@ -252,13 +255,7 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                       return false;
                     },
                     child: ScrollConfiguration(
-                      behavior: ScrollConfiguration.of(context).copyWith(
-                        physics: const HeaderSnapScrollPhysics().applyTo(
-                          ScrollConfiguration.of(
-                            context,
-                          ).getScrollPhysics(context),
-                        ),
-                      ),
+                      behavior: ScrollConfiguration.of(context),
                       child: widget.child,
                     ),
                   ),
@@ -438,55 +435,3 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
   }
 }
 
-class HeaderSnapScrollPhysics extends ScrollPhysics {
-  const HeaderSnapScrollPhysics({super.parent});
-
-  @override
-  HeaderSnapScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return HeaderSnapScrollPhysics(parent: buildParent(ancestor));
-  }
-
-  @override
-  bool get allowImplicitScrolling => true;
-
-  @override
-  double applyBoundaryConditions(ScrollMetrics position, double value) {
-    if (parent != null) return parent!.applyBoundaryConditions(position, value);
-    return 0.0;
-  }
-
-  @override
-  Simulation? createBallisticSimulation(
-    ScrollMetrics position,
-    double velocity,
-  ) {
-    // If we're out of snap range, use parent physics
-    if (position.pixels < 0.0 || position.pixels > 80.0) {
-      return super.createBallisticSimulation(position, velocity);
-    }
-
-    // Only snap if velocity is low (not a strong flick)
-    // and we're within the snap zone.
-    if (velocity.abs() < 400.0) {
-      // Determine target based on 0.5 progress (40px)
-      final double target;
-      if (position.pixels <= 40.0) {
-        target = 0.0;
-      } else {
-        target = 80.0;
-      }
-
-      // Create a critically damped snapping simulation (no bounce)
-      return ScrollSpringSimulation(
-        const SpringDescription(mass: 1.0, stiffness: 150, damping: 25),
-        position.pixels,
-        target,
-        velocity,
-        tolerance: toleranceFor(position),
-      );
-    }
-
-    // High velocity: let the parent physics handle the natural momentum
-    return super.createBallisticSimulation(position, velocity);
-  }
-}

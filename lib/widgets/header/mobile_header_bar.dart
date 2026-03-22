@@ -1,4 +1,6 @@
 import 'dart:io';
+import '../../models/playlist.dart';
+import '../playlist_cover.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -66,7 +68,13 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     if (route == '/settings/playback') return 'Playback';
     if (route == '/settings/library') return 'Library';
     if (route == '/settings/about') return 'About';
-    if (route == '/settings/appearance/actions-layout') return 'Actions Layout';
+    if (route == '/settings/appearance/player-bar-layout') return 'Player Bar Layout';
+    if (route == '/settings/appearance/lyrics-layout') return 'Lyrics Layout';
+    if (route == '/settings/appearance/actions-layout') return 'Actions Sheet Layout';
+    if (route == '/settings/cache') return 'Cache Management';
+    if (route == '/playlists') return 'Playlists';
+    if (route == '/albums') return 'Albums';
+    if (route == '/artists') return 'Artists';
     if (route.startsWith('/explorer/')) return 'Folders';
     if (route.startsWith('/playlist/')) {
       // Try to find playlist name
@@ -97,9 +105,11 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
           currentRoute == '/songs' ||
           currentRoute.startsWith('/playlist') ||
           currentRoute.startsWith('/playlists') ||
+          currentRoute.startsWith('/albums') ||
+          currentRoute.startsWith('/artists') ||
+          currentRoute.startsWith('/explorer') ||
           currentRoute == '/recently-played' ||
-          currentRoute == '/recently-added' ||
-          currentRoute.startsWith('/explorer');
+          currentRoute == '/recently-added';
 
       // Auto-collapse if we navigate away from search
       if (!isSearchPage && _isSearchExpanded) {
@@ -186,25 +196,46 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                   : titleProgress,
                               child: Row(
                                 children: [
-                                  if (audioSignal.headerArtCover.value !=
-                                      null) ...[
-                                    Container(
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(4),
-                                        image: DecorationImage(
-                                          image: FileImage(
-                                            File(
-                                              audioSignal.headerArtCover.value!,
+                                  Builder(builder: (context) {
+                                    final playlistId = currentRoute.startsWith('/playlist/') 
+                                        ? currentRoute.split('/').last 
+                                        : null;
+                                    Playlist? playlist;
+                                    if (playlistId != null) {
+                                      try {
+                                        playlist = audioSignal.playlists.value.firstWhere(
+                                          (p) => p.id == playlistId,
+                                        );
+                                      } catch (_) {}
+                                    }
+
+                                    if (playlist != null) {
+                                      return PlaylistCover(
+                                        playlist: playlist,
+                                        width: 32,
+                                        height: 32,
+                                        borderRadius: 4,
+                                      );
+                                    }
+
+                                    if (audioSignal.headerArtCover.value != null) {
+                                      return Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(4),
+                                          image: DecorationImage(
+                                            image: FileImage(
+                                              File(audioSignal.headerArtCover.value!),
                                             ),
+                                            fit: BoxFit.cover,
                                           ),
-                                          fit: BoxFit.cover,
                                         ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
+                                      );
+                                    }
+                                    return const SizedBox.shrink();
+                                  }),
+                                  const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       pageTitle,
@@ -261,8 +292,9 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                   Watch((context) {
                                     final isScanning =
                                         audioSignal.isScanning.value;
-                                    if (!isScanning)
+                                    if (!isScanning) {
                                       return const SizedBox.shrink();
+                                    }
 
                                     return Watch((context) {
                                       final progress =
@@ -370,7 +402,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                   hintStyle: TextStyle(
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.onSurface.withOpacity(0.38),
+                                    ).colorScheme.onSurface.withValues(alpha: 0.38),
                                   ),
                                   border: InputBorder.none,
                                   contentPadding: EdgeInsets.symmetric(
@@ -385,7 +417,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                   Icons.close,
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.onSurface.withOpacity(0.38),
+                                  ).colorScheme.onSurface.withValues(alpha: 0.38),
                                 ),
                                 onPressed: () {
                                   widget.searchController.clear();

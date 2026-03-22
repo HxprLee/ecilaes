@@ -9,6 +9,10 @@ class Song {
   final int? bitrate; // in kbps
   final int? size; // in bytes
   final DateTime? modifiedAt;
+  final double gainDb; // ReplayGain track gain in dB (0.0 = no adjustment)
+  final double trackPeak; // ReplayGain track peak
+  final double albumGainDb; // ReplayGain album gain in dB
+  final double albumPeak; // ReplayGain album peak
 
   Song({
     required this.path,
@@ -21,6 +25,10 @@ class Song {
     this.bitrate,
     this.size,
     this.modifiedAt,
+    this.gainDb = 0.0,
+    this.trackPeak = 1.0,
+    this.albumGainDb = 0.0,
+    this.albumPeak = 1.0,
   });
 
   // Extract title from filename
@@ -31,7 +39,7 @@ class Song {
         ? fileName.substring(0, lastDotIndex)
         : fileName;
 
-    return Song(path: path, title: titleWithoutExt, artist: 'Unknown Artist', modifiedAt: DateTime.now());
+    return Song(path: path, title: titleWithoutExt, artist: 'Unknown Artist', modifiedAt: DateTime.now(), gainDb: 0.0, trackPeak: 1.0, albumGainDb: 0.0, albumPeak: 1.0);
   }
 
   Song copyWith({
@@ -44,6 +52,10 @@ class Song {
     int? bitrate,
     int? size,
     DateTime? modifiedAt,
+    double? gainDb,
+    double? trackPeak,
+    double? albumGainDb,
+    double? albumPeak,
   }) {
     return Song(
       path: path,
@@ -56,6 +68,10 @@ class Song {
       bitrate: bitrate ?? this.bitrate,
       size: size ?? this.size,
       modifiedAt: modifiedAt ?? this.modifiedAt,
+      gainDb: gainDb ?? this.gainDb,
+      trackPeak: trackPeak ?? this.trackPeak,
+      albumGainDb: albumGainDb ?? this.albumGainDb,
+      albumPeak: albumPeak ?? this.albumPeak,
     );
   }
 }

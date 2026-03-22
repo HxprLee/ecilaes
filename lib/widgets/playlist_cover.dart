@@ -30,6 +30,14 @@ class PlaylistCover extends StatelessWidget {
         return _buildImage(FileImage(File(playlist.imagePath!)));
       }
 
+      // If it's a special playlist or has no songs, use the icon placeholder.
+      if (playlist.id == 'favorites' || 
+          playlist.id == 'recently-played' || 
+          playlist.id == 'recently-added' ||
+          playlist.songPaths.isEmpty) {
+        return _buildPlaceholder(context);
+      }
+
       final allSongs = audioSignal.allSongs.value;
       final artDir = audioSignal.albumArtDir.value;
 
@@ -122,7 +130,9 @@ class PlaylistCover extends StatelessWidget {
                   ? FontAwesomeIcons.solidHeart
                   : FontAwesomeIcons.list),
           color: Theme.of(context).colorScheme.secondary,
-          size: (width ?? 100) / 3,
+          size: (width != null && width! < 30) 
+              ? width! * 0.7 
+              : (width ?? 100) / 3,
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../widgets/subpage_header.dart';
@@ -54,10 +55,14 @@ class AboutSection extends StatelessWidget {
                             ],
                           ),
                           child: Center(
-                            child: FaIcon(
-                              FontAwesomeIcons.music,
-                              color: Theme.of(context).colorScheme.surface,
-                              size: 44,
+                            child: SvgPicture.asset(
+                              'assets/app_icon.svg',
+                              width: 54,
+                              height: 54,
+                              colorFilter: ColorFilter.mode(
+                                Theme.of(context).colorScheme.surface,
+                                BlendMode.srcIn,
+                              ),
                             ),
                           ),
                         ),

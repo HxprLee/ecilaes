@@ -44,11 +44,21 @@ dependencies:
   scroll_to_index: ^3.0.1
   romanize: ^0.0.3
   audio_metadata_reader: ^1.4.2
+  flutter_svg: ^2.0.10+1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.0
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/app_icon.png"
+  adaptive_icon_background: "#101010" # Darker background to match themed icons
+  adaptive_icon_foreground: "assets/app_icon.png"
+  monochrome_icon_foreground: "assets/app_icon.png"
 
 flutter:
   uses-material-design: true
@@ -61,3 +71,4 @@ flutter:
           weight: 700
   assets:
     - assets/app_icon.png
+    - assets/app_icon.svg

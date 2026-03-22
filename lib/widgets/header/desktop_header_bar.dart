@@ -7,7 +7,9 @@ import 'package:window_manager/window_manager.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
 import '../../signals/navigation_signal.dart';
+import '../../models/playlist.dart';
 import '../../theme/app_theme_extensions.dart';
+import '../playlist_cover.dart';
 
 class DesktopHeaderBar extends StatelessWidget {
   final double leftOffset;
@@ -71,19 +73,42 @@ class DesktopHeaderBar extends StatelessWidget {
             final titleProgress = audioSignal.headerTitleProgress.value;
             final currentRoute = navigationSignal.currentRoute.value;
 
-            // Simplified title logic similar to MobileHeaderBar
-            String pageTitle = '';
-            if (currentRoute.startsWith('/playlist/')) {
-              final id = currentRoute.split('/').last;
-              try {
-                final playlist = audioSignal.playlists.value.firstWhere(
-                  (p) => p.id == id,
-                );
-                pageTitle = playlist.name;
-              } catch (_) {
-                pageTitle = 'Playlist';
+            // Derived title based on current route
+            String _getPageTitle(String route) {
+              if (route == '/') return 'Home';
+              if (route == '/songs') return 'Songs';
+              if (route == '/search') return 'Search';
+              if (route == '/library') return 'Library';
+              if (route == '/explorer') return 'Folders';
+              if (route == '/recently-played') return 'Recently Played';
+              if (route == '/recently-added') return 'Recently Added';
+              if (route == '/playlists') return 'Playlists';
+              if (route == '/albums') return 'Albums';
+              if (route == '/artists') return 'Artists';
+              if (route == '/settings') return 'Settings';
+              if (route == '/settings/appearance') return 'Appearance';
+              if (route == '/settings/playback') return 'Playback';
+              if (route == '/settings/library') return 'Library';
+              if (route == '/settings/about') return 'About';
+              if (route == '/settings/appearance/player-bar-layout') return 'Player Bar Layout';
+              if (route == '/settings/appearance/lyrics-layout') return 'Lyrics Layout';
+              if (route == '/settings/appearance/actions-layout') return 'Actions Sheet Layout';
+              if (route == '/settings/cache') return 'Cache Management';
+              if (route.startsWith('/explorer/')) return 'Folders';
+              if (route.startsWith('/playlist/')) {
+                final id = route.split('/').last;
+                try {
+                  final playlist = audioSignal.playlists.value.firstWhere(
+                    (p) => p.id == id,
+                  );
+                  return playlist.name;
+                } catch (_) {
+                  return 'Playlist';
+                }
               }
+              return '';
             }
+            final pageTitle = _getPageTitle(currentRoute);
 
             if (pageTitle.isEmpty || titleProgress < 0.01) {
               return const SizedBox.shrink();
@@ -96,22 +121,46 @@ class DesktopHeaderBar extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (audioSignal.headerArtCover.value != null) ...[
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(4),
-                          image: DecorationImage(
-                            image: FileImage(
-                              File(audioSignal.headerArtCover.value!),
+                    Builder(builder: (context) {
+                      final playlistId = currentRoute.startsWith('/playlist/')
+                          ? currentRoute.split('/').last
+                          : null;
+                      Playlist? playlist;
+                      if (playlistId != null) {
+                        try {
+                          playlist = audioSignal.playlists.value.firstWhere(
+                            (p) => p.id == playlistId,
+                          );
+                        } catch (_) {}
+                      }
+
+                      if (playlist != null) {
+                        return PlaylistCover(
+                          playlist: playlist,
+                          width: 32,
+                          height: 32,
+                          borderRadius: 4,
+                        );
+                      }
+
+                      if (audioSignal.headerArtCover.value != null) {
+                        return Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            image: DecorationImage(
+                              image: FileImage(
+                                File(audioSignal.headerArtCover.value!),
+                              ),
+                              fit: BoxFit.cover,
                             ),
-                            fit: BoxFit.cover,
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    }),
+                    const SizedBox(width: 8),
                     Text(
                       pageTitle,
                       style: TextStyle(

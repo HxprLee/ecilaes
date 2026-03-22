@@ -1,17 +1,18 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:home_widget/home_widget.dart';
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
+import '../signals/settings_signal.dart';
 import 'album_art_cache.dart';
 import 'playback_history_service.dart';
 import 'youtube_service.dart';
 
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
-  // We'll use the 'queue' behavior subject from BaseAudioHandler to store the playlist
   int _currentIndex = 0;
   List<int> _shuffledIndices = [];
   final _shuffleIndicesController = StreamController<List<int>>.broadcast();
@@ -34,14 +35,25 @@ class MyAudioHandler extends BaseAudioHandler {
   bool _hasRecordedCurrent = false;
   String? _lastTrackId;
 
+  // Gapless playback — instant switch mode (no ConcatenatingAudioSource)
+  bool _gaplessMode = false;
+
+  // Audio normalization
+  bool _normalizationEnabled = false;
+  double _normalizationTargetLufs = -14.0;
+  final Map<String, double> _gainMap = {}; // path -> gainDb
+
   MyAudioHandler() {
     _init();
   }
 
-  // Throttle for playback event updates
-
   Future<void> _init() async {
-    // Broadcast playback state changes (throttled to reduce CPU for position updates, but immediate for play/pause)
+    // Load settings
+    _gaplessMode = settingsSignal.gaplessPlayback.value;
+    _normalizationEnabled = settingsSignal.audioNormalization.value;
+    _normalizationTargetLufs = settingsSignal.normalizationTargetLufs.value;
+
+    // Broadcast playback state changes
     _subscriptions.add(
       _player.playerStateStream.listen((state) {
         if (_isDisposed) return;
@@ -84,14 +96,19 @@ class MyAudioHandler extends BaseAudioHandler {
       }),
     );
 
-    // Propagate processing state to playback state and handle auto-advance
+    // Handle auto-advance on track completion
     _subscriptions.add(
       _player.processingStateStream.listen((state) {
         if (_isDisposed) return;
         if (state == ProcessingState.completed) {
-          if (_repeatMode == AudioServiceRepeatMode.none && _isAtEnd) {
+          if (_repeatMode == AudioServiceRepeatMode.one) {
+            // Repeat one: just restart current track
+            _player.seek(Duration.zero);
+            _player.play();
+          } else if (_repeatMode == AudioServiceRepeatMode.none && _isAtEnd) {
             stop();
           } else {
+            // Auto-advance to next track (gapless or normal)
             skipToNext();
           }
         }
@@ -107,10 +124,8 @@ class MyAudioHandler extends BaseAudioHandler {
           if (index >= 0 && index < queue.value.length) {
             final item = queue.value[index];
             if (item.duration != duration) {
-              // Update the item in the queue
               final newItem = item.copyWith(duration: duration);
               queue.value[index] = newItem;
-              // Also update current mediaItem if it matches
               if (mediaItem.value?.id == item.id) {
                 mediaItem.add(newItem);
               }
@@ -126,6 +141,52 @@ class MyAudioHandler extends BaseAudioHandler {
         _updateWidget();
       }
     });
+  }
+
+  /// Apply per-track volume normalization
+  void _applyNormalization(String trackId) {
+    if (_normalizationEnabled) {
+      final gainDb = _gainMap[trackId] ?? 0.0;
+      // Volume multiplier: 10^(gainDb / 20)
+      // targetLufs adjusts relative to reference (-14 LUFS is standard)
+      final adjustedGain = gainDb + (_normalizationTargetLufs + 14.0);
+      final volume = pow(10.0, adjustedGain / 20.0).clamp(0.1, 2.0).toDouble();
+      _player.setVolume(volume);
+    } else {
+      _player.setVolume(1.0);
+    }
+  }
+
+  /// Update normalization setting at runtime
+  void setNormalizationEnabled(bool enabled) {
+    _normalizationEnabled = enabled;
+    if (mediaItem.value != null) {
+      _applyNormalization(mediaItem.value!.id);
+    }
+  }
+
+  /// Update normalization target LUFS at runtime
+  void setNormalizationTargetLufs(double lufs) {
+    _normalizationTargetLufs = lufs;
+    if (_normalizationEnabled && mediaItem.value != null) {
+      _applyNormalization(mediaItem.value!.id);
+    }
+  }
+
+  /// Store gain values for normalization lookup
+  void setGainMap(Map<String, double> gainMap) {
+    _gainMap.clear();
+    _gainMap.addAll(gainMap);
+  }
+
+  /// Update a single gain entry (e.g. after metadata edit)
+  void updateGain(String path, double gainDb) {
+    _gainMap[path] = gainDb;
+  }
+
+  /// Update gapless mode setting (no source rebuild needed — just a flag)
+  Future<void> setGaplessMode(bool enabled) async {
+    _gaplessMode = enabled;
   }
 
   Future<void> _updateWidget() async {
@@ -145,7 +206,6 @@ class MyAudioHandler extends BaseAudioHandler {
       await HomeWidget.saveWidgetData<String>('artist', item.artist ?? "-");
       await HomeWidget.saveWidgetData<bool>('isPlaying', isPlaying);
 
-      // Get art path if available
       String? artPath;
       if (item.artUri != null && item.artUri!.isScheme('file')) {
         artPath = item.artUri!.toFilePath();
@@ -165,6 +225,14 @@ class MyAudioHandler extends BaseAudioHandler {
     // Initialize album art cache
     await _artCache.init();
 
+    // Store gain values for normalization
+    _gainMap.clear();
+    for (final song in songs) {
+      if (song.gainDb != 0.0) {
+        _gainMap[song.path] = song.gainDb;
+      }
+    }
+
     // Convert songs to MediaItems (without art URIs - loaded lazily when played)
     final mediaItems = songs.map((song) {
       return MediaItem(
@@ -172,7 +240,7 @@ class MyAudioHandler extends BaseAudioHandler {
         album: song.album ?? "Unknown Album",
         title: song.title,
         artist: song.artist,
-        artUri: null, // Art URI loaded lazily when song plays
+        artUri: null,
         extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
       );
     }).toList();
@@ -181,6 +249,10 @@ class MyAudioHandler extends BaseAudioHandler {
     queue.add(mediaItems);
     _currentIndex = 0;
     _shuffledIndices = [];
+
+    // Refresh gapless setting
+    _gaplessMode = settingsSignal.gaplessPlayback.value;
+
     if (_shuffleMode == AudioServiceShuffleMode.all) {
       _generateShuffledIndices();
     } else {
@@ -224,14 +296,12 @@ class MyAudioHandler extends BaseAudioHandler {
       _shuffledIndices = [];
       _shuffleIndicesController.add([]);
     }
-    // Update playback state to reflect shuffle mode change
     playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
   }
 
   @override
   Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
     _repeatMode = repeatMode;
-    // Update playback state to reflect repeat mode change
     playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
   }
 
@@ -254,7 +324,6 @@ class MyAudioHandler extends BaseAudioHandler {
     final id = mediaItem.id;
     final currentQueue = List<MediaItem>.from(queue.value);
     
-    // Find all occurrences
     final indicesToRemove = <int>[];
     for (int i = 0; i < currentQueue.length; i++) {
       if (currentQueue[i].id == id) {
@@ -264,11 +333,9 @@ class MyAudioHandler extends BaseAudioHandler {
 
     if (indicesToRemove.isEmpty) return;
 
-    // Process removals from back to front to keep indices valid
     for (final index in indicesToRemove.reversed) {
       currentQueue.removeAt(index);
 
-      // Update shuffled indices if they exist
       if (_shuffledIndices.isNotEmpty) {
         _shuffledIndices.remove(index);
         for (int i = 0; i < _shuffledIndices.length; i++) {
@@ -278,7 +345,6 @@ class MyAudioHandler extends BaseAudioHandler {
         }
       }
 
-      // Adjust _currentIndex if we removed something before or at it
       if (index < _currentIndex) {
         _currentIndex--;
       } else if (index == _currentIndex) {
@@ -303,18 +369,13 @@ class MyAudioHandler extends BaseAudioHandler {
 
     currentQueue.insert(index, mediaItem);
 
-    // Update shuffled indices if they exist
     if (_shuffledIndices.isNotEmpty) {
-      // Increment all indices >= the insertion index
       for (int i = 0; i < _shuffledIndices.length; i++) {
         if (_shuffledIndices[i] >= index) {
           _shuffledIndices[i]++;
         }
       }
 
-      // If it's a "Play Next" (implicitly determined by caller but we can handle it here)
-      // Usually, the caller wants it to be the next song in the current sequence.
-      // If shuffle is on, we find current index in shuffled list and insert there.
       final currentShuffledPos = _shuffledIndices.indexOf(_currentIndex);
       if (currentShuffledPos != -1) {
         _shuffledIndices.insert(currentShuffledPos + 1, index);
@@ -324,7 +385,6 @@ class MyAudioHandler extends BaseAudioHandler {
       _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
     }
 
-    // Adjust _currentIndex if we inserted before the current position
     if (index <= _currentIndex) {
       _currentIndex++;
     }
@@ -382,7 +442,7 @@ class MyAudioHandler extends BaseAudioHandler {
     if (currentShuffledPos != -1 && currentShuffledPos > 0) {
       return _shuffledIndices[currentShuffledPos - 1];
     }
-    return _shuffledIndices.last; // Loop back
+    return _shuffledIndices.last;
   }
 
   bool get _isAtEnd {
@@ -397,10 +457,8 @@ class MyAudioHandler extends BaseAudioHandler {
   @override
   Future<void> skipToNext() async {
     if (queue.value.isEmpty) return;
+
     if (_repeatMode == AudioServiceRepeatMode.none && _isAtEnd) {
-      // If repeat is off and we're at the end, maybe stop or loop back to first but don't play?
-      // Standard behavior: clicking next at end usually loops back or stays at last.
-      // Let's loop back but keep it playing if it was playing, or just move index.
       _currentIndex = _shuffleMode == AudioServiceShuffleMode.all && _shuffledIndices.isNotEmpty
           ? _shuffledIndices[0]
           : 0;
@@ -419,7 +477,6 @@ class MyAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> playMediaItem(MediaItem mediaItem) async {
-    // Find index in queue
     final index = queue.value.indexWhere((item) => item.id == mediaItem.id);
     if (index != -1) {
       _currentIndex = index;
@@ -441,34 +498,27 @@ class MyAudioHandler extends BaseAudioHandler {
 
     // Cancel any ongoing load operation
     if (_loadingCompleter != null && !_loadingCompleter!.isCompleted) {
-      // Signal that we're interrupting
       _loadingCompleter!.complete();
     }
 
-    // Create a new completer for this load operation
     final thisLoad = Completer<void>();
     _loadingCompleter = thisLoad;
 
     var item = queue.value[_currentIndex];
 
-    // Lazily load art URI for MPRIS if this song has album art
-    // Skip yt: paths — thumbnail URLs are handled via NetworkImage in the UI
+    // Lazily load art URI for MPRIS
     if (!item.id.startsWith('yt:') && item.artUri == null && item.extras?['hasAlbumArt'] == true) {
       final artUri = await _artCache.getArtUri(item.id);
       if (artUri != null) {
-        // Create updated item with art URI
         item = item.copyWith(artUri: artUri);
-        // Update queue with the updated item
         final updatedQueue = List<MediaItem>.from(queue.value);
         updatedQueue[_currentIndex] = item;
         queue.add(updatedQueue);
-        // Explicitly update MediaItem to trigger listeners
         if (mediaItem.value?.id == item.id) {
           mediaItem.add(item);
         }
       }
     } else if (item.id.startsWith('yt:')) {
-      // For YouTube items, set the thumbnail URL as artUri so MPRIS shows it
       final videoId = item.id.substring(3);
       final thumbUri = Uri.parse('https://img.youtube.com/vi/$videoId/hqdefault.jpg');
       item = item.copyWith(artUri: thumbUri);
@@ -476,16 +526,14 @@ class MyAudioHandler extends BaseAudioHandler {
 
     mediaItem.add(item);
 
-    try {
-      // Stop current playback first to prevent overlap
-      // await _player.stop(); // Removed to prevent notification flickering
+    // Apply normalization for the new track
+    _applyNormalization(item.id);
 
-      // Check if we were cancelled before loading
+    try {
       if (thisLoad.isCompleted || _isDisposed) return;
 
       if (item.id.startsWith('yt:')) {
         final videoId = item.id.substring(3);
-        // Note: Make sure to import youtube_service.dart at the top
         final url = await youtubeService.getAudioStreamUrl(videoId);
         if (url != null) {
           await _player.setAudioSource(
@@ -506,22 +554,18 @@ class MyAudioHandler extends BaseAudioHandler {
         );
       }
 
-      // Check if we were cancelled after loading
       if (thisLoad.isCompleted || _isDisposed) return;
 
       await _player.play();
     } on PlayerInterruptedException catch (_) {
-      // Loading was interrupted by a new load request - this is expected
       print("Audio loading interrupted (switching tracks)");
     } catch (e) {
-      // Handle "Loading interrupted" from just_audio
       if (e.toString().contains('Loading interrupted')) {
         print("Audio loading interrupted (switching tracks)");
       } else {
         print("Error playing audio: $e");
       }
     } finally {
-      // Only complete if this is still the active load
       if (_loadingCompleter == thisLoad && !thisLoad.isCompleted) {
         thisLoad.complete();
       }
@@ -531,7 +575,6 @@ class MyAudioHandler extends BaseAudioHandler {
   void _handleHistoryTracking(bool isPlaying) {
     final currentId = mediaItem.value?.id;
 
-    // Reset if track changed
     if (currentId != _lastTrackId) {
       _historyTimer?.cancel();
       _historyTimer = null;
@@ -540,7 +583,6 @@ class MyAudioHandler extends BaseAudioHandler {
     }
 
     if (isPlaying && !_hasRecordedCurrent && currentId != null && !currentId.startsWith('yt:')) {
-      // Start or resume timer
       _historyTimer ??= Timer(const Duration(seconds: 40), () async {
         if (mediaItem.value?.id == currentId && !_hasRecordedCurrent) {
           _hasRecordedCurrent = true;
@@ -550,8 +592,6 @@ class MyAudioHandler extends BaseAudioHandler {
         }
       });
     } else if (!isPlaying) {
-      // Pause timer - for simplicity, we'll just cancel and restart if they haven't hit 40s yet.
-      // If we want "cumulative" 40s across pauses, we'd need a Stopwatch.
       if (!_hasRecordedCurrent && _historyTimer != null) {
         _historyTimer?.cancel();
         _historyTimer = null;
@@ -559,27 +599,24 @@ class MyAudioHandler extends BaseAudioHandler {
     }
   }
 
-  // Expose player for direct access if needed (though discouraged)
+  // Expose player for direct access if needed
   AudioPlayer get player => _player;
 
-  /// Dispose of resources to prevent native callback crashes
+  /// Dispose of resources
   Future<void> dispose() async {
     if (_isDisposed) return;
     _isDisposed = true;
 
-    // Cancel any ongoing load
     if (_loadingCompleter != null && !_loadingCompleter!.isCompleted) {
       _loadingCompleter!.complete();
     }
 
-    // Cancel all subscriptions
     for (final sub in _subscriptions) {
       await sub.cancel();
     }
     _subscriptions.clear();
     await _shuffleIndicesController.close();
 
-    // Dispose the player
     await _player.dispose();
   }
 }

@@ -74,6 +74,12 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
         onPopInvokedWithResult: (didPop, result) async {
           if (didPop) return;
 
+          // Priority 1: Minimize Player if open
+          if (audioSignal.playerExpansion.value > 0.001) {
+            audioSignal.minimizePlayerTrigger.value++;
+            return;
+          }
+
           final musicPath = await audioSignal.getMusicPath();
           if (currentPath == musicPath) {
             // At root, go back to library/home

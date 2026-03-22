@@ -1,10 +1,13 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../services/cache_service.dart';
 import '../../services/lyrics_service.dart';
-import '../../widgets/page_header.dart';
-import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
+import '../../widgets/app_dialog.dart';
+import 'package:signals/signals_flutter.dart';
+import '../../widgets/subpage_header.dart';
 
 class CacheManagementScreen extends StatefulWidget {
   const CacheManagementScreen({super.key});
@@ -19,6 +22,9 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
   CacheStats? _albumArtStats;
   CacheStats? _artistArtStats;
   CacheStats? _lyricsStats;
+
+  bool get _isDesktop =>
+      !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
 
   @override
   void initState() {
@@ -61,175 +67,318 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
     required VoidCallback onClear,
   }) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       leading: Container(
-        width: 48,
-        height: 48,
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          shape: BoxShape.circle,
+          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(36),
         ),
-        child: Icon(
-          icon,
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
+        child: Center(
+          child: Icon(
+            icon,
+            color: Theme.of(context).colorScheme.secondary,
+            size: 20,
+          ),
         ),
       ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-      subtitle: Text('$description\n${stats != null ? '${stats.fileCount} files • ${_formatSize(stats.sizeBytes)}' : 'Calculating...'}'),
-      isThreeLine: true,
+      title: Text(
+        title,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurface,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        stats != null
+            ? '${stats.fileCount} files • ${_formatSize(stats.sizeBytes)}'
+            : 'Calculating...',
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+          fontSize: 12,
+        ),
+      ),
       trailing: IconButton(
-        icon: const Icon(Icons.delete_outline),
-        color: Theme.of(context).colorScheme.error,
-        onPressed: stats != null && stats.fileCount > 0 ? () async {
-          final confirm = await showDialog<bool>(
-            context: context,
-            builder: (c) => AlertDialog(
-              title: Text('Clear $title?'),
-              content: const Text('This action cannot be undone.'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(c, false),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(c, true),
-                  style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
-                  child: const Text('Clear'),
-                ),
-              ],
-            ),
-          );
+        icon: Icon(
+          Icons.delete_outline,
+          size: 20,
+          color: stats != null && stats.fileCount > 0
+              ? Theme.of(context).colorScheme.error
+              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+        ),
+        onPressed: stats != null && stats.fileCount > 0
+            ? () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (c) => AppDialog(
+                    titleIcon: Icon(Icons.warning_amber_rounded,
+                        color: Theme.of(context).colorScheme.error),
+                    title: 'Clear $title?',
+                    content: const Text(
+                      'This action cannot be undone.',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    actions: [
+                      OutlinedButton(
+                        onPressed: () => Navigator.pop(c, false),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .secondary
+                                .withValues(alpha: 0.2),
+                          ),
+                          shape: const StadiumBorder(),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.secondary),
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Theme.of(context).colorScheme.error,
+                          foregroundColor: Theme.of(context).colorScheme.onError,
+                          shape: const StadiumBorder(),
+                        ),
+                        child: const Text('Clear'),
+                      ),
+                    ],
+                  ),
+                );
 
-          if (confirm == true) {
-            onClear();
-          }
-        } : null,
-        tooltip: 'Clear $title',
+                if (confirm == true) {
+                  onClear();
+                }
+              }
+            : null,
       ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final topPadding = _isDesktop
+        ? 50.0
+        : 64.0 + MediaQuery.of(context).padding.top;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: CustomScrollView(
-        slivers: [
-          const SliverToBoxAdapter(
-            child: PageHeader(
-              title: 'Cache Management',
-              subtitle: 'Manage storage used by the app',
-            ),
-          ),
-          if (_isLoading)
-            const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else ...[
-            SliverList(
-              delegate: SliverChildListDelegate([
-                _buildCacheItem(
-                  title: 'Metadata Cache',
-                  description: 'Cached song tags and library data',
-                  icon: Icons.data_usage,
-                  stats: _metadataStats,
-                  onClear: () async {
-                    await cacheService.clearMetadata();
-                    await _loadStats();
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                         const SnackBar(content: Text('Cleared Metadata cache. Full scan needed.'))
-                      );
-                    }
-                  },
-                ),
-                _buildCacheItem(
-                  title: 'Album Art',
-                  description: 'Downloaded and extracted album covers',
-                  icon: Icons.album,
-                  stats: _albumArtStats,
-                  onClear: () async {
-                    await cacheService.clearAlbumArt();
-                    await _loadStats();
-                  },
-                ),
-                _buildCacheItem(
-                  title: 'Artist Pictures',
-                  description: 'Artist profiles fetched from Deezer',
-                  icon: FontAwesomeIcons.users,
-                  stats: _artistArtStats,
-                  onClear: () async {
-                    await cacheService.clearArtistArt();
-                    audioSignal.artistPictures.value.clear();
-                    await _loadStats();
-                  },
-                ),
-                _buildCacheItem(
-                  title: 'Lyrics',
-                  description: 'Locally cached lyrics files',
-                  icon: Icons.lyrics,
-                  stats: _lyricsStats,
-                  onClear: () async {
-                    await cacheService.clearLyrics();
-                    LyricsService().clearCache();
-                    await _loadStats();
-                  },
-                ),
-                const SizedBox(height: 24),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (c) => AlertDialog(
-                          title: const Text('Clear All Cache?'),
-                          content: const Text('This will delete all cached data. You may need to perform a full re-scan of your library afterward.'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(c, false),
-                              child: const Text('Cancel'),
+      body: SingleChildScrollView(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Padding(
+              padding: EdgeInsets.only(top: 24.0 + topPadding),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SubpageHeader(title: 'Cache Management'),
+                  const SizedBox(height: 24),
+                  if (_isLoading)
+                    const Center(child: CircularProgressIndicator())
+                  else ...[
+                    _sectionLabel('Cache Categories', context),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Card(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surface
+                            .withValues(alpha: 0.8),
+                        surfaceTintColor:
+                            Theme.of(context).colorScheme.secondary,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .secondary
+                                .withValues(alpha: 0.1),
+                          ),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(
+                          children: [
+                            _buildCacheItem(
+                              title: 'Metadata Cache',
+                              description: 'Cached song tags and library data',
+                              icon: Icons.data_usage,
+                              stats: _metadataStats,
+                              onClear: () async {
+                                await cacheService.clearMetadata();
+                                await _loadStats();
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Cleared Metadata cache. Full scan needed.')));
+                                }
+                              },
                             ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(c, true),
-                              style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
-                              child: const Text('Clear All'),
+                            const Divider(height: 1, indent: 64),
+                            _buildCacheItem(
+                              title: 'Album Art',
+                              description:
+                                  'Downloaded and extracted album covers',
+                              icon: Icons.album,
+                              stats: _albumArtStats,
+                              onClear: () async {
+                                await cacheService.clearAlbumArt();
+                                await _loadStats();
+                              },
+                            ),
+                            const Divider(height: 1, indent: 64),
+                            _buildCacheItem(
+                              title: 'Artist Pictures',
+                              description: 'Artist profiles fetched from Deezer',
+                              icon: FontAwesomeIcons.users,
+                              stats: _artistArtStats,
+                              onClear: () async {
+                                await cacheService.clearArtistArt();
+                                audioSignal.artistPictures.value.clear();
+                                await _loadStats();
+                              },
+                            ),
+                            const Divider(height: 1, indent: 64),
+                            _buildCacheItem(
+                              title: 'Lyrics',
+                              description: 'Locally cached lyrics files',
+                              icon: Icons.lyrics,
+                              stats: _lyricsStats,
+                              onClear: () async {
+                                await cacheService.clearLyrics();
+                                LyricsService().clearCache();
+                                await _loadStats();
+                              },
                             ),
                           ],
                         ),
-                      );
-
-                      if (confirm == true) {
-                        setState(() => _isLoading = true);
-                        await cacheService.clearAll();
-                        LyricsService().clearCache();
-                        audioSignal.artistPictures.value.clear();
-                        await _loadStats();
-                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                             const SnackBar(content: Text('All caches cleared.'))
-                          );
-                        }
-                      }
-                    },
-                    icon: const Icon(Icons.delete_forever),
-                    label: const Text('Clear All Cache'),
-                    style: ElevatedButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
-                      backgroundColor: Theme.of(context).colorScheme.errorContainer,
-                      padding: const EdgeInsets.all(16),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-              ]),
+                    const SizedBox(height: 24),
+                    _sectionLabel('Maintenance', context),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Card(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surface
+                            .withValues(alpha: 0.8),
+                        surfaceTintColor:
+                            Theme.of(context).colorScheme.secondary,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .secondary
+                                .withValues(alpha: 0.1),
+                          ),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(
+                          children: [
+                            ListTile(
+                              leading: Icon(Icons.delete_forever,
+                                  size: 20,
+                                  color: Theme.of(context).colorScheme.error),
+                              title: const Text('Clear All Cache',
+                                  style: TextStyle(fontSize: 14)),
+                              subtitle: const Text(
+                                  'Delete all metadata, art, and lyrics',
+                                  style: TextStyle(fontSize: 12)),
+                              onTap: () => _confirmClearAll(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  Watch((context) =>
+                      SizedBox(height: audioSignal.reservedHeight.value)),
+                ],
+              ),
             ),
-            SliverToBoxAdapter(
-              child: Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String label, BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, bottom: 8),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmClearAll() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AppDialog(
+        titleIcon: Icon(Icons.delete_forever,
+            color: Theme.of(context).colorScheme.error),
+        title: 'Clear All Cache?',
+        content: const Text(
+          'This will delete all cached data. You may need to perform a full re-scan of your library afterward.',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(c, false),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: Theme.of(context)
+                    .colorScheme
+                    .secondary
+                    .withValues(alpha: 0.2),
+              ),
+              shape: const StadiumBorder(),
             ),
-          ],
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+              shape: const StadiumBorder(),
+            ),
+            child: const Text('Clear All'),
+          ),
         ],
       ),
     );
+
+    if (confirm == true) {
+      if (mounted) setState(() => _isLoading = true);
+      await cacheService.clearAll();
+      LyricsService().clearCache();
+      audioSignal.artistPictures.value.clear();
+      await _loadStats();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('All caches cleared.')));
+      }
+    }
   }
 }

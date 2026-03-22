@@ -6,11 +6,12 @@ import '../signals/settings_signal.dart';
 import '../signals/audio_signal.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'package:flutter/cupertino.dart';
-import '../theme/app_theme_extensions.dart';
 import 'playlist_dialogs.dart';
 import 'common/flyout_sheet.dart';
 import 'song_info_dialog.dart';
+import 'edit_metadata_dialog.dart';
 import 'player/queue_view.dart';
+import 'app_dialog.dart';
 
 void showSongMoreActionsSheet({
   required BuildContext context,
@@ -334,6 +335,17 @@ ActionInfo? _getActionInfo(String id) {
         label: 'Song info',
         onTap: (context, song, _) => showSongInfoDialog(context, song),
       );
+    case 'edit_metadata':
+      return ActionInfo(
+        icon: Icons.edit_outlined,
+        label: 'Edit info',
+        onTap: (context, song, _) {
+          showDialog(
+            context: context,
+            builder: (context) => EditMetadataDialog(song: song),
+          );
+        },
+      );
     case 'shuffle':
       return ActionInfo(
         icon: Icons.shuffle,
@@ -403,219 +415,135 @@ void showSleepTimerDialog(BuildContext context) {
     builder: (context) {
       return StatefulBuilder(
         builder: (context, setDialogState) {
-          return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: BackdropFilter(
-                  filter: settingsSignal.enableGlobalBlur.value
-                      ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
-                      : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .extension<AppThemeExtension>()!
-                          .sidebarBackground
-                          .withValues(
-                            alpha: settingsSignal.enableGlobalBlur.value
-                                ? 0.85
-                                : 1.0,
-                          ),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.secondary.withValues(alpha: 0.1),
-                      ),
+          return AppDialog(
+            titleIcon: Icon(
+              Icons.timer_outlined,
+              color: Theme.of(context).colorScheme.secondary,
+              size: 24,
+            ),
+            title: 'Sleep timer',
+            maxWidth: 360,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Scroll Wheel
+                SizedBox(
+                  height: 150,
+                  child: CupertinoPicker(
+                    itemExtent: 40,
+                    onSelectedItemChanged: (index) {
+                      setDialogState(() {
+                        selectedMinutes = index + 1;
+                      });
+                    },
+                    scrollController: FixedExtentScrollController(
+                      initialItem: selectedMinutes - 1,
                     ),
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 24,
-                      horizontal: 20,
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.timer_outlined,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
-                                  size: 24,
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Sleep timer',
-                                  style: Theme.of(context).textTheme.titleLarge
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.secondary,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 20,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          // Scroll Wheel
-                          SizedBox(
-                            height: 150,
-                            child: CupertinoPicker(
-                              itemExtent: 40,
-                              onSelectedItemChanged: (index) {
-                                setDialogState(() {
-                                  selectedMinutes = index + 1;
-                                });
-                              },
-                              scrollController: FixedExtentScrollController(
-                                initialItem: selectedMinutes - 1,
+                    children: List.generate(120, (index) {
+                      return Center(
+                        child: Text(
+                          '${index + 1} minutes',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: Theme.of(context).colorScheme.secondary,
+                                fontSize: 16,
                               ),
-                              children: List.generate(120, (index) {
-                                return Center(
-                                  child: Text(
-                                    '${index + 1} minutes',
-                                    style: Theme.of(context).textTheme.bodyLarge
-                                        ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.secondary,
-                                          fontSize: 16,
-                                        ),
-                                  ),
-                                );
-                              }),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Preset Chips
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Presets',
-                              style: Theme.of(context).textTheme.labelMedium
-                                  ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .secondary
-                                        .withValues(alpha: 0.6),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
-                              alignment: WrapAlignment.start,
-                              children: [
-                                _buildPresetChip(context, 'End of song', () {
-                                  final total = audioSignal.duration.value;
-                                  final pos = audioSignal.position.value;
-                                  return total - pos;
-                                }()),
-                                _buildPresetChip(
-                                  context,
-                                  '15m',
-                                  const Duration(minutes: 15),
-                                ),
-                                _buildPresetChip(
-                                  context,
-                                  '30m',
-                                  const Duration(minutes: 30),
-                                ),
-                                _buildPresetChip(
-                                  context,
-                                  '45m',
-                                  const Duration(minutes: 45),
-                                ),
-                                _buildPresetChip(
-                                  context,
-                                  '60m',
-                                  const Duration(minutes: 60),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          // Bottom Buttons
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () {
-                                    audioSignal.setSleepTimer(null);
-                                    Navigator.pop(context);
-                                  },
-                                  style: OutlinedButton.styleFrom(
-                                    side: BorderSide(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .secondary
-                                          .withValues(alpha: 0.2),
-                                    ),
-                                    shape: const StadiumBorder(),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Off',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge
-                                        ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.secondary,
-                                        ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: FilledButton(
-                                  onPressed: () {
-                                    audioSignal.setSleepTimer(
-                                      Duration(minutes: selectedMinutes),
-                                    );
-                                    Navigator.pop(context);
-                                  },
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .secondary
-                                        .withValues(alpha: 0.8),
-                                    foregroundColor: Theme.of(
-                                      context,
-                                    ).colorScheme.surface,
-                                    shape: const StadiumBorder(),
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12,
-                                    ),
-                                  ),
-                                  child: const Text('Start timer'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      );
+                    }),
                   ),
                 ),
-              ),
+                const SizedBox(height: 12),
+                // Preset Chips
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Presets',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .secondary
+                              .withValues(alpha: 0.6),
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.start,
+                    children: [
+                      _buildPresetChip(context, 'End of song', () {
+                        final total = audioSignal.duration.value;
+                        final pos = audioSignal.position.value;
+                        return total - pos;
+                      }()),
+                      _buildPresetChip(
+                        context,
+                        '15m',
+                        const Duration(minutes: 15),
+                      ),
+                      _buildPresetChip(
+                        context,
+                        '30m',
+                        const Duration(minutes: 30),
+                      ),
+                      _buildPresetChip(
+                        context,
+                        '45m',
+                        const Duration(minutes: 45),
+                      ),
+                      _buildPresetChip(
+                        context,
+                        '60m',
+                        const Duration(minutes: 60),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
+            actions: [
+              OutlinedButton(
+                onPressed: () {
+                  audioSignal.setSleepTimer(null);
+                  Navigator.pop(context);
+                },
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .secondary
+                        .withValues(alpha: 0.2),
+                  ),
+                  shape: const StadiumBorder(),
+                ),
+                child: Text(
+                  'Off',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.secondary,
+                      ),
+                ),
+              ),
+              FilledButton(
+                onPressed: () {
+                  audioSignal.setSleepTimer(
+                    Duration(minutes: selectedMinutes),
+                  );
+                  Navigator.pop(context);
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor:
+                      Theme.of(context).colorScheme.secondary.withValues(alpha: 0.8),
+                  foregroundColor: Theme.of(context).colorScheme.surface,
+                  shape: const StadiumBorder(),
+                ),
+                child: const Text('Start timer'),
+              ),
+            ],
           );
         },
       );

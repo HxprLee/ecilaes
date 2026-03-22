@@ -7,6 +7,7 @@ import 'package:signals/signals_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../signals/settings_signal.dart';
 import '../../signals/audio_signal.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/subpage_header.dart';
 
 class LibrarySection extends StatelessWidget {
@@ -595,16 +596,34 @@ class LibrarySection extends StatelessWidget {
     // Show a dialog to choose between Folder or File
     final choice = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Exclusion'),
-        content: const Text('Do you want to exclude a folder or a specific file?'),
+      builder: (context) => AppDialog(
+        titleIcon: Icon(Icons.help_outline, color: Theme.of(context).colorScheme.secondary),
+        title: 'Add Exclusion',
+        content: const Text(
+          'Do you want to exclude a folder or a specific file?',
+          style: TextStyle(fontSize: 14),
+        ),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.pop(context, 'file'),
-            child: const Text('File'),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
+              ),
+              shape: const StadiumBorder(),
+            ),
+            child: Text(
+              'File',
+              style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+            ),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, 'folder'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.secondary,
+              foregroundColor: Theme.of(context).colorScheme.surface,
+              shape: const StadiumBorder(),
+            ),
             child: const Text('Folder'),
           ),
         ],
@@ -629,19 +648,37 @@ class LibrarySection extends StatelessWidget {
   void _confirmClearMissing(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Clear Missing Files'),
-        content: const Text('This will remove all songs from your library that no longer exist on your disk. Continue?'),
+      builder: (context) => AppDialog(
+        titleIcon: Icon(Icons.cleaning_services_outlined, color: Theme.of(context).colorScheme.secondary),
+        title: 'Clear Missing Files',
+        content: const Text(
+          'This will remove all songs from your library that no longer exist on your disk. Continue?',
+          style: TextStyle(fontSize: 14),
+        ),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
+              ),
+              shape: const StadiumBorder(),
+            ),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+            ),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () {
               Navigator.pop(context);
               audioSignal.clearMissingFiles();
             },
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.secondary,
+              foregroundColor: Theme.of(context).colorScheme.surface,
+              shape: const StadiumBorder(),
+            ),
             child: const Text('Clear'),
           ),
         ],
@@ -652,19 +689,37 @@ class LibrarySection extends StatelessWidget {
   void _confirmForceScan(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Force Full Scan'),
-        content: const Text('This will clear your library cache and perform a complete search of your music directory. This may take a while. Continue?'),
+      builder: (context) => AppDialog(
+        titleIcon: Icon(Icons.refresh, color: Theme.of(context).colorScheme.secondary),
+        title: 'Force Full Scan',
+        content: const Text(
+          'This will clear your library cache and perform a complete search of your music directory. This may take a while. Continue?',
+          style: TextStyle(fontSize: 14),
+        ),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
+              ),
+              shape: const StadiumBorder(),
+            ),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+            ),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () {
               Navigator.pop(context);
               audioSignal.reindexLibrary();
             },
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.secondary,
+              foregroundColor: Theme.of(context).colorScheme.surface,
+              shape: const StadiumBorder(),
+            ),
             child: const Text('Scan'),
           ),
         ],

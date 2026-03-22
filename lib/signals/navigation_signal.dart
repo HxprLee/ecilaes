@@ -62,7 +62,7 @@ class NavigationSignal {
     // 2. COOLDOWN: Protect against late "stale" events immediately after lock.
     if (_lastManualNavTime != null) {
       final elapsed = DateTime.now().difference(_lastManualNavTime!);
-      if (elapsed < const Duration(milliseconds: 500)) {
+      if (elapsed < const Duration(milliseconds: 150)) {
         return;
       }
       // Cooldown expired, clear it so we stop checking

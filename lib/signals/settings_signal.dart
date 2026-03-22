@@ -38,6 +38,7 @@ class SettingsSignal {
     'go_to_artist',
     'sleep_timer',
     'info',
+    'edit_metadata',
     'share',
   ]);
   final actionsSheetShowLabels = signal<bool>(false);
@@ -67,6 +68,11 @@ class SettingsSignal {
     'kugou',
   ]);
   final excludedPaths = listSignal<String>([]);
+
+  // Playback settings
+  final gaplessPlayback = signal<bool>(true);
+  final audioNormalization = signal<bool>(false);
+  final normalizationTargetLufs = signal<double>(-14.0);
 
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -148,6 +154,10 @@ class SettingsSignal {
     if (excluded != null) {
       excludedPaths.value = excluded;
     }
+
+    gaplessPlayback.value = prefs.getBool('gaplessPlayback') ?? true;
+    audioNormalization.value = prefs.getBool('audioNormalization') ?? false;
+    normalizationTargetLufs.value = prefs.getDouble('normalizationTargetLufs') ?? -14.0;
   }
 
   Future<void> updateMusicDirectory(String? value) async {
@@ -380,6 +390,24 @@ class SettingsSignal {
       current.remove(path);
       await updateExcludedPaths(current);
     }
+  }
+
+  Future<void> updateGaplessPlayback(bool value) async {
+    gaplessPlayback.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('gaplessPlayback', value);
+  }
+
+  Future<void> updateAudioNormalization(bool value) async {
+    audioNormalization.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('audioNormalization', value);
+  }
+
+  Future<void> updateNormalizationTargetLufs(double value) async {
+    normalizationTargetLufs.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('normalizationTargetLufs', value);
   }
 }
 

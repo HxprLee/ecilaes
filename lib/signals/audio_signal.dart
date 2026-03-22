@@ -34,6 +34,7 @@ class AudioSignal {
   AudioSignal._internal();
 
   late final AudioHandler _audioHandler;
+  MyAudioHandler get audioHandler => _audioHandler as MyAudioHandler;
   Timer? _discordTimer;
 
   // Signals
@@ -124,13 +125,23 @@ class AudioSignal {
   });
 
   late final recentlyAdded = computed(() {
-    final songs = List<Song>.from(allSongs.value);
-    songs.sort((a, b) {
+    final start = DateTime.now();
+    final songs = allSongs.value;
+    if (songs.isEmpty) return <Song>[];
+    
+    final sorted = List<Song>.from(songs);
+    sorted.sort((a, b) {
       final aDate = a.modifiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bDate = b.modifiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
       return bDate.compareTo(aDate);
     });
-    return songs.take(50).toList();
+    final result = sorted.take(50).toList();
+    
+    final elapsed = DateTime.now().difference(start).inMilliseconds;
+    if (elapsed > 50) {
+      debugPrint('PERF: recentlyAdded recomputed in ${elapsed}ms for ${songs.length} songs');
+    }
+    return result;
   });
 
   late final recentlyPlayed = computed(() {
@@ -139,11 +150,13 @@ class AudioSignal {
   });
 
   late final artists = computed(() {
+    final start = DateTime.now();
     final map = <String, List<Song>>{};
-    for (final song in allSongs.value) {
-      if (song.path.startsWith('yt:')) continue; // Skip YouTube for now
+    final songs = allSongs.value;
+    
+    for (final song in songs) {
+      if (song.path.startsWith('yt:')) continue;
       
-      // Split by common delimiters like , and &
       final parts = song.artist.split(RegExp(r'[,&]'));
       for (final part in parts) {
         final name = part.trim();
@@ -152,25 +165,37 @@ class AudioSignal {
         }
       }
     }
-    return map.entries.map((e) {
+
+    final pics = artistPictures.value;
+    final result = map.entries.map((e) {
       final name = e.key;
       return Artist(
         name: name,
         songs: e.value,
-        picturePath: artistPictures.value[name],
+        picturePath: pics[name],
       );
     }).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    
+    final elapsed = DateTime.now().difference(start).inMilliseconds;
+    if (elapsed > 50) {
+      debugPrint('PERF: artists recomputed in ${elapsed}ms for ${songs.length} songs');
+    }
+    return result;
   });
 
   late final albums = computed(() {
+    final start = DateTime.now();
     final map = <String, List<Song>>{};
-    for (final song in allSongs.value) {
-      if (song.path.startsWith('yt:')) continue; // Skip YouTube for now
+    final songs = allSongs.value;
+
+    for (final song in songs) {
+      if (song.path.startsWith('yt:')) continue;
       final key = "${song.artist}__${song.album ?? 'Unknown Album'}";
       map.putIfAbsent(key, () => []).add(song);
     }
-    return map.entries.map((e) {
+
+    final result = map.entries.map((e) {
       final songs = e.value;
       return Album(
         name: songs.first.album ?? 'Unknown Album',
@@ -179,6 +204,12 @@ class AudioSignal {
       );
     }).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final elapsed = DateTime.now().difference(start).inMilliseconds;
+    if (elapsed > 50) {
+      debugPrint('PERF: albums recomputed in ${elapsed}ms for ${songs.length} songs');
+    }
+    return result;
   });
 
   late final effectiveQueue = computed(() {
@@ -304,34 +335,64 @@ class AudioSignal {
       });
     });
 
-    // Load cache and start scan in background
-    unawaited(_loadCacheAndScan());
-    unawaited(_loadPlaylists());
-    unawaited(_loadHistory());
-    unawaited(_fetchArtistPictures());
+    // 1. Initial Load (Delayed to allow UI and Debugger to settle)
+    Future.delayed(const Duration(seconds: 1), () async {
+      final start = DateTime.now();
+      
+      // Batch initialization tasks
+      await Future.wait([
+        _loadCacheAndScanOnly(), 
+        _loadPlaylists(),
+        _loadHistory(),
+      ]);
+
+      final elapsed = DateTime.now().difference(start).inMilliseconds;
+      debugPrint('PERF: Initial state loaded in ${elapsed}ms');
+
+      // 2. Trigger background scan after 2 more seconds
+      Future.delayed(const Duration(seconds: 2), () {
+        unawaited(scanMusicDirectory());
+      });
+      
+      // 3. Trigger artist art fetching (deferred even further)
+      unawaited(_fetchArtistPictures());
+    });
   }
 
   Future<void> _fetchArtistPictures() async {
-    // Wait for allSongs to be populated
-    if (allSongs.value.isEmpty) {
-      await Future.delayed(const Duration(seconds: 2));
-    }
+    // Wait for allSongs to be populated and for UI to settle fully
+    // Increased delay to avoid competing with launch frames
+    await Future.delayed(const Duration(seconds: 5));
+    
+    if (allSongs.value.isEmpty) return;
 
-    final uniqueArtists = artists.value.map((a) => a.name).toSet();
-    for (final name in uniqueArtists) {
-      // Check local cache first
+    final uniqueArtists = artists.peek().map((a) => a.name).toSet();
+    final Map<String, String> results = {};
+    
+    // 1. Check local cache in parallel (fast)
+    final cacheChecks = uniqueArtists.map((name) async {
       final path = await artistArtCache.getArtPath(name);
-      if (path != null) {
-        artistPictures.update(name, (_) => path);
-      } else {
-        // Fetch from Deezer if not cached
-        final newPath = await artistArtCache.fetchAndCache(name);
-        if (newPath != null) {
-          artistPictures.update(name, (_) => newPath);
-        }
-        // Small delay to be nice to the API
-        await Future.delayed(const Duration(milliseconds: 500));
+      if (path != null) results[name] = path;
+    });
+    await Future.wait(cacheChecks);
+
+    // Update with what we found locally first
+    batch(() {
+      for (final entry in results.entries) {
+        artistPictures[entry.key] = entry.value;
       }
+    });
+
+    // 2. Fetch missing from Deezer sequentially (to be nice to API)
+    for (final name in uniqueArtists) {
+      if (results.containsKey(name)) continue;
+
+      final newPath = await artistArtCache.fetchAndCache(name);
+      if (newPath != null) {
+        artistPictures[name] = newPath;
+      }
+      // Small delay between network requests
+      await Future.delayed(const Duration(milliseconds: 500));
     }
   }
 
@@ -471,13 +532,12 @@ class AudioSignal {
     );
   }
 
-  Future<void> _loadCacheAndScan() async {
+  Future<void> _loadCacheAndScanOnly() async {
     final cachedSongs = await SongCache.loadCache();
     if (cachedSongs.isNotEmpty) {
       allSongs.value = cachedSongs;
-      // Don't auto-load playlist on startup - wait for user to play
+      debugPrint('PERF: allSongs initialized with ${cachedSongs.length} songs');
     }
-    await scanMusicDirectory();
   }
 
   Future<void> scanMusicDirectory() async {
@@ -1150,6 +1210,153 @@ class AudioSignal {
     _discordTimer?.cancel();
     _sleepInternalTimer?.cancel();
   }
+
+  Future<void> updateSongMetadata(
+    String path, {
+    String? title,
+    String? artist,
+    String? album,
+    String? imagePath,
+  }) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) return;
+
+      // 1. Prepare image bytes if needed
+      Uint8List? imageBytes;
+      String? mimeType;
+      if (imagePath != null) {
+        final imageFile = File(imagePath);
+        if (await imageFile.exists()) {
+          imageBytes = await imageFile.readAsBytes();
+          mimeType = imagePath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+        }
+      }
+
+      // 2. Perform safe read-modify-write via audio_metadata_reader
+      updateMetadata(file, (metadata) {
+        if (title != null) metadata.setTitle(title);
+        if (artist != null) metadata.setArtist(artist);
+        if (album != null) metadata.setAlbum(album);
+        
+        if (imageBytes != null) {
+          final newPic = Picture(imageBytes, mimeType!, PictureType.coverFront);
+          
+          if (metadata is Mp3Metadata) {
+            final pics = List<Picture>.from(metadata.pictures);
+            pics.removeWhere((p) => p.pictureType == PictureType.coverFront);
+            pics.insert(0, newPic);
+            metadata.pictures = pics;
+          } else if (metadata is Mp4Metadata) {
+            metadata.picture = newPic;
+          } else if (metadata is VorbisMetadata) {
+            final pics = List<Picture>.from(metadata.pictures);
+            pics.removeWhere((p) => p.pictureType == PictureType.coverFront);
+            pics.insert(0, newPic);
+            metadata.pictures = pics;
+          } else if (metadata is RiffMetadata) {
+            final pics = List<Picture>.from(metadata.pictures);
+            pics.removeWhere((p) => p.pictureType == PictureType.coverFront);
+            pics.insert(0, newPic);
+            metadata.pictures = pics;
+          } else {
+            // Fallback: try common setter extension if available
+            try {
+              metadata.setPictures([newPic]);
+            } catch (_) {}
+          }
+        }
+      });
+
+      // 3. Update cached album art if image changed
+      if (imageBytes != null) {
+        final artDir = await SongCache.artDir;
+        final artFile = File('$artDir/${path.hashCode.abs()}.jpg');
+        await artFile.writeAsBytes(imageBytes);
+        await evictImageProvider(FileImage(artFile));
+      }
+
+      // 4. Update local state
+      final index = allSongs.value.indexWhere((s) => s.path == path);
+      if (index != -1) {
+        final oldSong = allSongs.value[index];
+        final updatedSong = oldSong.copyWith(
+          title: title ?? oldSong.title,
+          artist: artist ?? oldSong.artist,
+          album: album ?? oldSong.album,
+          hasAlbumArt: imagePath != null ? true : oldSong.hasAlbumArt,
+        );
+        
+        final newList = List<Song>.from(allSongs.value);
+        newList[index] = updatedSong;
+        allSongs.value = newList;
+
+        if (currentSong.value?.path == path) {
+          currentSong.value = updatedSong;
+        }
+
+        await SongCache.saveCache(allSongs.value);
+      }
+    } catch (e) {
+      debugPrint('Error writing metadata: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> evictImageProvider(ImageProvider provider) async {
+    try {
+      await provider.evict();
+    } catch (_) {}
+  }
+}
+
+class AppAudioMetadata {
+  final File file;
+  final String? album;
+  final String? artist;
+  final int? bitrate;
+  final Duration? duration;
+  final String? title;
+  final int? trackNumber;
+  final int? trackTotal;
+  final DateTime? year;
+  final int? discNumber;
+  List<Picture> pictures = [];
+  double gainDb = 0.0; // ReplayGain track gain
+  double trackPeak = 1.0;
+  double albumGainDb = 0.0;
+  double albumPeak = 1.0;
+
+  AppAudioMetadata({
+    required this.file,
+    this.album,
+    this.artist,
+    this.bitrate,
+    this.duration,
+    this.title,
+    this.trackNumber,
+    this.trackTotal,
+    this.year,
+    this.discNumber,
+    this.gainDb = 0.0,
+    this.trackPeak = 1.0,
+    this.albumGainDb = 0.0,
+    this.albumPeak = 1.0,
+  });
+}
+
+double _parseGain(dynamic value) {
+  if (value == null) return 0.0;
+  String s = value.toString();
+  // Remove " dB", "dB", etc.
+  s = s.replaceAll(RegExp(r'[a-zA-Z\s]+'), '').trim();
+  return double.tryParse(s) ?? 0.0;
+}
+
+double _parsePeak(dynamic value) {
+  if (value == null) return 1.0;
+  String s = value.toString();
+  return double.tryParse(s.trim()) ?? 1.0;
 }
 
 final audioSignal = AudioSignal();
@@ -1244,7 +1451,7 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
         });
 
         // Use a robust metadata reader that ensures file handles are closed
-        AudioMetadata? metadata;
+        AppAudioMetadata? metadata;
         try {
           // Open the file ourselves to ensure we can close it if the parser fails
           final reader = File(path).openSync();
@@ -1253,20 +1460,30 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
             if (ID3v2Parser.canUserParser(reader)) {
               // ID3v2Parser.parse will close the reader on success, 
               // but we wrap it in a try-finally just in case it throws before/after.
-              final mp3Meta = ID3v2Parser(fetchImage: true).parse(reader) as Mp3Metadata;
-              metadata = AudioMetadata(
+              final mp3Meta = ID3v2Parser(fetchImage: true).parse(reader);
+              metadata = AppAudioMetadata(
                 file: File(path),
-                album: mp3Meta.album,
-                artist: mp3Meta.bandOrOrchestra ?? mp3Meta.leadPerformer ?? mp3Meta.originalArtist,
-                bitrate: mp3Meta.bitrate,
-                duration: mp3Meta.duration,
-                title: mp3Meta.songName,
-                trackNumber: mp3Meta.trackNumber,
-                trackTotal: mp3Meta.trackTotal,
-                year: DateTime(mp3Meta.originalReleaseYear ?? mp3Meta.year ?? 0),
-                discNumber: mp3Meta.discNumber,
+                album: (mp3Meta as dynamic).album,
+                artist: (mp3Meta as dynamic).bandOrOrchestra ?? (mp3Meta as dynamic).leadPerformer ?? (mp3Meta as dynamic).originalArtist,
+                bitrate: (mp3Meta as dynamic).bitrate,
+                duration: (mp3Meta as dynamic).duration,
+                title: (mp3Meta as dynamic).songName,
+                trackNumber: (mp3Meta as dynamic).trackNumber,
+                trackTotal: (mp3Meta as dynamic).trackTotal,
+                year: DateTime((mp3Meta as dynamic).originalReleaseYear ?? (mp3Meta as dynamic).year ?? 0),
+                discNumber: (mp3Meta as dynamic).discNumber,
               );
-              metadata.pictures = mp3Meta.pictures;
+              metadata.pictures = List<Picture>.from((mp3Meta as dynamic).pictures);
+              // Extract ReplayGain from TXXX frames
+              try {
+                final customMeta = (mp3Meta as dynamic).customMetadata as Map<String, String>?;
+                if (customMeta != null) {
+                  metadata.gainDb = _parseGain(customMeta['REPLAYGAIN_TRACK_GAIN'] ?? customMeta['replaygain_track_gain']);
+                  metadata.trackPeak = _parsePeak(customMeta['REPLAYGAIN_TRACK_PEAK'] ?? customMeta['replaygain_track_peak']);
+                  metadata.albumGainDb = _parseGain(customMeta['REPLAYGAIN_ALBUM_GAIN'] ?? customMeta['replaygain_album_gain']);
+                  metadata.albumPeak = _parsePeak(customMeta['REPLAYGAIN_ALBUM_PEAK'] ?? customMeta['replaygain_album_peak']);
+                }
+              } catch (_) {}
 
               // Fallback for ID3v2.2 (PIC frame) if no pictures found
               if (metadata.pictures.isEmpty) {
@@ -1308,55 +1525,82 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
                 } catch (_) {}
               }
             } else if (FlacParser.canUserParser(reader)) {
-              final vorbisMeta = FlacParser(fetchImage: true).parse(reader) as VorbisMetadata;
-              metadata = AudioMetadata(
+              final vorbisMeta = FlacParser(fetchImage: true).parse(reader);
+              metadata = AppAudioMetadata(
                 file: File(path),
-                album: vorbisMeta.album.firstOrNull,
-                artist: vorbisMeta.artist.firstOrNull,
-                bitrate: vorbisMeta.bitrate,
-                duration: vorbisMeta.duration,
-                title: vorbisMeta.title.firstOrNull,
-                trackNumber: vorbisMeta.trackNumber.firstOrNull,
-                trackTotal: vorbisMeta.trackTotal,
-                year: vorbisMeta.date.firstOrNull,
-                discNumber: vorbisMeta.discNumber,
+                album: (vorbisMeta as dynamic).album.firstOrNull,
+                artist: (vorbisMeta as dynamic).artist.firstOrNull,
+                bitrate: (vorbisMeta as dynamic).bitrate,
+                duration: (vorbisMeta as dynamic).duration,
+                title: (vorbisMeta as dynamic).title.firstOrNull,
+                trackNumber: int.tryParse((vorbisMeta as dynamic).trackNumber.firstOrNull ?? ''),
+                trackTotal: int.tryParse((vorbisMeta as dynamic).trackTotal.firstOrNull ?? ''),
+                year: (vorbisMeta as dynamic).date.firstOrNull,
+                discNumber: (vorbisMeta as dynamic).discNumber,
               );
-              metadata.pictures = vorbisMeta.pictures;
+              metadata.pictures = List<Picture>.from((vorbisMeta as dynamic).pictures);
+              // Extract ReplayGain from Vorbis comments
+              try {
+                metadata.gainDb = _parseGain(((vorbisMeta as dynamic).replayGainTrackGain as List?)?.firstOrNull);
+                metadata.trackPeak = _parsePeak(((vorbisMeta as dynamic).replayGainTrackPeak as List?)?.firstOrNull);
+                metadata.albumGainDb = _parseGain(((vorbisMeta as dynamic).replayGainAlbumGain as List?)?.firstOrNull);
+                metadata.albumPeak = _parsePeak(((vorbisMeta as dynamic).replayGainAlbumPeak as List?)?.firstOrNull);
+              } catch (_) {}
             } else if (MP4Parser.canUserParser(reader)) {
-              final mp4Meta = MP4Parser(fetchImage: true).parse(reader) as Mp4Metadata;
-              metadata = AudioMetadata(
+              final mp4Meta = MP4Parser(fetchImage: true).parse(reader);
+              metadata = AppAudioMetadata(
                 file: File(path),
-                album: mp4Meta.album,
-                artist: mp4Meta.artist,
-                bitrate: mp4Meta.bitrate,
-                duration: mp4Meta.duration,
-                title: mp4Meta.title,
-                trackNumber: mp4Meta.trackNumber,
-                trackTotal: mp4Meta.totalTracks,
-                year: mp4Meta.year,
-                discNumber: mp4Meta.discNumber,
+                album: (mp4Meta as dynamic).album,
+                artist: (mp4Meta as dynamic).artist,
+                bitrate: (mp4Meta as dynamic).bitrate,
+                duration: (mp4Meta as dynamic).duration,
+                title: (mp4Meta as dynamic).title,
+                trackNumber: (mp4Meta as dynamic).trackNumber,
+                trackTotal: (mp4Meta as dynamic).totalTracks,
+                year: (mp4Meta as dynamic).year,
+                discNumber: (mp4Meta as dynamic).discNumber,
               );
-              if (mp4Meta.picture != null) metadata.pictures.add(mp4Meta.picture!);
+              if ((mp4Meta as dynamic).picture != null) metadata.pictures.add((mp4Meta as dynamic).picture!);
             } else if (OGGParser.canUserParser(reader)) {
-              final oggMeta = OGGParser(fetchImage: true).parse(reader) as VorbisMetadata;
-              metadata = AudioMetadata(
+              final oggMeta = OGGParser(fetchImage: true).parse(reader);
+              metadata = AppAudioMetadata(
                 file: File(path),
-                album: oggMeta.album.firstOrNull,
-                artist: oggMeta.artist.firstOrNull,
-                bitrate: oggMeta.bitrate,
-                duration: oggMeta.duration,
-                title: oggMeta.title.firstOrNull,
-                trackNumber: oggMeta.trackNumber.firstOrNull,
-                trackTotal: oggMeta.trackTotal,
-                year: oggMeta.date.firstOrNull,
-                discNumber: oggMeta.discNumber,
+                album: (oggMeta as dynamic).album.firstOrNull,
+                artist: (oggMeta as dynamic).artist.firstOrNull,
+                bitrate: (oggMeta as dynamic).bitrate,
+                duration: (oggMeta as dynamic).duration,
+                title: (oggMeta as dynamic).title.firstOrNull,
+                trackNumber: int.tryParse((oggMeta as dynamic).trackNumber.firstOrNull ?? ''),
+                trackTotal: int.tryParse((oggMeta as dynamic).trackTotal.firstOrNull ?? ''),
+                year: (oggMeta as dynamic).date.firstOrNull,
+                discNumber: (oggMeta as dynamic).discNumber,
               );
-              metadata.pictures.addAll(oggMeta.pictures);
+              metadata.pictures.addAll((oggMeta as dynamic).pictures);
+              // Extract ReplayGain from Vorbis comments (OGG)
+              try {
+                metadata.gainDb = _parseGain(((oggMeta as dynamic).replayGainTrackGain as List?)?.firstOrNull);
+                metadata.trackPeak = _parsePeak(((oggMeta as dynamic).replayGainTrackPeak as List?)?.firstOrNull);
+                metadata.albumGainDb = _parseGain(((oggMeta as dynamic).replayGainAlbumGain as List?)?.firstOrNull);
+                metadata.albumPeak = _parsePeak(((oggMeta as dynamic).replayGainAlbumPeak as List?)?.firstOrNull);
+              } catch (_) {}
             } else {
               // Fallback to the package's default readMetadata which might leak on error
               // but at least we tried to be safe for most cases.
               reader.closeSync(); // Close our reader first
-              metadata = readMetadata(File(path), getImage: true);
+              final fallbackMeta = readMetadata(File(path), getImage: true);
+              metadata = AppAudioMetadata(
+                file: File(path),
+                album: fallbackMeta.album,
+                artist: fallbackMeta.artist,
+                bitrate: fallbackMeta.bitrate,
+                duration: fallbackMeta.duration,
+                title: fallbackMeta.title,
+                trackNumber: fallbackMeta.trackNumber,
+                trackTotal: fallbackMeta.trackTotal,
+                year: fallbackMeta.year,
+                discNumber: fallbackMeta.discNumber,
+              );
+              metadata.pictures = fallbackMeta.pictures;
             }
           } finally {
             // Ensure reader is closed if it wasn't already by the parser
@@ -1369,7 +1613,20 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
         } catch (e) {
           // If our manual parsing fails, try the standard way as a last resort
           try {
-            metadata = readMetadata(File(path), getImage: true);
+            final fallbackMeta = readMetadata(File(path), getImage: true);
+            metadata = AppAudioMetadata(
+              file: File(path),
+              album: fallbackMeta.album,
+              artist: fallbackMeta.artist,
+              bitrate: fallbackMeta.bitrate,
+              duration: fallbackMeta.duration,
+              title: fallbackMeta.title,
+              trackNumber: fallbackMeta.trackNumber,
+              trackTotal: fallbackMeta.trackTotal,
+              year: fallbackMeta.year,
+              discNumber: fallbackMeta.discNumber,
+            );
+            metadata.pictures = fallbackMeta.pictures;
           } catch (_) {
             metadata = null;
           }
@@ -1463,6 +1720,10 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
           bitrate: bitrate,
           size: fileSizeBytes,
           modifiedAt: modifiedAt,
+          gainDb: metadata.gainDb,
+          trackPeak: metadata.trackPeak,
+          albumGainDb: metadata.albumGainDb,
+          albumPeak: metadata.albumPeak,
         );
 
         sendPort.send(song);

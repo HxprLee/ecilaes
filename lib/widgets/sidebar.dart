@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
-import '../services/platform_service.dart';
 import '../signals/audio_signal.dart';
-import '../signals/navigation_signal.dart';
 import '../signals/settings_signal.dart';
 import '../theme/app_theme_extensions.dart';
 import '../models/playlist.dart';
+import 'playlist_cover.dart';
 import 'dart:io';
 
 class Sidebar extends StatefulWidget {
@@ -109,54 +109,64 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                       // Menu Toggle (hide on mobile drawer)
                       if (!widget.isDrawer)
                         Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: lerpDouble(4, 12, value)!,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.start,
                             children: [
-                              SizedBox(
-                                width: 48,
-                                child: Center(
-                                  child: IconButton(
-                                    icon: FaIcon(
-                                      FontAwesomeIcons.bars,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface.withOpacity(0.7),
-                                      size: 20,
-                                    ),
-                                    onPressed: widget.onToggle,
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: Opacity(
-                                  opacity: value,
-                                  child: Transform.translate(
-                                    offset: Offset(
-                                      lerpDouble(-20, 0, value)!,
-                                      0,
-                                    ),
-                                    child: Padding(
-                                      padding: EdgeInsets.only(left: 12),
-                                      child: Text(
-                                        'Music',
-                                        style: TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.bold,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.secondary,
+                              Tooltip(
+                                message: value < 0.5
+                                    ? (widget.isCollapsed
+                                        ? 'Expand Sidebar'
+                                        : 'Collapse Sidebar')
+                                    : '',
+                                child: InkWell(
+                                  onTap: widget.onToggle,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: SizedBox(
+                                    width: 52,
+                                    height: 48,
+                                    child: Center(
+                                      child: SvgPicture.asset(
+                                        'assets/app_icon.svg',
+                                        width: 24,
+                                        height: 24,
+                                        colorFilter: ColorFilter.mode(
+                                          Theme.of(context).colorScheme.primary,
+                                          BlendMode.srcIn,
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.fade,
-                                        softWrap: false,
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
+                                if (value > 0.05)
+                                  Expanded(
+                                    child: Opacity(
+                                      opacity: value,
+                                      child: Transform.translate(
+                                        offset: Offset(
+                                          lerpDouble(-20, 0, value)!,
+                                          0,
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(left: 12),
+                                          child: Text(
+                                            'Music',
+                                            style: TextStyle(
+                                              fontSize: 22,
+                                              fontWeight: FontWeight.bold,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.secondary,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.fade,
+                                            softWrap: false,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                             ],
                           ),
                         ),
@@ -164,8 +174,10 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
 
                       // Navigation Items
                       Expanded(
-                        child: SingleChildScrollView(
-                          child: Watch((context) {
+                        child: ScrollConfiguration(
+                          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                          child: SingleChildScrollView(
+                            child: Watch((context) {
                             final pinnedItemsIds =
                                 settingsSignal.pinnedSidebarItems.value;
                             final currentLocation = GoRouterState.of(
@@ -349,6 +361,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                           }),
                         ),
                       ),
+                    ),
 
                       // Settings at bottom (hide on mobile drawer)
                       _buildNavItem(
@@ -421,50 +434,70 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                 SizedBox(
                   width: 24,
                   child: Center(
-                    child: imagePath != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.file(
-                              File(imagePath),
-                              width: 18,
-                              height: 18,
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                        : FaIcon(
-                            icon,
-                            color: isSelected
-                                ? Colors.black87
-                                : Theme.of(context).colorScheme.secondary,
-                            size: 18,
-                          ),
+                    child: Watch((context) {
+                      final playlists = audioSignal.playlists.value;
+                      Playlist? playlist;
+                      try {
+                        playlist = playlists.firstWhere((p) => p.name == title);
+                      } catch (_) {}
+
+                      if (playlist != null) {
+                        return PlaylistCover(
+                          playlist: playlist,
+                          width: 18,
+                          height: 18,
+                          borderRadius: 4,
+                        );
+                      }
+
+                      return imagePath != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.file(
+                                File(imagePath),
+                                width: 18,
+                                height: 18,
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          : FaIcon(
+                              icon,
+                              color: isSelected
+                                  ? Colors.black87
+                                  : Theme.of(context).colorScheme.secondary,
+                              size: 18,
+                            );
+                    }),
                   ),
                 ),
-                Expanded(
-                  child: Opacity(
-                    opacity: value,
-                    child: Transform.translate(
-                      offset: Offset(lerpDouble(-20, 0, value)!, 0),
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 16),
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            color: isSelected
-                                ? Theme.of(context).colorScheme.onSecondary
-                                : Theme.of(context).colorScheme.secondary
+                if (value > 0.05)
+                  Expanded(
+                    child: Opacity(
+                      opacity: value,
+                      child: Transform.translate(
+                        offset: Offset(lerpDouble(-20, 0, value)!, 0),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 16),
+                          child: Text(
+                            title,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? Theme.of(context).colorScheme.onSecondary
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .secondary
                                       .withValues(alpha: 0.6),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w400,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w400,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.fade,
+                            softWrap: false,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.fade,
-                          softWrap: false,
                         ),
                       ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

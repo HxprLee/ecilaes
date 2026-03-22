@@ -1,90 +1,58 @@
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 import '../models/song.dart';
-import '../signals/settings_signal.dart';
-import '../theme/app_theme_extensions.dart';
+import 'app_dialog.dart';
+import 'edit_metadata_dialog.dart';
 
 void showSongInfoDialog(BuildContext context, Song song) {
   showDialog(
     context: context,
     builder: (context) {
-      return Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440, maxHeight: 600),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: BackdropFilter(
-              filter: settingsSignal.enableGlobalBlur.value
-                  ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
-                  : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .extension<AppThemeExtension>()!
-                      .sidebarBackground
-                      .withValues(
-                        alpha: settingsSignal.enableGlobalBlur.value ? 0.85 : 1.0,
-                      ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-                  ),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  vertical: 24,
-                  horizontal: 24,
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.info_outline,
-                                  color: Theme.of(context).colorScheme.secondary,
-                                  size: 24,
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Song info',
-                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                        color: Theme.of(context).colorScheme.secondary,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 20,
-                                      ),
-                                ),
-                              ],
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close),
-                              onPressed: () => Navigator.pop(context),
-                              color: Theme.of(context).colorScheme.secondary,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Flexible(
-                        child: _SongInfoContent(song: song),
-                      ),
-                    ],
-                  ),
-                ),
+      return AppDialog(
+        titleIcon: Icon(
+          Icons.info_outline,
+          color: Theme.of(context).colorScheme.secondary,
+          size: 24,
+        ),
+        title: 'Song info',
+        maxWidth: 440,
+        maxHeight: 600,
+        trailing: IconButton(
+          icon: Icon(
+            Icons.edit_outlined,
+            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.6),
+            size: 20,
+          ),
+          tooltip: 'Edit info',
+          onPressed: () {
+            Navigator.pop(context);
+            showDialog(
+              context: context,
+              builder: (context) => EditMetadataDialog(song: song),
+            );
+          },
+        ),
+        content: _SongInfoContent(song: song),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: Theme.of(
+                  context,
+                ).colorScheme.secondary.withValues(alpha: 0.2),
               ),
+              shape: const StadiumBorder(),
+            ),
+            child: Text(
+              'Close',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
             ),
           ),
-        ),
+        ],
       );
     },
   );
