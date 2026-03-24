@@ -10,6 +10,7 @@ import '../signals/settings_signal.dart';
 import 'album_art_cache.dart';
 import 'playback_history_service.dart';
 import 'youtube_service.dart';
+import 'YoutubeDatasource.dart';
 
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
@@ -233,14 +234,23 @@ class MyAudioHandler extends BaseAudioHandler {
       }
     }
 
-    // Convert songs to MediaItems (without art URIs - loaded lazily when played)
+    // Convert songs to MediaItems (without art URIs for local files - loaded lazily when played)
     final mediaItems = songs.map((song) {
+      Uri? initialArtUri;
+      final cachedPath = _artCache.getArtPathSync(song.path);
+      if (cachedPath != null) {
+        initialArtUri = Uri.file(cachedPath);
+      } else if (song.path.startsWith('yt:')) {
+        final videoId = song.path.substring(3);
+        initialArtUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
+      }
+
       return MediaItem(
         id: song.path,
         album: song.album ?? "Unknown Album",
         title: song.title,
         artist: song.artist,
-        artUri: null,
+        artUri: initialArtUri,
         extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
       );
     }).toList();
@@ -520,8 +530,28 @@ class MyAudioHandler extends BaseAudioHandler {
       }
     } else if (item.id.startsWith('yt:')) {
       final videoId = item.id.substring(3);
-      final thumbUri = Uri.parse('https://img.youtube.com/vi/$videoId/hqdefault.jpg');
+      final thumbUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
       item = item.copyWith(artUri: thumbUri);
+      
+      // Cache artwork locally for OS controls/widgets
+      _artCache.getArt(item.id).then((file) {
+        if (file != null && file.existsSync()) {
+          final artUri = Uri.file(file.path);
+          final updatedItem = item.copyWith(artUri: artUri);
+          
+          // Update queue so subsequent updates (like duration) use the local URI
+          final currentQueue = queue.value;
+          if (_currentIndex < currentQueue.length && currentQueue[_currentIndex].id == item.id) {
+            final updatedQueue = List<MediaItem>.from(currentQueue);
+            updatedQueue[_currentIndex] = updatedItem;
+            queue.add(updatedQueue);
+          }
+
+          if (mediaItem.value?.id == item.id) {
+            mediaItem.add(updatedItem);
+          }
+        }
+      });
     }
 
     mediaItem.add(item);

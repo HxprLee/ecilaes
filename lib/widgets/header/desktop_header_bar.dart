@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
 import '../../signals/navigation_signal.dart';
@@ -11,7 +12,7 @@ import '../../models/playlist.dart';
 import '../../theme/app_theme_extensions.dart';
 import '../playlist_cover.dart';
 
-class DesktopHeaderBar extends StatelessWidget {
+class DesktopHeaderBar extends StatefulWidget {
   final double leftOffset;
   final double hideContentOpacity;
   final double expansion;
@@ -26,17 +27,148 @@ class DesktopHeaderBar extends StatelessWidget {
   });
 
   @override
+  State<DesktopHeaderBar> createState() => _DesktopHeaderBarState();
+}
+
+class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
+  final FocusNode _searchFocusNode = FocusNode();
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _overlayEntry;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchFocusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _removeOverlay();
+    _searchFocusNode.removeListener(_onFocusChange);
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    final focused = _searchFocusNode.hasFocus;
+    if (_isFocused != focused) {
+      setState(() => _isFocused = focused);
+      if (focused) {
+        _showOverlay();
+      } else {
+        // Delay removal so tap on suggestion can register
+        Future.delayed(const Duration(milliseconds: 200), _removeOverlay);
+      }
+    }
+  }
+
+  void _showOverlay() {
+    _removeOverlay();
+    _overlayEntry = OverlayEntry(builder: (context) => _buildOverlay(context));
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  void _updateOverlay() {
+    _overlayEntry?.markNeedsBuild();
+  }
+
+  void _selectSuggestion(String suggestion) {
+    widget.searchController.text = suggestion;
+    widget.searchController.selection = TextSelection.fromPosition(
+      TextPosition(offset: suggestion.length),
+    );
+    audioSignal.searchQuery.value = suggestion;
+    audioSignal.searchSuggestions.value = [];
+    _searchFocusNode.unfocus();
+    final currentRoute = navigationSignal.currentRoute.value;
+    if (currentRoute != '/search') {
+      context.go('/search');
+    }
+  }
+
+  Widget _buildOverlay(BuildContext context) {
+    return Watch((context) {
+      final suggestions = audioSignal.searchSuggestions.value;
+      final query = audioSignal.searchQuery.value;
+
+      if (suggestions.isEmpty || query.trim().isEmpty || !_isFocused) {
+        return const SizedBox.shrink();
+      }
+
+      return Positioned(
+        width: 600,
+        child: CompositedTransformFollower(
+          link: _layerLink,
+          showWhenUnlinked: false,
+          offset: const Offset(0, 44),
+          child: Material(
+            elevation: 8,
+            borderRadius: BorderRadius.circular(12),
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 360),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: suggestions.length,
+                  itemBuilder: (context, index) {
+                    final suggestion = suggestions[index];
+                    return ListTile(
+                      dense: true,
+                      leading: FaIcon(
+                        FontAwesomeIcons.magnifyingGlass,
+                        size: 14,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                      title: Text(
+                        suggestion,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 14,
+                        ),
+                      ),
+                      onTap: () => _selectSuggestion(suggestion),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Trigger overlay rebuild when suggestions change
+    Watch.builder(
+      builder: (context) {
+        audioSignal.searchSuggestions.value;
+        audioSignal.searchQuery.value;
+        _updateOverlay();
+        return const SizedBox.shrink();
+      },
+    );
+
     return Container(
       height: 80,
-      padding: EdgeInsets.only(left: 2 + leftOffset, right: 2),
+      padding: EdgeInsets.only(left: 2 + widget.leftOffset, right: 2),
       child: Row(
         children: [
           // Left: Navigation Buttons
           Opacity(
-            opacity: hideContentOpacity,
+            opacity: widget.hideContentOpacity,
             child: IgnorePointer(
-              ignoring: expansion > 0.5,
+              ignoring: widget.expansion > 0.5,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -85,6 +217,16 @@ class DesktopHeaderBar extends StatelessWidget {
               if (route == '/playlists') return 'Playlists';
               if (route == '/albums') return 'Albums';
               if (route == '/artists') return 'Artists';
+              if (route.startsWith('/albums/')) {
+                final parts = route.split('/');
+                // /albums/:artist/:name
+                if (parts.length >= 4) return Uri.decodeComponent(parts.last);
+              }
+              if (route.startsWith('/artists/')) {
+                final parts = route.split('/');
+                // /artists/:name
+                if (parts.length >= 3) return Uri.decodeComponent(parts.last);
+              }
               if (route == '/settings') return 'Settings';
               if (route == '/settings/appearance') return 'Appearance';
               if (route == '/settings/playback') return 'Playback';
@@ -179,7 +321,7 @@ class DesktopHeaderBar extends StatelessWidget {
           // Center: Search Bar
           Expanded(
             child: Center(
-              child: _buildSearchBar(hideContentOpacity, expansion, context),
+              child: _buildSearchBar(context),
             ),
           ),
 
@@ -187,9 +329,9 @@ class DesktopHeaderBar extends StatelessWidget {
 
           // Right: Window Buttons
           Opacity(
-            opacity: hideContentOpacity,
+            opacity: widget.hideContentOpacity,
             child: IgnorePointer(
-              ignoring: expansion > 0.5,
+              ignoring: widget.expansion > 0.5,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -205,65 +347,61 @@ class DesktopHeaderBar extends StatelessWidget {
     );
   }
 
-  Widget _buildSearchBar(
-    double opacity,
-    double expansion,
-    BuildContext context,
-  ) {
+  Widget _buildSearchBar(BuildContext context) {
     return Opacity(
-      opacity: opacity,
+      opacity: widget.hideContentOpacity,
       child: IgnorePointer(
-        ignoring: expansion > 0.5,
-        child: Container(
-          height: 40,
-          constraints: const BoxConstraints(maxWidth: 600),
-          decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).extension<AppThemeExtension>()!.headerBarBackground,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.05),
+        ignoring: widget.expansion > 0.5,
+        child: CompositedTransformTarget(
+          link: _layerLink,
+          child: Container(
+            height: 40,
+            constraints: const BoxConstraints(maxWidth: 600),
+            decoration: BoxDecoration(
+              color: Theme.of(
+                context,
+              ).extension<AppThemeExtension>()!.headerBarBackground,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.05),
+              ),
             ),
-          ),
-          child: TextField(
-            controller: searchController,
-            textAlignVertical: TextAlignVertical.center,
-            onChanged: (value) => audioSignal.searchQuery.value = value,
-            onTap: () {
-              final currentRoute = navigationSignal.currentRoute.value;
-              if (currentRoute != '/search') {
-                context.go('/search');
-              }
-            },
-            onSubmitted: (value) {
-              final currentRoute = navigationSignal.currentRoute.value;
-              if (currentRoute != '/search') {
-                context.go('/search');
-              }
-            },
-            decoration: InputDecoration(
-              hintText: 'Search songs, albums, artists',
-              hintStyle: TextStyle(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withOpacity(0.38),
+            child: TextField(
+              controller: widget.searchController,
+              focusNode: _searchFocusNode,
+              textAlignVertical: TextAlignVertical.center,
+              onChanged: (value) => audioSignal.searchQuery.value = value,
+              onSubmitted: (value) {
+                audioSignal.searchSuggestions.value = [];
+                _removeOverlay();
+                final currentRoute = navigationSignal.currentRoute.value;
+                if (currentRoute != '/search') {
+                  context.go('/search');
+                }
+              },
+              decoration: InputDecoration(
+                hintText: 'Search songs, albums, artists',
+                hintStyle: TextStyle(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withOpacity(0.38),
+                  fontSize: 14,
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withOpacity(0.38),
+                  size: 20,
+                ),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 14,
               ),
-              prefixIcon: Icon(
-                Icons.search,
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withOpacity(0.38),
-                size: 20,
-              ),
-              border: InputBorder.none,
-              isDense: true,
-              contentPadding: EdgeInsets.zero,
-            ),
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface,
-              fontSize: 14,
             ),
           ),
         ),

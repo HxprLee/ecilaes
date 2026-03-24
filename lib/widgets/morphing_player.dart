@@ -12,8 +12,9 @@ import '../signals/audio_signal.dart';
 import './playlist_dialogs.dart';
 import './song_info_dialog.dart';
 import '../signals/settings_signal.dart';
+import '../services/YoutubeDatasource.dart';
 import '../theme/app_theme_extensions.dart';
-import 'marquee_text.dart';
+import 'package:marquee/marquee.dart';
 import 'song_actions_sheet.dart';
 import 'player/queue_view.dart';
 import '../services/youtube_service.dart';
@@ -887,7 +888,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
                 final isYoutube = currentSong.path.startsWith('yt:');
                 final ytThumbnailUrl = isYoutube
-                    ? 'https://img.youtube.com/vi/${currentSong.path.substring(3)}/hqdefault.jpg'
+                    ? youtubeDatasource.getArtworkUrl(currentSong.path.substring(3))
                     : null;
 
                 return Positioned.fill(
@@ -1268,15 +1269,49 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     bool isPlaying,
     double value,
   ) {
+    final title = currentSong?.title ?? 'No song playing';
+    
     return Column(
       spacing: value <= 0.5 ? 0 : 1,
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        MarqueeText(
-          text: currentSong?.title ?? 'No song playing',
-          style: titleStyle,
-          isPlaying: isPlaying,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final textPainter = TextPainter(
+              text: TextSpan(text: title, style: titleStyle),
+              maxLines: 1,
+              textDirection: TextDirection.ltr,
+              textScaler: MediaQuery.textScalerOf(context),
+            )..layout(maxWidth: double.infinity);
+
+            if (textPainter.size.width <= constraints.maxWidth) {
+              return Text(
+                title,
+                style: titleStyle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              );
+            }
+
+            return SizedBox(
+              height: (titleStyle.fontSize ?? 16.0) * (titleStyle.height ?? 1.2),
+              child: Marquee(
+                text: title,
+                style: titleStyle,
+                scrollAxis: Axis.horizontal,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                blankSpace: 50.0,
+                velocity: isPlaying ? 30.0 : 0.0,
+                pauseAfterRound: const Duration(seconds: 4),
+                startPadding: 0.0,
+                accelerationDuration: const Duration(milliseconds: 500),
+                accelerationCurve: Curves.linear,
+                decelerationDuration: const Duration(milliseconds: 500),
+                decelerationCurve: Curves.easeOut,
+              ),
+            );
+          },
         ),
         SizedBox(height: 6),
         Text(
@@ -1299,7 +1334,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   ) {
     final isYoutube = currentSong?.path.startsWith('yt:') ?? false;
     final ytThumbnailUrl = isYoutube
-        ? 'https://img.youtube.com/vi/${currentSong!.path.substring(3)}/hqdefault.jpg'
+        ? youtubeDatasource.getArtworkUrl(currentSong!.path.substring(3))
         : null;
 
     return IgnorePointer(

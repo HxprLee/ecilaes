@@ -1,7 +1,25 @@
+# Changelog - 2026-03-24
+
+### Added
+- **YouTube Music Pages**: Added dedicated screens for YouTube Music Explore/Home, Albums, Artists, and Playlists.
+- **YouTube Music Search Suggestions**: Added search suggestions with dropdown overlay for desktop and a full-page suggestion for mobile.
+- **Improved Discord RPC Integration**: Discord now displays a progress bar just like Spotify or other app's implementation.
+
+### Changed
+- **Better Marquee effect**: Replaced custom marquee text with `package:marquee` for improved stability, handling, and trailing removal on short titles.
+- **Improved YouTube Artwork**: YouTube Music artwork is now pre-cached, stored locally and instantly mapped, ensuring it appears consistently everywhere, especially for the widget and the media controls of Android.
+- **Bumped Flutter version**: Bumped Flutter to version 3.41.5.
+
+### Fixed
+- **PageHeader Scroll Gap**: Resolved a layout issue where a large gap was left between the header bar and content when scrolling down on search and library pages.
+- **YouTube Artist Parsing**: Fixed the "Unknown" artist result bug in YouTube searches by resolving missing metadata mapping keys.
+- **Grid Layout Spacing**: Added proper bottom padding to the "Recently Played" and "Recently Added" grid views to prevent the player bar from obscuring list items.
+
+---
+
 # Changelog - 2026-03-19
 
 ### Added
-
 - **Lyrics Support**: Added support for LRC lyrics files and plain text lyrics, it will check for LRC file first, if not found, it will search in lrclib.net online lyrics provider.
 - **Custom Lyrics Typography**: Added a dedicated setting in the Lyrics Appearance section, allowing independent font size control for synced and non-synced lyrics.
 - **Mini Player Marquee**: The song title in the collapsed player bar now features a marquee effect.

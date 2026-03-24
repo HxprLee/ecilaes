@@ -5,6 +5,7 @@ import 'package:signals/signals_flutter.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
+import '../services/YoutubeDatasource.dart';
 import 'song_tile.dart';
 
 class PlaylistCover extends StatelessWidget {
@@ -106,7 +107,7 @@ class PlaylistCover extends StatelessWidget {
     if (song.path.startsWith('yt:')) {
       final videoId = song.path.substring(3);
       return _buildImage(
-        NetworkImage('https://img.youtube.com/vi/$videoId/hqdefault.jpg'),
+        NetworkImage(youtubeDatasource.getArtworkUrl(videoId)),
       );
     }
     final path = SongTile.getArtPath(song.path, artDir);
@@ -186,7 +187,7 @@ class PlaylistCover extends StatelessWidget {
     ImageProvider image;
     if (song.path.startsWith('yt:')) {
       final videoId = song.path.substring(3);
-      image = NetworkImage('https://img.youtube.com/vi/$videoId/hqdefault.jpg');
+      image = NetworkImage(youtubeDatasource.getArtworkUrl(videoId));
     } else {
       image = FileImage(File(SongTile.getArtPath(song.path, artDir)));
     }

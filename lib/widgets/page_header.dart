@@ -50,77 +50,83 @@ class PageHeader extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Opacity(
-              opacity: titleOpacity,
-              child: Transform.translate(
-                offset: Offset(0, lerpDouble(0.0, -40.0, progress)!),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+            ClipRect(
+              child: Align(
+                alignment: Alignment.topCenter,
+                heightFactor: (1.0 - progress).clamp(0.0, 1.0),
+                child: Opacity(
+                  opacity: titleOpacity,
+                  child: Transform.translate(
+                    offset: Offset(0, lerpDouble(0.0, -40.0, progress)!),
+                    child: Stack(
+                      clipBehavior: Clip.none,
                       children: [
-                        if (leading != null) ...[
-                          Transform.scale(
-                            scale: lerpDouble(1.0, 0.7, progress)!,
-                            alignment: Alignment.bottomLeft,
-                            child: leading!,
-                          ),
-                          const SizedBox(width: 16),
-                        ],
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                title,
-                                style: TextStyle(
-                                  fontSize: fontSize,
-                                  fontWeight: FontWeight.w600,
-                                  color: Theme.of(context).colorScheme.secondary,
-                                  letterSpacing: -1,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (leading != null) ...[
+                              Transform.scale(
+                                scale: lerpDouble(1.0, 0.7, progress)!,
+                                alignment: Alignment.bottomLeft,
+                                child: leading!,
                               ),
-                              if (subtitle != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  subtitle!,
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.secondary.withValues(alpha: 0.7),
-                                    fontSize: 14,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                              if (underTextActions != null) ...[
-                                const SizedBox(height: 12),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: underTextActions!,
-                                ),
-                              ],
+                              const SizedBox(width: 16),
                             ],
-                          ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    title,
+                                    style: TextStyle(
+                                      fontSize: fontSize,
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(context).colorScheme.secondary,
+                                      letterSpacing: -1,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (subtitle != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      subtitle!,
+                                      style: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.secondary.withValues(alpha: 0.7),
+                                        fontSize: 14,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                  if (underTextActions != null) ...[
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: underTextActions!,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            if (actions != null) ...actions!,
+                          ],
                         ),
-                        if (actions != null) ...actions!,
+                        if (topActions != null)
+                          Positioned(
+                            top: 0,
+                            right: 0,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: topActions!,
+                            ),
+                          ),
                       ],
                     ),
-                    if (topActions != null)
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: topActions!,
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
               ),
             ),

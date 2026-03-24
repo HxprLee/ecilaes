@@ -5,6 +5,7 @@ import 'package:signals/signals_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
+import '../../services/YoutubeDatasource.dart';
 import '../../models/song.dart';
 import '../../signals/audio_signal.dart';
 import '../song_actions_sheet.dart';
@@ -367,13 +368,31 @@ class _QueueViewState extends State<QueueView> {
       if (artDir == null) return const Icon(Icons.music_note, color: Colors.white54);
 
       final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
-      return Image.file(
-        File(artPath),
-        fit: BoxFit.cover,
-        cacheWidth: 96, // Optimize image memory usage
-        cacheHeight: 96,
-        errorBuilder: (context, error, stackTrace) => const Icon(Icons.music_note, color: Colors.white54),
-      );
+      final file = File(artPath);
+
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          cacheWidth: 96,
+          cacheHeight: 96,
+          errorBuilder: (context, error, stackTrace) => const Icon(Icons.music_note, color: Colors.white54),
+        );
+      }
+
+      if (song.path.startsWith('yt:')) {
+        final videoId = song.path.substring(3);
+        final url = youtubeDatasource.getArtworkUrl(videoId);
+        return Image.network(
+          url,
+          fit: BoxFit.cover,
+          cacheWidth: 96,
+          cacheHeight: 96,
+          errorBuilder: (context, error, stackTrace) => const Icon(Icons.music_note, color: Colors.white54),
+        );
+      }
+
+      return const Icon(Icons.music_note, color: Colors.white54);
     });
   }
 }

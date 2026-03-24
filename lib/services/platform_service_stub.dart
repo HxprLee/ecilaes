@@ -14,6 +14,7 @@ class PlatformServiceStub implements PlatformService {
     String? artworkUrl,
     bool isPlaying = true,
     int? startTimeStamp,
+    int? endTimeStamp,
   }) async {
     // No-op on mobile/web
   }

@@ -131,7 +131,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                         width: 24,
                                         height: 24,
                                         colorFilter: ColorFilter.mode(
-                                          Theme.of(context).colorScheme.primary,
+                                          Theme.of(context).colorScheme.secondary,
                                           BlendMode.srcIn,
                                         ),
                                       ),
@@ -248,8 +248,8 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                   FontAwesomeIcons.youtube,
                                   'YouTube Music',
                                   value,
-                                  isSelected: false,
-                                  onTap: () {}, // Placeholder
+                                  isSelected: currentLocation == '/youtube',
+                                  onTap: () => context.go('/youtube'),
                                 ),
                                 _buildNavItem(
                                   FontAwesomeIcons.recordVinyl,

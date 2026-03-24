@@ -14,6 +14,10 @@ import 'screens/artists_screen.dart';
 import 'screens/artist_detail_screen.dart';
 import 'screens/albums_screen.dart';
 import 'screens/album_detail_screen.dart';
+import 'screens/youtube_music_screen.dart';
+import 'screens/yt_album_screen.dart';
+import 'screens/yt_artist_screen.dart';
+import 'screens/yt_playlist_screen.dart';
 import 'widgets/songs_list_content.dart';
 import 'signals/audio_signal.dart';
 import 'signals/navigation_signal.dart';
@@ -52,6 +56,50 @@ final GoRouter router = GoRouter(
           path: '/search',
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const SearchScreen()),
+        ),
+        // YouTube Music
+        GoRoute(
+          path: '/youtube',
+          pageBuilder: (context, state) =>
+              _buildPageWithTransition(state, const YoutubeMusicScreen()),
+          routes: [
+            GoRoute(
+              path: 'album/:id',
+              pageBuilder: (context, state) {
+                final id = Uri.decodeComponent(state.pathParameters['id'] ?? '');
+                final extra = state.extra as Map<String, dynamic>? ?? {};
+                return _buildPageWithTransition(state, YtAlbumScreen(
+                  browseId: id,
+                  title: extra['title'] ?? '',
+                  thumbnailUrl: extra['thumbnailUrl'] ?? '',
+                ));
+              },
+            ),
+            GoRoute(
+              path: 'artist/:id',
+              pageBuilder: (context, state) {
+                final id = Uri.decodeComponent(state.pathParameters['id'] ?? '');
+                final extra = state.extra as Map<String, dynamic>? ?? {};
+                return _buildPageWithTransition(state, YtArtistScreen(
+                  channelId: id,
+                  name: extra['name'] ?? '',
+                  thumbnailUrl: extra['thumbnailUrl'] ?? '',
+                ));
+              },
+            ),
+            GoRoute(
+              path: 'playlist/:id',
+              pageBuilder: (context, state) {
+                final id = Uri.decodeComponent(state.pathParameters['id'] ?? '');
+                final extra = state.extra as Map<String, dynamic>? ?? {};
+                return _buildPageWithTransition(state, YtPlaylistScreen(
+                  playlistId: id,
+                  title: extra['title'] ?? '',
+                  thumbnailUrl: extra['thumbnailUrl'] ?? '',
+                ));
+              },
+            ),
+          ],
         ),
         // Library
         GoRoute(

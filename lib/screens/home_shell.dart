@@ -386,7 +386,7 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                                                     context,
                                                     FontAwesomeIcons.youtube,
                                                     'YouTube',
-                                                    null,
+                                                    '/youtube',
                                                     location,
                                                     1,
                                                   ),

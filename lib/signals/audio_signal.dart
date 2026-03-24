@@ -21,6 +21,7 @@ import '../services/album_art_service.dart';
 import '../services/playlist_service.dart';
 import '../services/playback_history_service.dart';
 import '../services/youtube_service.dart';
+import '../services/YoutubeDatasource.dart';
 import '../models/history_entry.dart';
 import '../services/metadata_service.dart';
 import '../services/album_art_cache.dart';
@@ -51,6 +52,7 @@ class AudioSignal {
   final isScanning = signal<bool>(false);
   final scanProgress = signal<double>(0.0);
   final searchQuery = signal<String>('');
+  final searchSuggestions = listSignal<String>([]);
   final isShuffleMode = signal<bool>(false);
   final repeatMode = signal<AudioServiceRepeatMode>(AudioServiceRepeatMode.none);
   final shuffledIndices = listSignal<int>([]);
@@ -103,8 +105,11 @@ class AudioSignal {
   final Map<String, Song> _explorerSongCache = {};
 
   final youtubeSearchResults = listSignal<Song>([]);
+  final ytSearchResults = listSignal<Map<String, dynamic>>([]);
+  final ytSearchFilter = signal<SearchFilter?>(SearchFilter.songs);
   final isSearchingYoutube = signal<bool>(false);
   Timer? _searchDebounce;
+  Timer? _suggestionDebounce;
 
   // Computed for backward compatibility or simple checks
   late final isPlayerExpanded = computed(() => playerExpansion.value > 0.1);
@@ -305,13 +310,35 @@ class AudioSignal {
       });
     }
 
-    // YouTube search effect
+    // Search suggestions effect – faster debounce for typeahead
     effect(() {
       final query = searchQuery.value;
+      _suggestionDebounce?.cancel();
+
+      if (query.trim().isEmpty) {
+        searchSuggestions.value = [];
+        return;
+      }
+
+      _suggestionDebounce = Timer(const Duration(milliseconds: 300), () async {
+        try {
+          final suggestions = await youtubeDatasource.getSearchSuggestions(query.trim());
+          searchSuggestions.value = suggestions;
+        } catch (e) {
+          debugPrint('Search suggestions error: $e');
+        }
+      });
+    });
+
+    // YouTube search effect – reacts to query AND filter changes
+    effect(() {
+      final query = searchQuery.value;
+      final filter = ytSearchFilter.value;
       _searchDebounce?.cancel();
 
       if (query.isEmpty) {
         youtubeSearchResults.value = [];
+        ytSearchResults.value = [];
         return;
       }
 
@@ -322,11 +349,20 @@ class AudioSignal {
 
           isSearchingYoutube.value = true;
           debugPrint(
-              'AudioSignal: Debounced search for "$trimmedQuery" starting...');
-          final results = await youtubeService.searchSongs(trimmedQuery);
-          youtubeSearchResults.value = results;
+              'AudioSignal: Debounced search for "$trimmedQuery" (filter: $filter) starting...');
+          
+          final rawResults = await youtubeService.search(trimmedQuery, filter: filter);
+          ytSearchResults.value = rawResults;
+          
+          // Also map songs for backwards compatibility
+          if (filter == SearchFilter.songs || filter == null) {
+            youtubeSearchResults.value = rawResults.map((s) => youtubeDatasource.mapToSong(s)).toList();
+          } else {
+            youtubeSearchResults.value = [];
+          }
+          
           debugPrint(
-              'AudioSignal: Search results updated (${results.length} songs)');
+              'AudioSignal: Search results updated (${rawResults.length} items)');
         } catch (e) {
           debugPrint('AudioSignal: YouTube search error: $e');
         } finally {
@@ -476,59 +512,62 @@ class AudioSignal {
   // Discord RPC
   String? _lastDiscordSongPath;
   bool? _lastDiscordIsPlaying;
-  int? _discordPlaybackStartTime;
   String? _cachedArtworkUrl;
 
-  Future<void> _updateDiscordPresence() async {
+  Future<void> _updateDiscordPresence({bool force = false}) async {
     final song = currentSong.value;
     final playing = isPlaying.value;
 
     if (song == null || !isDesktop) return;
 
-    // If nothing changed, we don't strictly need to update every time,
-    // but the task asks for periodic updates. However, we should avoid
-    // re-fetching artwork if not necessary.
-    if (_lastDiscordSongPath == song.path && _lastDiscordIsPlaying == playing) {
-      if (!playing)
-        return; // If paused and already sent pause, no need to resend
+    int? start;
+    int? end;
+    if (playing) {
+      final posMs = audioHandler.playbackState.value.position.inMilliseconds;
+      start = DateTime.now().millisecondsSinceEpoch - posMs;
+      
+      final currentMediaItem = audioHandler.mediaItem.value;
+      final durationMs = currentMediaItem?.duration?.inMilliseconds ?? song.duration?.inMilliseconds;
+      end = durationMs != null ? start + durationMs : null;
+    }
 
-      // If playing, we might want to resend to keep presence alive,
-      // but only if we have the cached info.
+    if (!force && _lastDiscordSongPath == song.path && _lastDiscordIsPlaying == playing) {
+      if (!playing) return; // If paused and already sent pause, no need to resend
+
+      // Resend periodically with updated exact timestamps
       if (_cachedArtworkUrl != null) {
         await PlatformService().updatePresence(
           song,
           artworkUrl: _cachedArtworkUrl,
           isPlaying: true,
-          startTimeStamp: _discordPlaybackStartTime,
+          startTimeStamp: start,
+          endTimeStamp: end,
         );
       }
       return;
     }
 
     // State changed
-    if (_lastDiscordSongPath != song.path ||
-        (playing && !_lastDiscordIsPlaying!)) {
-      // New song or resumed playback
-      _discordPlaybackStartTime = DateTime.now().millisecondsSinceEpoch;
-    } else if (!playing) {
-      // Paused
-      _discordPlaybackStartTime = null;
-    }
-
     _lastDiscordSongPath = song.path;
     _lastDiscordIsPlaying = playing;
 
-    _cachedArtworkUrl = await AlbumArtService().getAlbumArtUrl(
-      song.artist,
-      song.album ?? '',
-      song.title,
-    );
+    if (song.path.startsWith('yt:')) {
+      final videoId = song.path.substring(3);
+      _cachedArtworkUrl = YoutubeDatasource().getArtworkUrl(videoId);
+    } else {
+      _cachedArtworkUrl = await AlbumArtService().getAlbumArtUrl(
+        song.artist,
+        song.album ?? '',
+        song.title,
+      );
+    }
 
     await PlatformService().updatePresence(
       song,
       artworkUrl: _cachedArtworkUrl,
       isPlaying: playing,
-      startTimeStamp: _discordPlaybackStartTime,
+      startTimeStamp: start,
+      endTimeStamp: end,
     );
   }
 
@@ -697,7 +736,10 @@ class AudioSignal {
   // Playback Control
   Future<void> play() => _audioHandler.play();
   Future<void> pause() => _audioHandler.pause();
-  Future<void> seek(Duration pos) => _audioHandler.seek(pos);
+  Future<void> seek(Duration pos) async {
+    await _audioHandler.seek(pos);
+    if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+  }
   Future<void> skipNext() => _audioHandler.skipToNext();
   Future<void> skipPrevious() => _audioHandler.skipToPrevious();
   Future<void> stop() async {
@@ -737,13 +779,23 @@ class AudioSignal {
   Future<void> playNext(Song song) async {
     if (_audioHandler is MyAudioHandler) {
       final handler = _audioHandler;
+      final artCache = AlbumArtCache();
+
+      Uri? initialArtUri;
+      final cachedPath = artCache.getArtPathSync(song.path);
+      if (cachedPath != null) {
+        initialArtUri = Uri.file(cachedPath);
+      } else if (song.path.startsWith('yt:')) {
+        final videoId = song.path.substring(3);
+        initialArtUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
+      }
 
       final mediaItem = MediaItem(
         id: song.path,
         album: song.album ?? "Unknown Album",
         title: song.title,
         artist: song.artist,
-        artUri: null,
+        artUri: initialArtUri,
         extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
       );
 
@@ -758,13 +810,23 @@ class AudioSignal {
   Future<void> addToQueue(Song song) async {
     if (_audioHandler is MyAudioHandler) {
       final handler = _audioHandler;
+      final artCache = AlbumArtCache();
+
+      Uri? initialArtUri;
+      final cachedPath = artCache.getArtPathSync(song.path);
+      if (cachedPath != null) {
+        initialArtUri = Uri.file(cachedPath);
+      } else if (song.path.startsWith('yt:')) {
+        final videoId = song.path.substring(3);
+        initialArtUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
+      }
 
       final mediaItem = MediaItem(
         id: song.path,
         album: song.album ?? "Unknown Album",
         title: song.title,
         artist: song.artist,
-        artUri: null,
+        artUri: initialArtUri,
         extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
       );
 
@@ -782,10 +844,10 @@ class AudioSignal {
       ImageProvider? imageProvider;
 
       if (song.path.startsWith('yt:')) {
-        // Use YouTube thumbnail for palette generation
+        // Use YouTube Music thumbnail for palette generation (square, hi-res)
         final videoId = song.path.substring(3);
         imageProvider = NetworkImage(
-          'https://img.youtube.com/vi/$videoId/hqdefault.jpg',
+          youtubeDatasource.getArtworkUrl(videoId),
         );
       } else {
         // Use AlbumArtCache to get the file (handles extraction if needed)

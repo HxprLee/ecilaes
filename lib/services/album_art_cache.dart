@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+import 'YoutubeDatasource.dart';
 
 /// LRU cache for album art - keeps only a limited number in memory
 /// and loads from disk on-demand
@@ -35,6 +37,16 @@ class AlbumArtCache {
     return '$_artDirPath/$hash.jpg';
   }
 
+  /// Get the file path for a song's album art (synchronous check)
+  String? getArtPathSync(String songPath) {
+    if (_artDirPath == null) return null;
+    final path = _getArtPath(songPath);
+    if (File(path).existsSync()) {
+      return path;
+    }
+    return null;
+  }
+
   /// Check if album art exists on disk for a song
   Future<bool> hasArt(String songPath) async {
     await init();
@@ -64,15 +76,30 @@ class AlbumArtCache {
 
   /// Load art from disk or extract from audio file
   Future<File?> _loadArt(String songPath) async {
-    // YouTube paths don't have local art - thumbnail is fetched via NetworkImage
-    if (songPath.startsWith('yt:')) return null;
-
     final artPath = _getArtPath(songPath);
     final artFile = File(artPath);
 
     // Try loading from disk cache
     if (await artFile.exists()) {
       return artFile;
+    }
+
+    // YouTube paths don't have local art - download it
+    if (songPath.startsWith('yt:')) {
+      try {
+        final videoId = songPath.substring(3);
+        final url = youtubeDatasource.getArtworkUrl(videoId);
+        if (url.isEmpty) return null;
+
+        final response = await http.get(Uri.parse(url));
+        if (response.statusCode == 200) {
+          await artFile.writeAsBytes(response.bodyBytes);
+          return artFile;
+        }
+      } catch (e) {
+        debugPrint('Error downloading YouTube art: $e');
+      }
+      return null;
     }
 
     // Fall back to extracting from audio file
@@ -217,10 +244,10 @@ class AlbumArtCache {
 
   /// Get art file URI for MPRIS (returns file path, not bytes)
   Future<Uri?> getArtUri(String songPath) async {
-    // YouTube paths use a remote thumbnail URL, not a local file
+    // YouTube paths use YouTube Music thumbnail (square, hi-res)
     if (songPath.startsWith('yt:')) {
       final videoId = songPath.substring(3);
-      return Uri.parse('https://img.youtube.com/vi/$videoId/hqdefault.jpg');
+      return Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
     }
 
     await init();

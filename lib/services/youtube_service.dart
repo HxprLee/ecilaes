@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide SearchFilter;
 import '../models/song.dart';
+import 'YoutubeDatasource.dart';
 
 class YoutubeService {
   static final YoutubeService _instance = YoutubeService._internal();
@@ -18,24 +18,14 @@ class YoutubeService {
     _yt.close();
   }
 
-  /// Searches YouTube and maps the results to `Song` objects
+  /// Searches YouTube Music and maps the results to `Song` objects
   Future<List<Song>> searchSongs(String query) async {
-    try {
-      final results = await _yt.search.search(query);
-      debugPrint('YouTube: Found ${results.length} results for "$query"');
-      return results.map((video) {
-        return Song(
-          path: 'yt:${video.id.value}',
-          title: video.title,
-          artist: video.author,
-          duration: video.duration,
-          hasAlbumArt: true,
-        );
-      }).toList();
-    } catch (e) {
-      debugPrint('YouTube: Search error for "$query": $e');
-      rethrow;
-    }
+    return youtubeDatasource.searchSongs(query);
+  }
+
+  /// Generic YouTube Music search with filter. Returns raw maps.
+  Future<List<Map<String, dynamic>>> search(String query, {SearchFilter? filter}) async {
+    return youtubeDatasource.search(query, filter: filter);
   }
 
   /// Extracts the direct audio stream URL for a given YouTube Video ID.

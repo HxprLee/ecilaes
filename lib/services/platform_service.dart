@@ -11,6 +11,7 @@ abstract class PlatformService {
     String? artworkUrl,
     bool isPlaying = true,
     int? startTimeStamp,
+    int? endTimeStamp,
   });
   Future<void> clearPresence();
   Future<void> dispose();

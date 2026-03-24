@@ -65,6 +65,7 @@ class DiscordRpcService {
     String? artworkUrl,
     bool isPlaying = true,
     int? startTimeStamp,
+    int? endTimeStamp,
   }) async {
     try {
       if (!_isConnected || _rpc == null) {
@@ -82,12 +83,15 @@ class DiscordRpcService {
         details: _truncate(_sanitize(song.title), 128),
         state: _truncate(_sanitize(song.artist), 128),
         timestamps: startTimeStamp != null
-            ? DiscordTimestamps(start: startTimeStamp ~/ 1000)
+            ? DiscordTimestamps(
+                start: startTimeStamp ~/ 1000,
+                end: endTimeStamp != null ? endTimeStamp ~/ 1000 : null,
+              )
             : (isPlaying ? DiscordTimestamps.started(DateTime.now()) : null),
         largeAsset: artworkUrl != null && artworkUrl.startsWith('http')
             ? DiscordAsset.fromUrl(
                 artworkUrl,
-                text: isPlaying ? '▸ Playing' : '⏸︎ Paused',
+                text: isPlaying ? '' : '⏸︎ Paused',
               )
             : DiscordAsset(
                 key: artworkUrl ?? 'app_icon',

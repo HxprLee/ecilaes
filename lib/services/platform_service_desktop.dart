@@ -25,6 +25,7 @@ class PlatformServiceProxy implements PlatformService {
     String? artworkUrl,
     bool isPlaying = true,
     int? startTimeStamp,
+    int? endTimeStamp,
   }) async {
     if (_delegate != null) {
       await _delegate!.updatePresence(
@@ -32,6 +33,7 @@ class PlatformServiceProxy implements PlatformService {
         artworkUrl: artworkUrl,
         isPlaying: isPlaying,
         startTimeStamp: startTimeStamp,
+        endTimeStamp: endTimeStamp,
       );
     }
   }

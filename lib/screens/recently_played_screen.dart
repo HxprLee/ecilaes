@@ -92,30 +92,41 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                 ),
               )
             else if (isGrid)
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 200,
-                    mainAxisSpacing: 24,
-                    crossAxisSpacing: 24,
-                    childAspectRatio: 0.75,
-                  ),
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final entry = history[index];
-                    final song = songs.firstWhere(
-                      (s) => s.path == entry.songPath,
-                      orElse: () => Song.fromPath(entry.songPath),
-                    );
+              SliverMainAxisGroup(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    sliver: SliverGrid(
+                      gridDelegate:
+                          const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 200,
+                            mainAxisSpacing: 24,
+                            crossAxisSpacing: 24,
+                            childAspectRatio: 0.75,
+                          ),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final entry = history[index];
+                        final song = songs.firstWhere(
+                          (s) => s.path == entry.songPath,
+                          orElse: () => Song.fromPath(entry.songPath),
+                        );
 
-                    return _GridSongCard(
-                      song: song,
-                      playCount: entry.playCount,
-                      artPath: SongTile.getArtPath(song.path, _artDirPath),
-                      onTap: () => audioSignal.playSong(song),
-                    );
-                  }, childCount: history.length),
-                ),
+                        return _GridSongCard(
+                          song: song,
+                          playCount: entry.playCount,
+                          artPath: SongTile.getArtPath(song.path, _artDirPath),
+                          onTap: () => audioSignal.playSong(song),
+                        );
+                      }, childCount: history.length),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Watch(
+                      (context) =>
+                          SizedBox(height: audioSignal.reservedHeight.value),
+                    ),
+                  ),
+                ],
               )
             else
               SongListView(

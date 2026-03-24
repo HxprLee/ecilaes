@@ -75,25 +75,36 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
                 ),
               )
             else if (isGrid)
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 200,
-                    mainAxisSpacing: 24,
-                    crossAxisSpacing: 24,
-                    childAspectRatio: 0.75,
-                  ),
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final song = recentAdded[index];
+              SliverMainAxisGroup(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    sliver: SliverGrid(
+                      gridDelegate:
+                          const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 200,
+                            mainAxisSpacing: 24,
+                            crossAxisSpacing: 24,
+                            childAspectRatio: 0.75,
+                          ),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final song = recentAdded[index];
 
-                    return _GridSongCard(
-                      song: song,
-                      artPath: SongTile.getArtPath(song.path, _artDirPath),
-                      onTap: () => audioSignal.playSong(song),
-                    );
-                  }, childCount: recentAdded.length),
-                ),
+                        return _GridSongCard(
+                          song: song,
+                          artPath: SongTile.getArtPath(song.path, _artDirPath),
+                          onTap: () => audioSignal.playSong(song),
+                        );
+                      }, childCount: recentAdded.length),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Watch(
+                      (context) =>
+                          SizedBox(height: audioSignal.reservedHeight.value),
+                    ),
+                  ),
+                ],
               )
             else
               SongListView(

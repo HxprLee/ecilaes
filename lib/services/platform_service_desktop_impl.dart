@@ -158,12 +158,14 @@ class PlatformServiceDesktopImpl implements PlatformService {
     String? artworkUrl,
     bool isPlaying = true,
     int? startTimeStamp,
+    int? endTimeStamp,
   }) async {
     await DiscordRpcService().updatePresence(
       song,
       artworkUrl: artworkUrl,
       isPlaying: isPlaying,
       startTimeStamp: startTimeStamp,
+      endTimeStamp: endTimeStamp,
     );
   }
 

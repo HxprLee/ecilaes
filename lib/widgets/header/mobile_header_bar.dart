@@ -30,11 +30,95 @@ class MobileHeaderBar extends StatefulWidget {
 class _MobileHeaderBarState extends State<MobileHeaderBar> {
   bool _isSearchExpanded = false;
   final FocusNode _focusNode = FocusNode();
+  OverlayEntry? _suggestionsOverlay;
 
   @override
   void dispose() {
+    _removeSuggestionsOverlay();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _removeSuggestionsOverlay() {
+    _suggestionsOverlay?.remove();
+    _suggestionsOverlay = null;
+  }
+
+  void _showSuggestionsOverlay() {
+    _removeSuggestionsOverlay();
+    _suggestionsOverlay = OverlayEntry(builder: (context) => _buildSuggestionsOverlay(context));
+    Overlay.of(context).insert(_suggestionsOverlay!);
+  }
+
+  void _updateSuggestionsOverlay() {
+    _suggestionsOverlay?.markNeedsBuild();
+  }
+
+  void _selectSuggestion(String suggestion) {
+    widget.searchController.text = suggestion;
+    widget.searchController.selection = TextSelection.fromPosition(
+      TextPosition(offset: suggestion.length),
+    );
+    audioSignal.searchQuery.value = suggestion;
+    audioSignal.searchSuggestions.value = [];
+    _removeSuggestionsOverlay();
+  }
+
+  Widget _buildSuggestionsOverlay(BuildContext context) {
+    final topPadding = MediaQuery.of(context).padding.top;
+    final headerHeight = 60.0 + topPadding;
+
+    return Watch((context) {
+      final suggestions = audioSignal.searchSuggestions.value;
+      final query = audioSignal.searchQuery.value;
+
+      if (suggestions.isEmpty || query.trim().isEmpty || !_isSearchExpanded) {
+        return const SizedBox.shrink();
+      }
+
+      return Positioned.fill(
+        top: headerHeight,
+        child: Material(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.97),
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: suggestions.length,
+            itemBuilder: (context, index) {
+              final suggestion = suggestions[index];
+              return ListTile(
+                leading: FaIcon(
+                  FontAwesomeIcons.magnifyingGlass,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+                title: Text(
+                  suggestion,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 15,
+                  ),
+                ),
+                trailing: IconButton(
+                  icon: Icon(
+                    Icons.north_west,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                  onPressed: () {
+                    widget.searchController.text = suggestion;
+                    widget.searchController.selection = TextSelection.fromPosition(
+                      TextPosition(offset: suggestion.length),
+                    );
+                    audioSignal.searchQuery.value = suggestion;
+                  },
+                ),
+                onTap: () => _selectSuggestion(suggestion),
+              );
+            },
+          ),
+        ),
+      );
+    });
   }
 
   void _toggleSearch() {
@@ -43,6 +127,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     });
     if (_isSearchExpanded) {
       _focusNode.requestFocus();
+      _showSuggestionsOverlay();
       final currentRoute = navigationSignal.currentRoute.value;
       if (currentRoute != '/search') {
         context.go('/search');
@@ -51,6 +136,8 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
       _focusNode.unfocus();
       widget.searchController.clear();
       audioSignal.searchQuery.value = '';
+      audioSignal.searchSuggestions.value = [];
+      _removeSuggestionsOverlay();
     }
   }
 
@@ -75,6 +162,14 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     if (route == '/playlists') return 'Playlists';
     if (route == '/albums') return 'Albums';
     if (route == '/artists') return 'Artists';
+    if (route.startsWith('/albums/')) {
+      final parts = route.split('/');
+      if (parts.length >= 4) return Uri.decodeComponent(parts.last);
+    }
+    if (route.startsWith('/artists/')) {
+      final parts = route.split('/');
+      if (parts.length >= 3) return Uri.decodeComponent(parts.last);
+    }
     if (route.startsWith('/explorer/')) return 'Folders';
     if (route.startsWith('/playlist/')) {
       // Try to find playlist name
@@ -119,7 +214,15 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
               _isSearchExpanded = false;
               _focusNode.unfocus();
             });
+            _removeSuggestionsOverlay();
           }
+        });
+      }
+
+      // Keep overlay in sync
+      if (_isSearchExpanded) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _updateSuggestionsOverlay();
         });
       }
 

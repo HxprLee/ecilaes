@@ -12,6 +12,7 @@ import 'song_info_dialog.dart';
 import 'edit_metadata_dialog.dart';
 import 'player/queue_view.dart';
 import 'app_dialog.dart';
+import '../services/YoutubeDatasource.dart';
 
 void showSongMoreActionsSheet({
   required BuildContext context,
@@ -42,7 +43,7 @@ void showSongMoreActionsSheet({
             final artDir = audioSignal.albumArtDir.value;
 
             final isYoutube = song.path.startsWith('yt:');
-            final ytThumbnailUrl = isYoutube ? 'https://img.youtube.com/vi/${song.path.substring(3)}/hqdefault.jpg' : null;
+            final ytThumbnailUrl = isYoutube ? youtubeDatasource.getArtworkUrl(song.path.substring(3)) : null;
 
             File? effectiveArt = albumArt;
             if (effectiveArt == null && song.hasAlbumArt && artDir != null && !isYoutube) {

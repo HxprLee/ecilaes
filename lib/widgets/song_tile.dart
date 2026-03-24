@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
 import 'song_actions_sheet.dart';
+import '../services/YoutubeDatasource.dart';
 
 class SongTile extends StatelessWidget {
   final Song song;
@@ -45,7 +46,7 @@ class SongTile extends StatelessWidget {
       final isYoutube = song.path.startsWith('yt:');
       final hasArt = song.hasAlbumArt && (artDir != null || isYoutube);
       final artPath = hasArt && !isYoutube ? SongTile.getArtPath(song.path, artDir) : '';
-      final ytThumbnailUrl = isYoutube ? 'https://img.youtube.com/vi/${song.path.substring(3)}/hqdefault.jpg' : null;
+      final ytThumbnailUrl = isYoutube ? youtubeDatasource.getArtworkUrl(song.path.substring(3)) : null;
 
       return ListTile(
         contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 24),
