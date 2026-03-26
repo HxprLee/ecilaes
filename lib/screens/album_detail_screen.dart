@@ -5,7 +5,7 @@ import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../models/song.dart';
 import '../models/library_models.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_actions_sheet.dart';
 import '../widgets/song_tile.dart';
@@ -69,40 +69,38 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         backgroundColor: Colors.transparent,
         body: CustomScrollView(
           slivers: [
-            SliverToBoxAdapter(
-              child: PageHeader(
-                title: album.name,
-                subtitle: album.artist,
-                leading: Container(
-                  width: 140,
-                  height: 140,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    image: artPath.isNotEmpty && File(artPath).existsSync()
-                        ? DecorationImage(
-                            image: ResizeImage(FileImage(File(artPath)), width: 300),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 30,
-                        offset: const Offset(0, 15),
-                      ),
-                    ],
-                  ),
-                  child: artPath.isEmpty || !File(artPath).existsSync()
-                      ? Center(
-                          child: Icon(
-                            Icons.album, 
-                            size: 64,
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
-                          ),
+            SliverPageHeader(
+              title: album.name,
+              subtitle: album.artist,
+              leading: Container(
+                width: 140,
+                height: 140,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  image: artPath.isNotEmpty && File(artPath).existsSync()
+                      ? DecorationImage(
+                          image: ResizeImage(FileImage(File(artPath)), width: 300),
+                          fit: BoxFit.cover,
                         )
                       : null,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 30,
+                      offset: const Offset(0, 15),
+                    ),
+                  ],
                 ),
+                child: artPath.isEmpty || !File(artPath).existsSync()
+                    ? Center(
+                        child: Icon(
+                          Icons.album, 
+                          size: 64,
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+                        ),
+                      )
+                    : null,
               ),
             ),
             

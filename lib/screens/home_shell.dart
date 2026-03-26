@@ -84,7 +84,7 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
 
   Widget _buildNavItem(
     BuildContext context,
-    IconData icon,
+    FaIconData icon,
     String label,
     String? route,
     String currentLocation,
@@ -228,36 +228,9 @@ class _HomeShellState extends State<HomeShell> with TickerProviderStateMixin {
                   top: 0,
                   right: 0,
                   bottom: 0,
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: (notification) {
-                      if (notification is ScrollUpdateNotification) {
-                        final metrics = notification.metrics;
-                        if (metrics.axis == Axis.vertical) {
-                          audioSignal.headerShowBlur.value = metrics.pixels > 0;
-                          // Map scroll 0–80px to progress 0.0–1.0 for title morph
-                          final progress = (metrics.pixels / 80.0).clamp(
-                            0.0,
-                            1.0,
-                          );
-                          audioSignal.headerTitleProgress.value = progress;
-                        }
-                      } else if (notification is ScrollEndNotification) {
-                        // Ensure progress is updated on scroll end too
-                        final metrics = notification.metrics;
-                        if (metrics.axis == Axis.vertical) {
-                          final progress = (metrics.pixels / 80.0).clamp(
-                            0.0,
-                            1.0,
-                          );
-                          audioSignal.headerTitleProgress.value = progress;
-                        }
-                      }
-                      return false;
-                    },
-                    child: ScrollConfiguration(
-                      behavior: ScrollConfiguration.of(context),
-                      child: widget.child,
-                    ),
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context),
+                    child: widget.child,
                   ),
                 ),
 

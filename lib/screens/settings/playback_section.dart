@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
-import '../../widgets/subpage_header.dart';
+import '../../widgets/sliver_page_header.dart';
 
 class PlaybackSection extends StatelessWidget {
   const PlaybackSection({super.key});
@@ -14,26 +14,23 @@ class PlaybackSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final topPadding = _isDesktop
-        ? 50.0
-        : 64.0 + MediaQuery.of(context).padding.top;
-
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: SingleChildScrollView(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
-            child: Padding(
-              padding: EdgeInsets.only(top: 24.0 + topPadding),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header
-                  const SubpageHeader(title: 'Playback'),
-                  const SizedBox(height: 24),
-
-                  // Audio section
+      body: CustomScrollView(
+        slivers: [
+          const SliverPageHeader(
+            title: 'Playback',
+            maxWidth: 600,
+          ),
+          SliverToBoxAdapter(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 24),
+                    // Audio section
                   _sectionLabel('Audio', context),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -297,15 +294,16 @@ class PlaybackSection extends StatelessWidget {
                   ),
 
                   const SizedBox(height: 24),
-                  Watch(
-                    (context) =>
-                        SizedBox(height: audioSignal.reservedHeight.value),
-                  ),
-                ],
+                    Watch(
+                      (context) =>
+                          SizedBox(height: audioSignal.reservedHeight.value),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

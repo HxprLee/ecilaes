@@ -5,7 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../services/song_cache.dart';
 import '../models/song.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_tile.dart';
 
@@ -60,23 +60,21 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
 
         return CustomScrollView(
           slivers: [
-            SliverToBoxAdapter(
-              child: PageHeader(
-                title: 'Recently Played',
-                actions: [
-                  IconButton(
-                    onPressed: () =>
-                        audioSignal.isHistoryGridView.value = !isGrid,
-                    icon: FaIcon(
-                      isGrid
-                          ? FontAwesomeIcons.list
-                          : FontAwesomeIcons.borderAll,
-                      color: Theme.of(context).colorScheme.secondary,
-                      size: 18,
-                    ),
+            SliverPageHeader(
+              title: 'Recently Played',
+              actions: [
+                IconButton(
+                  onPressed: () =>
+                      audioSignal.isHistoryGridView.value = !isGrid,
+                  icon: FaIcon(
+                    isGrid
+                        ? FontAwesomeIcons.list
+                        : FontAwesomeIcons.borderAll,
+                    color: Theme.of(context).colorScheme.secondary,
+                    size: 18,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
             if (history.isEmpty)
               SliverFillRemaining(

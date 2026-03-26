@@ -4,7 +4,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 
 class ArtistsScreen extends StatelessWidget {
   const ArtistsScreen({super.key});
@@ -18,11 +18,9 @@ class ArtistsScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         body: CustomScrollView(
           slivers: [
-            SliverToBoxAdapter(
-              child: PageHeader(
-                title: 'Artists',
-                subtitle: '${artists.length} artists',
-              ),
+            SliverPageHeader(
+              title: 'Artists',
+              subtitle: '${artists.length} artists',
             ),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 24),

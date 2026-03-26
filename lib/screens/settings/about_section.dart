@@ -1,40 +1,32 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../signals/audio_signal.dart';
-import '../../widgets/subpage_header.dart';
+import '../../widgets/sliver_page_header.dart';
 import 'package:signals/signals_flutter.dart';
 
 class AboutSection extends StatelessWidget {
   const AboutSection({super.key});
 
-  bool get _isDesktop =>
-      !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
-
   @override
   Widget build(BuildContext context) {
-    final topPadding = _isDesktop
-        ? 50.0
-        : 64.0 + MediaQuery.of(context).padding.top;
-
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: SingleChildScrollView(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
-            child: Padding(
-              padding: EdgeInsets.only(top: 24.0 + topPadding),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header
-                  const SubpageHeader(title: 'About'),
-                  const SizedBox(height: 32),
-
-                  // App branding
+      body: CustomScrollView(
+        slivers: [
+          const SliverPageHeader(
+            title: 'About',
+            maxWidth: 600,
+          ),
+          SliverToBoxAdapter(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 32),
+                    // App branding
                   Center(
                     child: Column(
                       children: [
@@ -232,16 +224,17 @@ class AboutSection extends StatelessWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 24),
-                  Watch(
-                    (context) =>
-                        SizedBox(height: audioSignal.reservedHeight.value),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+                    Watch(
+                      (context) =>
+                          SizedBox(height: audioSignal.reservedHeight.value),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

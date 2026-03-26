@@ -4,7 +4,7 @@ import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../models/song.dart';
 import '../services/YoutubeDatasource.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_actions_sheet.dart';
 
@@ -52,37 +52,35 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
-          SliverToBoxAdapter(
-            child: PageHeader(
-              title: title,
-              subtitle: [if (author.isNotEmpty) author, '$trackCount songs'].join(' • '),
-              leading: Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: cs.surfaceContainerHighest,
-                  image: thumbUrl.isNotEmpty
-                      ? DecorationImage(
-                          image: NetworkImage(thumbUrl),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 30,
-                      offset: const Offset(0, 15),
-                    ),
-                  ],
-                ),
-                child: thumbUrl.isEmpty
-                    ? Center(
-                        child: Icon(Icons.queue_music, size: 64,
-                          color: cs.onSurface.withValues(alpha: 0.2)),
+          SliverPageHeader(
+            title: title,
+            subtitle: [if (author.isNotEmpty) author, '$trackCount songs'].join(' • '),
+            leading: Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: cs.surfaceContainerHighest,
+                image: thumbUrl.isNotEmpty
+                    ? DecorationImage(
+                        image: NetworkImage(thumbUrl),
+                        fit: BoxFit.cover,
                       )
                     : null,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 30,
+                    offset: const Offset(0, 15),
+                  ),
+                ],
               ),
+              child: thumbUrl.isEmpty
+                  ? Center(
+                      child: Icon(Icons.queue_music, size: 64,
+                        color: cs.onSurface.withValues(alpha: 0.2)),
+                    )
+                  : null,
             ),
           ),
 

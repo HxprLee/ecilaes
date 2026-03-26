@@ -5,7 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../services/song_cache.dart';
 import '../models/song.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import 'package:go_router/go_router.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -50,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
         body: CustomScrollView(
           slivers: [
             // Header
-            const SliverToBoxAdapter(child: PageHeader(title: 'Home')),
+            const SliverPageHeader(title: 'Home'),
 
             // Quick Access Row
             SliverToBoxAdapter(
@@ -207,7 +207,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _QuickAccessCard extends StatelessWidget {
   final String title;
-  final IconData icon;
+  final FaIconData icon;
   final VoidCallback onTap;
 
   const _QuickAccessCard({

@@ -5,7 +5,7 @@ import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../models/song.dart';
 import '../models/library_models.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_actions_sheet.dart';
 import '../widgets/song_tile.dart';
@@ -67,46 +67,44 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
         backgroundColor: Colors.transparent,
         body: CustomScrollView(
           slivers: [
-            SliverToBoxAdapter(
-              child: PageHeader(
-                title: artist.name,
-                subtitle:
-                    '${artist.songCount} songs • ${artist.albums.length} albums',
-                leading: Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    image: artist.picturePath != null
-                        ? DecorationImage(
-                            image: ResizeImage(FileImage(File(artist.picturePath!)), width: 240),
-                            fit: BoxFit.cover,
-                          )
-                        : (artPath.isNotEmpty && File(artPath).existsSync()
-                            ? DecorationImage(
-                                image: ResizeImage(FileImage(File(artPath)), width: 240),
-                                fit: BoxFit.cover,
-                              )
-                            : null),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: (artist.picturePath == null && (artPath.isEmpty || !File(artPath).existsSync()))
-                      ? Center(
-                          child: FaIcon(
-                            FontAwesomeIcons.user,
-                            size: 48,
-                            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5),
-                          ),
+            SliverPageHeader(
+              title: artist.name,
+              subtitle:
+                  '${artist.songCount} songs • ${artist.albums.length} albums',
+              leading: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  image: artist.picturePath != null
+                      ? DecorationImage(
+                          image: ResizeImage(FileImage(File(artist.picturePath!)), width: 240),
+                          fit: BoxFit.cover,
                         )
-                      : null,
+                      : (artPath.isNotEmpty && File(artPath).existsSync()
+                          ? DecorationImage(
+                              image: ResizeImage(FileImage(File(artPath)), width: 240),
+                              fit: BoxFit.cover,
+                            )
+                          : null),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
                 ),
+                child: (artist.picturePath == null && (artPath.isEmpty || !File(artPath).existsSync()))
+                    ? Center(
+                        child: FaIcon(
+                          FontAwesomeIcons.user,
+                          size: 48,
+                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5),
+                        ),
+                      )
+                    : null,
               ),
             ),
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 
 class SongsListContent extends StatelessWidget {
@@ -17,7 +17,7 @@ class SongsListContent extends StatelessWidget {
         body: CustomScrollView(
           slivers: [
             // Header
-            const SliverToBoxAdapter(child: PageHeader(title: 'Songs')),
+            const SliverPageHeader(title: 'Songs'),
 
             // Songs List
             SongListView(songs: displaySongs, emptyMessage: 'No songs found'),

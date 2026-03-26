@@ -7,7 +7,7 @@ import '../services/album_art_cache.dart';
 import '../theme/app_theme_extensions.dart';
 
 class QuickActionCard extends StatefulWidget {
-  final IconData icon;
+  final FaIconData icon;
   final String label;
 
   const QuickActionCard({super.key, required this.icon, required this.label});

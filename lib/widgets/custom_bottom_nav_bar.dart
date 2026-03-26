@@ -71,7 +71,7 @@ class CustomBottomNavBar extends StatelessWidget {
   Widget _buildNavItem(
     BuildContext context, {
     required int index,
-    required IconData icon,
+    required FaIconData icon,
     required String label,
   }) {
     final isSelected = currentIndex == index;

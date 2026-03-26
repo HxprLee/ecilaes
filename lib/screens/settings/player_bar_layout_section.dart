@@ -1,16 +1,11 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
-import '../../widgets/subpage_header.dart';
+import '../../widgets/sliver_page_header.dart';
 
 class PlayerBarLayoutSection extends StatelessWidget {
   const PlayerBarLayoutSection({super.key});
-
-  bool get _isDesktop =>
-      !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
 
   static const List<String> _allActionIds = [
     'add_to_playlist',
@@ -31,23 +26,22 @@ class PlayerBarLayoutSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final topPadding = _isDesktop
-        ? 50.0
-        : 64.0 + MediaQuery.of(context).padding.top;
-
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: SingleChildScrollView(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 600),
-            child: Padding(
-              padding: EdgeInsets.only(top: 24.0 + topPadding),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SubpageHeader(title: 'Player Bar Layout'),
-                  const SizedBox(height: 24),
+      body: CustomScrollView(
+        slivers: [
+          const SliverPageHeader(
+            title: 'Player Bar Layout',
+            maxWidth: 600,
+          ),
+          SliverToBoxAdapter(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 24),
 
                   _sectionLabel('Player Bar Actions', context),
                   _buildActionsList(
@@ -60,12 +54,13 @@ class PlayerBarLayoutSection extends StatelessWidget {
                   _buildHiddenActions(context),
 
                   const SizedBox(height: 32),
-                  Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
-                ],
+                    Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

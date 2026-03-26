@@ -5,7 +5,7 @@ import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../models/song.dart';
 import '../services/YoutubeDatasource.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_actions_sheet.dart';
 
@@ -54,37 +54,35 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
-          SliverToBoxAdapter(
-            child: PageHeader(
-              title: name,
-              subtitle: subscribers.isNotEmpty ? '$subscribers subscribers' : '',
-              leading: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: cs.surfaceContainerHighest,
-                  image: thumbUrl.isNotEmpty
-                      ? DecorationImage(
-                          image: NetworkImage(thumbUrl),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.2),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: thumbUrl.isEmpty
-                    ? Center(
-                        child: FaIcon(FontAwesomeIcons.user, size: 48,
-                          color: cs.secondary.withValues(alpha: 0.5)),
+          SliverPageHeader(
+            title: name,
+            subtitle: subscribers.isNotEmpty ? '$subscribers subscribers' : '',
+            leading: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: cs.surfaceContainerHighest,
+                image: thumbUrl.isNotEmpty
+                    ? DecorationImage(
+                        image: NetworkImage(thumbUrl),
+                        fit: BoxFit.cover,
                       )
                     : null,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
+              child: thumbUrl.isEmpty
+                  ? Center(
+                      child: FaIcon(FontAwesomeIcons.user, size: 48,
+                        color: cs.secondary.withValues(alpha: 0.5)),
+                    )
+                  : null,
             ),
           ),
 

@@ -3,7 +3,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/playlist_dialogs.dart';
 import '../widgets/playlist_cover.dart';
 import '../models/playlist.dart';
@@ -21,11 +21,9 @@ class PlaylistsScreen extends StatelessWidget {
         body: CustomScrollView(
           slivers: [
             // Header
-            const SliverToBoxAdapter(
-              child: PageHeader(
-                title: 'Playlists',
-                subtitle: 'Your music collections',
-              ),
+            const SliverPageHeader(
+              title: 'Playlists',
+              subtitle: 'Your music collections',
             ),
 
             // Grid
@@ -77,7 +75,7 @@ class PlaylistsScreen extends StatelessWidget {
 
 class _PlaylistCard extends StatelessWidget {
   final Playlist playlist;
-  final IconData icon;
+  final FaIconData icon;
   final VoidCallback onTap;
   final bool isAction;
 

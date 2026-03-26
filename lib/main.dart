@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
@@ -123,6 +124,7 @@ class MusicApp extends StatelessWidget {
       return MaterialApp.router(
         title: 'Music App',
         debugShowCheckedModeBanner: false,
+        scrollBehavior: const _TouchScrollBehavior(),
         routerConfig: router,
         theme: AppThemeBuilder.buildLight(
           settingsSignal.themeStyle.value,
@@ -140,14 +142,40 @@ class MusicApp extends StatelessWidget {
         ),
         themeMode: settingsSignal.themeMode.value,
         builder: (context, child) {
-          return MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: TextScaler.linear(textScale)),
-            child: child!,
+          return ScrollConfiguration(
+            behavior: const _TouchScrollBehavior(),
+            child: MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(textScale)),
+              child: child!,
+            ),
           );
         },
       );
     });
+  }
+}
+
+/// Custom scroll behavior that enables touch-based drag scrolling on desktop.
+/// By default, Flutter desktop only allows mouse-based scrolling (scroll wheel).
+class _TouchScrollBehavior extends MaterialScrollBehavior {
+  const _TouchScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.invertedStylus,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.unknown,
+      };
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) {
+    return const BouncingScrollPhysics(
+      parent: AlwaysScrollableScrollPhysics(),
+    );
   }
 }

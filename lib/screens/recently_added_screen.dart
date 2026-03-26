@@ -5,7 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../services/song_cache.dart';
 import '../models/song.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_tile.dart';
 
@@ -35,6 +35,7 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
     }
   }
 
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -44,22 +45,20 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
 
         return CustomScrollView(
           slivers: [
-            SliverToBoxAdapter(
-              child: PageHeader(
-                title: 'Recently Added',
-                actions: [
-                  IconButton(
-                    onPressed: () => _isGridView.value = !isGrid,
-                    icon: FaIcon(
-                      isGrid
-                          ? FontAwesomeIcons.list
-                          : FontAwesomeIcons.borderAll,
-                      color: Theme.of(context).colorScheme.secondary,
-                      size: 18,
-                    ),
+            SliverPageHeader(
+              title: 'Recently Added',
+              actions: [
+                IconButton(
+                  onPressed: () => _isGridView.value = !isGrid,
+                  icon: FaIcon(
+                    isGrid
+                        ? FontAwesomeIcons.list
+                        : FontAwesomeIcons.borderAll,
+                    color: Theme.of(context).colorScheme.secondary,
+                    size: 18,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
             if (recentAdded.isEmpty)
               SliverFillRemaining(
@@ -142,7 +141,7 @@ class _GridSongCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.surfaceContainerHighest.withOpacity(0.7),
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: Theme.of(

@@ -7,7 +7,7 @@ import '../models/playlist.dart';
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
 import '../widgets/app_dialog.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/playlist_cover.dart';
 import '../widgets/song_actions_sheet.dart';
 import '../widgets/song_list_view.dart';
@@ -190,61 +190,59 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         body: CustomScrollView(
           slivers: [
             // Header
-            SliverToBoxAdapter(
-              child: PageHeader(
-                title: currentPlaylist.name,
-                subtitle: '${songs.length} songs',
-                leading: PlaylistCover(
-                  playlist: currentPlaylist,
-                  width: isSmallScreen ? 120 : 140,
-                  height: isSmallScreen ? 120 : 140,
-                  borderRadius: 12,
-                ),
-                topActions: isSmallScreen ? [moreOptionsMenu] : null,
-                underTextActions: isSmallScreen
-                    ? [
-                      ElevatedButton.icon(
-                        onPressed: () =>
-                            audioSignal.playPlaylist(currentPlaylist),
-                        icon: const FaIcon(FontAwesomeIcons.play, size: 14),
-                        label: const Text('Play'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              Theme.of(context).colorScheme.secondary,
-                          foregroundColor:
-                              Theme.of(context).colorScheme.onSecondary,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 8,
-                          ),
-                          shape: const StadiumBorder(),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: () => audioSignal.playPlaylist(
-                          currentPlaylist,
-                          shuffle: true,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          shape: const CircleBorder(),
-                          padding: const EdgeInsets.all(12),
-                          side: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.secondary.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: FaIcon(
-                          FontAwesomeIcons.shuffle,
-                          size: 14,
-                          color: Theme.of(context).colorScheme.secondary,
-                        ),
-                      ),
-                    ]
-                    : null,
-                actions: isSmallScreen ? null : null, // Handled by Sliver below for desktop
+            SliverPageHeader(
+              title: currentPlaylist.name,
+              subtitle: '${songs.length} songs',
+              leading: PlaylistCover(
+                playlist: currentPlaylist,
+                width: isSmallScreen ? 120 : 140,
+                height: isSmallScreen ? 120 : 140,
+                borderRadius: 12,
               ),
+              topActions: isSmallScreen ? [moreOptionsMenu] : null,
+              underTextActions: isSmallScreen
+                  ? [
+                    ElevatedButton.icon(
+                      onPressed: () =>
+                          audioSignal.playPlaylist(currentPlaylist),
+                      icon: const FaIcon(FontAwesomeIcons.play, size: 14),
+                      label: const Text('Play'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.secondary,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onSecondary,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 8,
+                        ),
+                        shape: const StadiumBorder(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: () => audioSignal.playPlaylist(
+                        currentPlaylist,
+                        shuffle: true,
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        shape: const CircleBorder(),
+                        padding: const EdgeInsets.all(12),
+                        side: BorderSide(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondary.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: FaIcon(
+                        FontAwesomeIcons.shuffle,
+                        size: 14,
+                        color: Theme.of(context).colorScheme.secondary,
+                      ),
+                    ),
+                  ]
+                  : null,
+              actions: isSmallScreen ? null : null, // Handled by Sliver below for desktop
             ),
 
             // Action Buttons (Desktop only or custom mobile row)

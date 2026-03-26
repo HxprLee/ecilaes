@@ -12,7 +12,7 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
-  google_fonts: ^6.3.3
+  google_fonts: ^8.0.2
   provider: ^6.1.5+1
   path_provider: ^2.1.5
   audio_service: ^0.18.18
@@ -22,7 +22,7 @@ dependencies:
   just_audio_media_kit: ^2.1.0
   media_kit_libs_linux: ^1.2.1
   media_kit_libs_android_audio: ^1.2.1
-  font_awesome_flutter: ^10.12.0
+  font_awesome_flutter: ^11.0.0
   http: ^1.6.0
   dart_discord_presence: ^1.1.0
   shared_preferences: ^2.2.2
@@ -36,13 +36,13 @@ dependencies:
   flutter_single_instance: ^1.7.0
   nativeapi: ^0.1.0
   window_manager: ^0.5.1
-  file_picker: ^8.1.7
-  home_widget: ^0.7.0
+  file_picker: ^10.3.10
+  home_widget: ^0.9.0
   file_selector: ^1.1.0
   palette_generator: ^0.3.3+7
   youtube_explode_dart: ^3.0.5
   ytmusicapi_dart: ^2.3.0
-  flutter_curl: ^0.7.0
+  flutter_curl: ^0.8.0
   scroll_to_index: ^3.0.1
   romanize: ^0.0.3
   audio_metadata_reader: ^1.4.2

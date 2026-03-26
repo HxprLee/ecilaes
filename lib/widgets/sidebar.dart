@@ -264,7 +264,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                   _buildSectionTitle('Library', value),
                                 ...pinnedItems.map(
                                   (item) => _buildNavItem(
-                                    item['icon'] as IconData,
+                                    item['icon'] as FaIconData,
                                     item['label'] as String,
                                     value,
                                     isSelected: item['isSelected'] as bool,
@@ -406,7 +406,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
   }
 
   Widget _buildNavItem(
-    IconData icon,
+    FaIconData icon,
     String title,
     double value, {
     bool isSelected = false,

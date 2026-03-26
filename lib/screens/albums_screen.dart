@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/song_tile.dart';
 
 class AlbumsScreen extends StatelessWidget {
@@ -19,11 +19,9 @@ class AlbumsScreen extends StatelessWidget {
         backgroundColor: Colors.transparent,
         body: CustomScrollView(
           slivers: [
-            SliverToBoxAdapter(
-              child: PageHeader(
-                title: 'Albums',
-                subtitle: '${albums.length} albums',
-              ),
+            SliverPageHeader(
+              title: 'Albums',
+              subtitle: '${albums.length} albums',
             ),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 24),

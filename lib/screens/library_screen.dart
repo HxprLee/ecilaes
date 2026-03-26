@@ -3,7 +3,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -16,9 +16,7 @@ class LibraryScreen extends StatelessWidget {
         body: CustomScrollView(
           slivers: [
             // Header
-            const SliverToBoxAdapter(
-              child: PageHeader(title: 'Library', subtitle: 'Local library'),
-            ),
+            const SliverPageHeader(title: 'Library', subtitle: 'Local library'),
 
             // Grid
             SliverPadding(
@@ -83,7 +81,7 @@ class LibraryScreen extends StatelessWidget {
 
 class _CategoryCard extends StatelessWidget {
   final String title;
-  final IconData icon;
+  final FaIconData icon;
   final VoidCallback onTap;
 
   const _CategoryCard({
@@ -105,7 +103,7 @@ class _CategoryCard extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.surfaceContainerHighest.withOpacity(0.7),
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: Theme.of(
@@ -127,7 +125,7 @@ class _CategoryCard extends StatelessWidget {
         Text(
           title,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
             fontSize: 14,
             fontWeight: FontWeight.w400,
           ),

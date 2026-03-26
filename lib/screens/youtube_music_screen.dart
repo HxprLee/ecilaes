@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../services/YoutubeDatasource.dart';
-import '../widgets/page_header.dart';
+import '../widgets/sliver_page_header.dart';
 import '../widgets/song_actions_sheet.dart';
 
 class YoutubeMusicScreen extends StatefulWidget {
@@ -72,7 +72,7 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
-          const SliverToBoxAdapter(child: PageHeader(title: 'YouTube Music')),
+          const SliverPageHeader(title: 'YouTube Music'),
           if (_moods.isNotEmpty)
             SliverToBoxAdapter(
               child: Padding(

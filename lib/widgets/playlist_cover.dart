@@ -13,7 +13,7 @@ class PlaylistCover extends StatelessWidget {
   final double? width;
   final double? height;
   final double borderRadius;
-  final IconData? iconOverride;
+  final FaIconData? iconOverride;
 
   const PlaylistCover({
     super.key,
