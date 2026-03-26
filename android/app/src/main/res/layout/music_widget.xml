@@ -38,8 +38,8 @@
         android:background="@drawable/circle_background"
         android:src="@android:drawable/ic_media_play"
         android:tint="#FFFFFF"
-        android:backgroundTint="@android:color/transparent"
-        style="@android:style/Widget.Material.Button.Borderless"
+        android:backgroundTint="#ffffff"
+        style="@android:style/Widget.Material.Button"
         android:contentDescription="Play/Pause" />
 
     <!-- Text Info (Bottom Left) -->

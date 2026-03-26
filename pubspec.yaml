@@ -1,8 +1,8 @@
 name: music_app
-description: "A new Flutter project."
+description: "A local/streaming, cross-platform music player"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 0.4.0
 
 environment:
   sdk: ^3.10.1
@@ -39,7 +39,7 @@ dependencies:
   file_picker: ^10.3.10
   home_widget: ^0.9.0
   file_selector: ^1.1.0
-  palette_generator: ^0.3.3+7
+  palette_generator_master: ^1.0.1
   youtube_explode_dart: ^3.0.5
   ytmusicapi_dart: ^2.3.0
   flutter_curl: ^0.8.0
@@ -58,10 +58,11 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/app_icon.png"
-  adaptive_icon_background: "#101010" # Darker background to match themed icons
-  adaptive_icon_foreground: "assets/app_icon.png"
-  monochrome_icon_foreground: "assets/app_icon.png"
+  image_path: "assets/icons/ic_launcher.png"
+  adaptive_icon_background: "#11171C" # Darker background to match themed icons
+  adaptive_icon_foreground: "assets/icons/foreground.png"
+  adaptive_icon_foreground_inset: 27
+  adaptive_icon_monochrome: "assets/icons/foreground_monochorme.png"
 
 flutter:
   uses-material-design: true
@@ -73,5 +74,4 @@ flutter:
         - asset: assets/fonts/IosevkaNerdFont-Bold.ttf
           weight: 700
   assets:
-    - assets/app_icon.png
     - assets/app_icon.svg

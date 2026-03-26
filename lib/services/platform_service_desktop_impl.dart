@@ -16,6 +16,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
   native.TrayIcon? _trayIcon;
   native.Menu? _trayMenu;
   native.MenuItem? _playPauseItem;
+  void Function()? _trayEffectCleanup;
 
   @override
   Future<void> init() async {
@@ -75,7 +76,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
       // Load Icon
       native.Image? icon;
       try {
-        icon = native.Image.fromAsset('assets/app_icon.png');
+        icon = native.Image.fromAsset('assets/icons/ic_launcher.png');
       } catch (e) {
         debugPrint("Error loading tray icon from asset: $e");
       }
@@ -84,7 +85,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
         // Fallback for Linux if asset loading fails
         try {
           final exePath = File(Platform.resolvedExecutable).parent.path;
-          final assetPath = '$exePath/data/flutter_assets/assets/app_icon.png';
+          final assetPath = '$exePath/data/flutter_assets/assets/icons/ic_launcher.png';
           final file = File(assetPath);
           if (await file.exists()) {
             icon = native.Image.fromFile(assetPath);
@@ -141,7 +142,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
       });
 
       // Sync Play/Pause Label
-      effect(() {
+      _trayEffectCleanup = effect(() {
         final isPlaying = audioSignal.isPlaying.value;
         _playPauseItem!.label = isPlaying ? "Pause" : "Play";
       });
@@ -177,9 +178,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
   @override
   Future<void> dispose() async {
     await DiscordRpcService().dispose();
-    // trayIcon and items stop listening automatically when listeners are removed,
-    // but here we are disposing the app usually.
-    // Explicit cleanup if needed:
-    // _trayIcon?.removeAllListeners();
+    _trayEffectCleanup?.call();
+    _trayIcon?.removeAllListeners();
   }
 }

@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:palette_generator/palette_generator.dart';
+import 'package:palette_generator_master/palette_generator_master.dart';
 import 'package:http/http.dart' as http;
 import 'settings_signal.dart';
 import 'package:uuid/uuid.dart';
@@ -37,6 +37,8 @@ class AudioSignal {
   late final AudioHandler _audioHandler;
   MyAudioHandler get audioHandler => _audioHandler as MyAudioHandler;
   Timer? _discordTimer;
+  final List<StreamSubscription> _subscriptions = [];
+  final List<void Function()> _effectDisposals = [];
 
   // Signals
   final isPlaying = signal<bool>(false);
@@ -242,6 +244,9 @@ class AudioSignal {
       !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
 
   Future<void> init(AudioHandler handler) async {
+    // Cleanup any existing state if called again
+    dispose();
+    
     _audioHandler = handler;
 
     if (isDesktop) {
@@ -255,12 +260,12 @@ class AudioSignal {
     }));
 
     // Listen to streams
-    _audioHandler.playbackState.listen((state) {
+    _subscriptions.add(_audioHandler.playbackState.listen((state) {
       isPlaying.value = state.playing;
       isShuffleMode.value = state.shuffleMode == AudioServiceShuffleMode.all;
       repeatMode.value = state.repeatMode;
-    });
-    _audioHandler.mediaItem.listen((item) {
+    }));
+    _subscriptions.add(_audioHandler.mediaItem.listen((item) {
       if (item != null) {
         duration.value = item.duration ?? Duration.zero;
         try {
@@ -294,24 +299,24 @@ class AudioSignal {
           }
         } catch (_) {}
       }
-    });
+    }));
 
-    _audioHandler.queue.listen((items) {
+    _subscriptions.add(_audioHandler.queue.listen((items) {
       queue.value = items;
-    });
+    }));
 
     if (_audioHandler is MyAudioHandler) {
       final myHandler = _audioHandler;
-      myHandler.player.positionStream.listen((pos) {
+      _subscriptions.add(myHandler.player.positionStream.listen((pos) {
         position.value = pos;
-      });
-      myHandler.shuffleIndicesStream.listen((indices) {
+      }));
+      _subscriptions.add(myHandler.shuffleIndicesStream.listen((indices) {
         shuffledIndices.value = indices;
-      });
+      }));
     }
 
     // Search suggestions effect – faster debounce for typeahead
-    effect(() {
+    _effectDisposals.add(effect(() {
       final query = searchQuery.value;
       _suggestionDebounce?.cancel();
 
@@ -328,10 +333,10 @@ class AudioSignal {
           debugPrint('Search suggestions error: $e');
         }
       });
-    });
+    }));
 
     // YouTube search effect – reacts to query AND filter changes
-    effect(() {
+    _effectDisposals.add(effect(() {
       final query = searchQuery.value;
       final filter = ytSearchFilter.value;
       _searchDebounce?.cancel();
@@ -369,7 +374,7 @@ class AudioSignal {
           isSearchingYoutube.value = false;
         }
       });
-    });
+    }));
 
     // 1. Initial Load (Delayed to allow UI and Debugger to settle)
     Future.delayed(const Duration(seconds: 1), () async {
@@ -871,7 +876,7 @@ class AudioSignal {
         policy: ResizeImagePolicy.fit,
       );
 
-      final palette = await PaletteGenerator.fromImageProvider(
+      final palette = await PaletteGeneratorMaster.fromImageProvider(
         resizedProvider,
         maximumColorCount: 8, // Reduced from 16
       );
@@ -916,7 +921,7 @@ class AudioSignal {
   }
 
   /// Picks the most dominant color from a palette to use as a theme seed.
-  Color? _selectBestSeedColor(PaletteGenerator palette) {
+  Color? _selectBestSeedColor(PaletteGeneratorMaster palette) {
     final dominant = palette.dominantColor?.color;
     if (dominant == null) return null;
     return _boostSaturation(dominant);
@@ -1270,7 +1275,23 @@ class AudioSignal {
 
   void dispose() {
     _discordTimer?.cancel();
+    _discordTimer = null;
     _sleepInternalTimer?.cancel();
+    _sleepInternalTimer = null;
+    _searchDebounce?.cancel();
+    _searchDebounce = null;
+    _suggestionDebounce?.cancel();
+    _suggestionDebounce = null;
+    
+    for (final sub in _subscriptions) {
+      sub.cancel();
+    }
+    _subscriptions.clear();
+
+    for (final dispose in _effectDisposals) {
+      dispose();
+    }
+    _effectDisposals.clear();
   }
 
   Future<void> updateSongMetadata(

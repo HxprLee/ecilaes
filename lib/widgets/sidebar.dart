@@ -621,38 +621,65 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
   }
 
   void _showCreatePlaylistDialog(BuildContext context) {
-    final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New Playlist'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Playlist Name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                try {
-                  await audioSignal.createPlaylist(name);
-                  if (context.mounted) Navigator.pop(context);
-                } catch (e) {
-                  print('Error creating playlist: $e');
-                }
-              }
-            },
-            style: FilledButton.styleFrom(shape: const StadiumBorder()),
-            child: const Text('Create'),
-          ),
-        ],
+      builder: (context) => const _CreatePlaylistDialog(),
+    );
+  }
+}
+
+class _CreatePlaylistDialog extends StatefulWidget {
+  const _CreatePlaylistDialog();
+
+  @override
+  State<_CreatePlaylistDialog> createState() => _CreatePlaylistDialogState();
+}
+
+class _CreatePlaylistDialogState extends State<_CreatePlaylistDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('New Playlist'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: 'Playlist Name'),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            final name = _controller.text.trim();
+            if (name.isNotEmpty) {
+              try {
+                await audioSignal.createPlaylist(name);
+                if (context.mounted) Navigator.pop(context);
+              } catch (e) {
+                debugPrint('Error creating playlist: $e');
+              }
+            }
+          },
+          style: FilledButton.styleFrom(shape: const StadiumBorder()),
+          child: const Text('Create'),
+        ),
+      ],
     );
   }
 }

@@ -38,6 +38,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   late AnimationController _lyricsController;
   File? _currentAlbumArt;
   String? _currentSongPath;
+  String? _codecBitrate;
   bool _isSeeking = false;
 
   // Layout Configuration
@@ -61,44 +62,18 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   double _dragDownOffset = 0.0;
   late AnimationController _dragResetController;
 
+  // Cached Layout
+  dynamic _cachedLayout;
+  Size? _lastLayoutSize;
+  EdgeInsets? _lastPadding;
+  bool? _lastIsCompact;
+  double? _lastLyricsValue;
+
   static final _bitrateCache = <String, String>{};
-
-  String _getCodecAndBitrate(Song song) {
-    if (song.path.startsWith('yt:')) {
-      final mime = youtubeService.lastStreamMimeType ?? 'audio/mp4';
-      final codecLabel = mime.contains('mp4')
-          ? 'M4A'
-          : mime.contains('webm')
-          ? 'WEBM'
-          : mime.split('/').last.toUpperCase();
-      final kbps = youtubeService.lastStreamBitrateKbps ?? '—';
-      return 'YT $codecLabel | ${kbps}Kbps';
-    }
-
-    final ext = song.path.split('.').last.toUpperCase();
-    if (_bitrateCache.containsKey(song.path)) {
-      return '$ext | ${_bitrateCache[song.path]}Kbps';
-    }
-
-    try {
-      final file = File(song.path);
-      if (file.existsSync()) {
-        final metadata = readMetadata(file, getImage: false);
-        if (metadata.bitrate != null) {
-          final br = '${(metadata.bitrate! / 1000).round()}';
-          _bitrateCache[song.path] = br;
-          return '$ext | ${br}Kbps';
-        }
-      }
-    } catch (_) {}
-
-    final fallback = song.bitrate?.toString() ?? '---';
-    _bitrateCache[song.path] = fallback;
-    return '$ext | ${fallback}Kbps';
-  }
 
   Timer? _immersionTimer;
   bool _showControls = true;
+  final List<void Function()> _effectDisposals = [];
 
   void _resetImmersionTimer() {
     _immersionTimer?.cancel();
@@ -129,6 +104,65 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     }
   }
 
+  void _handleSongChange(Song? song) async {
+    if (song == null) {
+      if (mounted) {
+        setState(() {
+          _currentSongPath = null;
+          _currentAlbumArt = null;
+          _codecBitrate = null;
+        });
+      }
+      return;
+    }
+
+    if (song.path == _currentSongPath) return;
+    _currentSongPath = song.path;
+
+    // Load Art
+    final art = await AlbumArtCache().getArt(song.path);
+
+    // Load Metadata (async)
+    String metadata;
+    if (song.path.startsWith('yt:')) {
+      final mime = youtubeService.lastStreamMimeType ?? 'audio/mp4';
+      final codecLabel = mime.contains('mp4')
+          ? 'M4A'
+          : mime.contains('webm')
+          ? 'WEBM'
+          : mime.split('/').last.toUpperCase();
+      final kbps = youtubeService.lastStreamBitrateKbps ?? '—';
+      metadata = 'YT $codecLabel | ${kbps}Kbps';
+    } else {
+      final ext = song.path.split('.').last.toUpperCase();
+      String? bitrate;
+      if (_bitrateCache.containsKey(song.path)) {
+        bitrate = _bitrateCache[song.path];
+      } else {
+        try {
+          final file = File(song.path);
+          if (file.existsSync()) {
+            // Run in isolate or just ensure it's handled away from build
+            final meta = readMetadata(file, getImage: false);
+            if (meta.bitrate != null) {
+              bitrate = '${(meta.bitrate! / 1000).round()}';
+              _bitrateCache[song.path] = bitrate;
+            }
+          }
+        } catch (_) {}
+      }
+      bitrate ??= song.bitrate?.toString() ?? '---';
+      metadata = '$ext | ${bitrate}Kbps';
+    }
+
+    if (mounted && song.path == _currentSongPath) {
+      setState(() {
+        _currentAlbumArt = art;
+        _codecBitrate = metadata;
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -152,6 +186,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           }
         });
 
+    // Listen to song changes via effect to trigger metadata/art loading
+    _effectDisposals.add(effect(() {
+      _handleSongChange(audioSignal.currentSong.value);
+    }));
+
     _visibilityController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -161,13 +200,13 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    effect(() {
+    _effectDisposals.add(effect(() {
       if (audioSignal.showLyrics.value) {
         _lyricsController.forward();
       } else {
         _lyricsController.reverse();
       }
-    });
+    }));
 
     _dragResetController =
         AnimationController(
@@ -189,7 +228,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     }
 
     // specific listener for song changes to drive visibility
-    effect(() {
+    _effectDisposals.add(effect(() {
       final song = audioSignal.currentSong.value;
       // On desktop, we always want the player to be visible
       final isDesktop =
@@ -201,18 +240,18 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       } else {
         _visibilityController.reverse();
       }
-    });
+    }));
 
     // Listener for back button minimization from shell
-    effect(() {
+    _effectDisposals.add(effect(() {
       final _ = audioSignal.minimizePlayerTrigger.value;
       if (_controller.value > 0) {
         _controller.animateTo(0.0, curve: Curves.fastLinearToSlowEaseIn);
       }
-    });
+    }));
 
     // Listener for Immersion Mode
-    effect(() {
+    _effectDisposals.add(effect(() {
       final showLyrics = audioSignal.showLyrics.value;
       final isPlaying = audioSignal.isPlaying.value;
 
@@ -227,29 +266,22 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           });
         }
       }
-    });
+    }));
   }
 
   @override
   void dispose() {
+    for (final dispose in _effectDisposals) {
+      dispose();
+    }
+    _effectDisposals.clear();
+
     _controller.dispose();
     _visibilityController.dispose();
     _dragResetController.dispose();
     _lyricsController.dispose();
     _immersionTimer?.cancel();
     super.dispose();
-  }
-
-  void _loadAlbumArt(String? songPath) async {
-    if (songPath == null || songPath == _currentSongPath) return;
-    _currentSongPath = songPath;
-
-    final art = await AlbumArtCache().getArt(songPath);
-    if (mounted && songPath == _currentSongPath) {
-      setState(() {
-        _currentAlbumArt = art;
-      });
-    }
   }
 
   void _handleDragStart(DragStartDetails details) {
@@ -489,10 +521,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       // Switch to compact layout if space is < 800px or screen is < 600px
       final isCompact = availableBarWidth < 700 || screenWidth < 600;
 
-      if (currentSong != null) {
-        _loadAlbumArt(currentSong.path);
-      }
-
       // Calculate where the scrollable content should start
       // final fullArtSize = isMobile ? screenWidth - 64.0 : 560.0;
       // final contentTopStart = 100.0 + fullArtSize + 24.0 + 58.0;
@@ -515,7 +543,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           final topPadding = MediaQuery.of(context).padding.top;
           final bottomPadding = MediaQuery.of(context).padding.bottom;
           final currentTopPadding = lerpDouble(0, topPadding, value)!;
-          final currentBottomPadding = lerpDouble(0, bottomPadding, value)!;
 
           final rawLyricsValue = const Cubic(
             0.76,
@@ -531,40 +558,63 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
           // --- Layout Interpolation ---
           // Clamping and Centering Logic for Desktop
-          const paneGap = 48.0;
-          final maxPaneWidth = ((screenWidth - paneGap - 64.0) / 2).clamp(
+          const paneGap_Value = 48.0;
+          final maxPaneWidth_Value = ((screenWidth - paneGap_Value - 64.0) / 2).clamp(
             0.0,
             600.0,
           );
 
           // Calculate the target width for the player part
           final playerWidth = isDesktopLayoutMode
-              ? lerpDouble(screenWidth, maxPaneWidth, rawLyricsValue)!
+              ? lerpDouble(screenWidth, maxPaneWidth_Value, rawLyricsValue)!
               : screenWidth;
 
-          // Calculate how much to shift the player to the left to center the group
-          final groupWidth = maxPaneWidth * 2 + paneGap;
-          final groupLeft = (screenWidth - groupWidth) / 2;
-          final playerShift = isDesktopLayoutMode
-              ? lerpDouble(0, groupLeft, rawLyricsValue)!
-              : 0.0;
+          // Memoize Layout Calculation
+          final isCompactLayout = isCompact || isMobile;
+          if (_cachedLayout == null ||
+              _lastLayoutSize?.width != playerWidth ||
+              _lastLayoutSize?.height != screenHeight ||
+              _lastPadding != MediaQuery.of(context).padding ||
+              _lastIsCompact != isCompactLayout ||
+              _lastLyricsValue != rawLyricsValue) {
+            
+            final rawLayout = _calculateExpandedLayout(
+              playerWidth,
+              screenHeight,
+              topPadding, // Use final values for expansion target
+              bottomPadding,
+              isCompactLayout,
+            );
 
-          final rawLayout = _calculateExpandedLayout(
-            playerWidth,
-            screenHeight,
-            currentTopPadding,
-            currentBottomPadding,
-            isCompact || isMobile,
-          );
+            // Calculate how much to shift the player to the left to center the group
+            final groupWidth = maxPaneWidth_Value * 2 + paneGap_Value;
+            final groupLeft = (screenWidth - groupWidth) / 2;
+            final playerShift_Value = isDesktopLayoutMode
+                ? lerpDouble(0, groupLeft, rawLyricsValue)!
+                : 0.0;
 
-          // Shift the layout Rects for side-by-side grouping
-          final expandedLayout = (
-            art: rawLayout.art.shift(Offset(playerShift, 0)),
-            info: rawLayout.info.shift(Offset(playerShift, 0)),
-            seekbar: rawLayout.seekbar.shift(Offset(playerShift, 0)),
-            controls: rawLayout.controls.shift(Offset(playerShift, 0)),
-            actions: rawLayout.actions.shift(Offset(playerShift, 0)),
-          );
+            _cachedLayout = (
+              art: rawLayout.art.shift(Offset(playerShift_Value, 0)),
+              info: rawLayout.info.shift(Offset(playerShift_Value, 0)),
+              seekbar: rawLayout.seekbar.shift(Offset(playerShift_Value, 0)),
+              controls: rawLayout.controls.shift(Offset(playerShift_Value, 0)),
+              actions: rawLayout.actions.shift(Offset(playerShift_Value, 0)),
+              shift: playerShift_Value,
+              groupLeft: groupLeft,
+              maxPaneWidth: maxPaneWidth_Value,
+              paneGap: paneGap_Value,
+            );
+
+            _lastLayoutSize = Size(playerWidth, screenHeight);
+            _lastPadding = MediaQuery.of(context).padding;
+            _lastIsCompact = isCompactLayout;
+            _lastLyricsValue = rawLyricsValue;
+          }
+
+          final expandedLayout = _cachedLayout;
+          final groupLeft = expandedLayout.groupLeft;
+          final maxPaneWidth = expandedLayout.maxPaneWidth;
+          final paneGap = expandedLayout.paneGap;
 
           final currentHeight = lerpDouble(_barHeight, screenHeight, value)!;
           final currentBottom = lerpDouble(
@@ -717,7 +767,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                         children: [
                           // 2. Full Screen Background
                           if (currentSong != null)
-                            _buildBackground(currentSong, fullOpacity),
+                            _PlayerBackground(
+                              song: currentSong,
+                              opacity: fullOpacity,
+                              albumArt: _currentAlbumArt,
+                            ),
 
                           Positioned.fill(
                             child: Stack(
@@ -872,93 +926,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     });
   }
 
-  Widget _buildBackground(Song currentSong, double fullOpacity) {
-    if (fullOpacity <= 0) return const SizedBox.shrink();
-
-    return Positioned.fill(
-      child: Opacity(
-        opacity: fullOpacity,
-        child: RepaintBoundary(
-          child: Stack(
-            children: [
-              // 1. Image Background (Blurred or not) - Only visible when blur is enabled
-              Watch((context) {
-                final isBlurEnabled = settingsSignal.enableGlobalBlur.value;
-                if (!isBlurEnabled) return const SizedBox.shrink();
-
-                final isYoutube = currentSong.path.startsWith('yt:');
-                final ytThumbnailUrl = isYoutube
-                    ? youtubeDatasource.getArtworkUrl(currentSong.path.substring(3))
-                    : null;
-
-                return Positioned.fill(
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
-                    child: isYoutube
-                        ? Image.network(
-                            ytThumbnailUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (c, e, s) => Container(
-                              color: Theme.of(context).colorScheme.surface,
-                            ),
-                          )
-                        : _currentAlbumArt != null
-                        ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
-                        : Container(
-                            color: Theme.of(context).colorScheme.surface,
-                          ),
-                  ),
-                );
-              }),
-
-              // 2. Gradient Overlay / Main Background
-              Positioned.fill(
-                child: Watch((context) {
-                  final isBlurEnabled = settingsSignal.enableGlobalBlur.value;
-                  final dominant = audioSignal.dominantColor.value;
-                  final muted = audioSignal.mutedColor.value;
-
-                  if (!isBlurEnabled && dominant != null && muted != null) {
-                    // Gradient mode when blur is disabled
-                    return Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            dominant.withValues(alpha: 0.8),
-                            muted.withValues(alpha: 0.95),
-                          ],
-                        ),
-                      ),
-                    );
-                  }
-
-                  // Default blur overlay
-                  return Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Theme.of(
-                            context,
-                          ).colorScheme.surface.withOpacity(0.5),
-                          Theme.of(
-                            context,
-                          ).colorScheme.surface.withOpacity(0.9),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildMorphingSeekbar(
     bool isMobile,
@@ -1709,7 +1676,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                           ),
                         ),
                         child: Text(
-                          _getCodecAndBitrate(currentSong),
+                          _codecBitrate ?? '...',
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.onSecondary,
                             fontWeight: FontWeight.w900,
@@ -1986,5 +1953,98 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       default:
         return const SizedBox.shrink();
     }
+  }
+}
+
+class _PlayerBackground extends StatelessWidget {
+  final Song song;
+  final double opacity;
+  final File? albumArt;
+
+  const _PlayerBackground({
+    required this.song,
+    required this.opacity,
+    this.albumArt,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (opacity <= 0) return const SizedBox.shrink();
+
+    return Positioned.fill(
+      child: Opacity(
+        opacity: opacity,
+        child: RepaintBoundary(
+          child: Watch((context) {
+            final isBlurEnabled = settingsSignal.enableGlobalBlur.value;
+            final dominant = audioSignal.dominantColor.value;
+            final muted = audioSignal.mutedColor.value;
+
+            return Stack(
+              children: [
+                // 1. Image Background (Blurred)
+                if (isBlurEnabled)
+                  Positioned.fill(
+                    child: ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
+                      child: _buildBackgroundImage(context),
+                    ),
+                  ),
+
+                // 2. Gradient Overlay / Main Background
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: _getBackgroundColors(
+                          context,
+                          isBlurEnabled,
+                          dominant,
+                          muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBackgroundImage(BuildContext context) {
+    final isYoutube = song.path.startsWith('yt:');
+    if (isYoutube) {
+      final ytThumbnailUrl =
+          youtubeDatasource.getArtworkUrl(song.path.substring(3));
+      return Image.network(
+        ytThumbnailUrl,
+        fit: BoxFit.cover,
+        errorBuilder:
+            (c, e, s) => Container(color: Theme.of(context).colorScheme.surface),
+      );
+    } else if (albumArt != null) {
+      return Image.file(albumArt!, fit: BoxFit.cover);
+    }
+    return Container(color: Theme.of(context).colorScheme.surface);
+  }
+
+  List<Color> _getBackgroundColors(
+    BuildContext context,
+    bool isBlurEnabled,
+    Color? dominant,
+    Color? muted,
+  ) {
+    if (!isBlurEnabled && dominant != null && muted != null) {
+      return [dominant.withValues(alpha: 0.8), muted.withValues(alpha: 0.95)];
+    }
+    return [
+      Theme.of(context).colorScheme.surface.withOpacity(0.5),
+      Theme.of(context).colorScheme.surface.withOpacity(0.9),
+    ];
   }
 }

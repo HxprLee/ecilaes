@@ -137,11 +137,13 @@ class MyAudioHandler extends BaseAudioHandler {
     );
 
     // Listen for mediaItem changes to update widget
-    mediaItem.listen((item) {
-      if (item != null) {
-        _updateWidget();
-      }
-    });
+    _subscriptions.add(
+      mediaItem.listen((item) {
+        if (item != null) {
+          _updateWidget();
+        }
+      }),
+    );
   }
 
   /// Apply per-track volume normalization
@@ -645,6 +647,10 @@ class MyAudioHandler extends BaseAudioHandler {
       await sub.cancel();
     }
     _subscriptions.clear();
+
+    _historyTimer?.cancel();
+    _historyTimer = null;
+
     await _shuffleIndicesController.close();
 
     await _player.dispose();

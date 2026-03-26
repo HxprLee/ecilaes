@@ -40,6 +40,7 @@ class _QueueViewState extends State<QueueView> {
   final ScrollController _scrollController = ScrollController();
   bool _showBackToTop = false;
   String? _lastSongId;
+  void Function()? _effectCleanup;
 
   @override
   void initState() {
@@ -53,7 +54,7 @@ class _QueueViewState extends State<QueueView> {
     });
 
     // Auto-scroll on song change
-    effect(() {
+    _effectCleanup = effect(() {
       final currentSongId = audioSignal.currentSong.value?.path;
       if (_lastSongId != null && currentSongId != _lastSongId) {
         // Delay slightly to ensure list is rebuilt if queue changed
@@ -67,6 +68,7 @@ class _QueueViewState extends State<QueueView> {
 
   @override
   void dispose() {
+    _effectCleanup?.call();
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();

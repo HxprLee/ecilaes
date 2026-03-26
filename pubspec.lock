@@ -617,7 +617,7 @@ packages:
     source: hosted
     version: "2.1.0"
   just_audio_platform_interface:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: just_audio_platform_interface
       sha256: "2532c8d6702528824445921c5ff10548b518b13f808c2e34c2fd54793b999a6a"
@@ -800,16 +800,16 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.1"
-  palette_generator:
+  palette_generator_master:
     dependency: "direct main"
     description:
-      name: palette_generator
-      sha256: "4420f7ccc3f0a4a906144e73f8b6267cd940b64f57a7262e95cb8cec3a8ae0ed"
+      name: palette_generator_master
+      sha256: "2b27a3d9f773c5bc407ed828589488777f73fa23cd24abe6a9b90249a41a7df0"
       url: "https://pub.dev"
     source: hosted
-    version: "0.3.3+7"
+    version: "1.0.1"
   path:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: path
       sha256: "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"
