@@ -6,6 +6,8 @@ import '../signals/audio_signal.dart';
 import '../widgets/sliver_page_header.dart';
 import '../widgets/playlist_dialogs.dart';
 import '../widgets/playlist_cover.dart';
+import '../widgets/standard_sliver_list.dart';
+import '../widgets/standard_sliver_grid.dart';
 import '../models/playlist.dart';
 
 class PlaylistsScreen extends StatelessWidget {
@@ -15,42 +17,46 @@ class PlaylistsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Watch((context) {
       final allPlaylists = audioSignal.playlists.value;
+      final isGrid = audioSignal.isPlaylistsGridView.value;
 
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: CustomScrollView(
           slivers: [
             // Header
-            const SliverPageHeader(
+            SliverPageHeader(
               title: 'Playlists',
               subtitle: 'Your music collections',
+              actions: [
+                IconButton(
+                  onPressed: () => audioSignal.isPlaylistsGridView.value = !isGrid,
+                  icon: FaIcon(
+                    isGrid ? FontAwesomeIcons.list : FontAwesomeIcons.borderAll,
+                    color: Theme.of(context).colorScheme.secondary,
+                    size: 18,
+                  ),
+                ),
+              ],
             ),
 
-            // Grid
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 200,
-                  crossAxisSpacing: 24,
-                  mainAxisSpacing: 24,
-                  childAspectRatio: 0.85,
-                ),
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  if (index == allPlaylists.length) {
-                    return _PlaylistCard(
-                      playlist: Playlist(
-                        id: 'create',
-                        name: 'Create Playlist',
-                        songPaths: [],
-                        createdAt: DateTime.now(),
-                      ),
-                      icon: FontAwesomeIcons.plus,
-                      isAction: true,
-                      onTap: () => CreatePlaylistDialog.show(context),
-                    );
-                  }
-                  final playlist = allPlaylists[index];
+            if (isGrid)
+              StandardSliverGrid<Playlist>(
+                items: allPlaylists,
+                childAspectRatio: 0.85,
+                leadingItems: [
+                  _PlaylistCard(
+                    playlist: Playlist(
+                      id: 'create',
+                      name: 'Create Playlist',
+                      songPaths: [],
+                      createdAt: DateTime.now(),
+                    ),
+                    icon: FontAwesomeIcons.plus,
+                    isAction: true,
+                    onTap: () => CreatePlaylistDialog.show(context),
+                  ),
+                ],
+                itemBuilder: (context, playlist, index) {
                   return _PlaylistCard(
                     playlist: playlist,
                     icon: playlist.id == 'favorites'
@@ -58,9 +64,77 @@ class PlaylistsScreen extends StatelessWidget {
                         : FontAwesomeIcons.list,
                     onTap: () => context.go('/playlist/${playlist.id}'),
                   );
-                }, childCount: allPlaylists.length + 1),
+                },
+              )
+            else
+              StandardSliverList<Playlist>(
+                items: allPlaylists,
+                emptyMessage: 'No playlists found',
+                leadingItems: [
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                    leading: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      ),
+                      child: Center(
+                        child: FaIcon(
+                          FontAwesomeIcons.plus,
+                          color: Theme.of(context).colorScheme.secondary,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      'Create Playlist',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.secondary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    onTap: () => CreatePlaylistDialog.show(context),
+                  ),
+                ],
+                itemBuilder: (context, playlist, index) {
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                    leading: PlaylistCover(
+                      playlist: playlist,
+                      width: 48,
+                      height: 48,
+                      borderRadius: 8,
+                      iconOverride: playlist.id == 'favorites'
+                          ? FontAwesomeIcons.solidHeart
+                          : FontAwesomeIcons.list,
+                    ),
+                    title: Text(
+                      playlist.name,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.secondary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${playlist.songPaths.length} songs',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                    ),
+                    onTap: () => context.go('/playlist/${playlist.id}'),
+                  );
+                },
               ),
-            ),
 
             // Bottom spacing for player
             SliverToBoxAdapter(

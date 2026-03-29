@@ -1413,184 +1413,182 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     // Detect if we're on mobile based on platform
     final isMobile = Platform.isAndroid || Platform.isIOS;
 
-    // Start State (Mini)
-    double startRight;
-    double startLeft;
-    double startTop = (isMobile ? _startTop - 1.0 : _startTop);
-
-    double startWidth;
-    double startPlayBtnSize;
-
-    if (isCompact) {
-      // Mobile: Right aligned, Play button hidden
-      // We use MainAxisAlignment.center for the Row to ensure it centers correctly when expanded.
-      // For the mini-player, we position the "center" of this block near the right edge.
-      startRight = 0.0; // Pushed closer to edge
-      startWidth =
-          140.0; // Narrower width to make "Center" alignment appear right-aligned
-      startLeft = collapsedWidth - startRight - startWidth;
-      startPlayBtnSize = 0;
-    } else {
-      // Desktop: Left aligned, Play button visible (just icon)
-      startLeft = 0;
-      startWidth = _leftControlsWidth;
-      startPlayBtnSize = 24; // Enough for icon, background transparent
-    }
-
-    // End State (Full)
-    // Centered between seekbar and bottom section
-    // Seekbar is at contentTopStart + 20, height ~80
-
-    // Interpolate
-    final currentLeft = lerpDouble(startLeft, targetRect.left, value)!;
-    final currentTop = lerpDouble(startTop, targetRect.top, value)!;
-    final currentWidth = lerpDouble(startWidth, targetRect.width, value)!;
-
-    // Button Spacing
-    // final spacing = lerpDouble(8, 40, value)!;
-    final buttonPadding = EdgeInsets.lerp(
-      isMobile ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 8),
-      const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-      value,
-    )!;
-
-    // Play Button Size/Opacity
-    final playBtnSize = lerpDouble(startPlayBtnSize, 56, value)!;
-    // final playBtnOpacity = lerpDouble(startPlayBtnOpacity, 1.0, value)!;
-
-    // Icon Size
-    // final startIconSize = isCompact
-    //     ? 0.0
-    //     : 24.0; // Standardized to 24px for desktop
-    // final iconSize = lerpDouble(startIconSize, 24, value)!;
-
-    // Icon Color
-    // final iconOpacity = isCompact ? value : 1.0;
-
     final song = audioSignal.currentSong.value;
     final hasSong = song != null;
-
     final show = _showControls || value < 0.9;
 
-    return Positioned(
-      top: currentTop,
-      left: currentLeft,
-      width: currentWidth,
-      height: lerpDouble(
-        _barHeight,
-        targetRect.height,
+    return Watch((context) {
+      // Playback controls are now fixed as per user request
+      final miniButtons = ['previous', 'play_pause', 'next'];
+      final expandedButtons = ['previous', 'play_pause', 'next'];
+
+      // Union layout for the Row (fixed controls)
+      final allButtons = ['previous', 'play_pause', 'next'];
+
+      // Start State (Mini)
+      double startRight;
+      double startLeft;
+      double startTop = (isMobile ? _startTop - 1.0 : _startTop);
+      double startWidth;
+
+      if (isCompact) {
+        startRight = 0.0;
+        startWidth = (miniButtons.length * 48.0 + (miniButtons.length - 1) * 2.0).clamp(48.0, 200.0);
+        startLeft = collapsedWidth - startRight - startWidth;
+      } else {
+        startLeft = 0;
+        startWidth = _leftControlsWidth;
+      }
+
+      // Interpolate overall container
+      final currentLeft = lerpDouble(startLeft, targetRect.left, value)!;
+      final currentTop = lerpDouble(startTop, targetRect.top, value)!;
+      final currentWidth = lerpDouble(startWidth, targetRect.width, value)!;
+
+      // Button Spacing
+      final buttonPadding = EdgeInsets.lerp(
+        isMobile ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 8),
+        const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
         value,
-      ), // Use full bar height in mini mode
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 300),
-        opacity: show ? 1.0 : 0.0,
-        child: IgnorePointer(
-          ignoring: !show,
-          child: Listener(
-            onPointerDown: (_) => _resetImmersionTimer(),
-            child: RepaintBoundary(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment
-                    .center, // Always center to prevent snapping
-                children: [
-                  IconButton(
-                    padding: buttonPadding,
-                    constraints: isCompact
-                        ? const BoxConstraints()
-                        : null, // Allow shrinking
-                    splashColor: value > 0.05 ? Colors.transparent : null,
-                    highlightColor: value > 0.05 ? Colors.transparent : null,
-                    hoverColor: value > 0.05 ? Colors.transparent : null,
-                    icon: FaIcon(
-                      FontAwesomeIcons.backwardStep,
-                      color: hasSong
-                          ? Theme.of(context).colorScheme.secondary
-                          : Theme.of(
-                              context,
-                            ).colorScheme.secondary.withOpacity(0.5),
-                      size: lerpDouble(24, 40, value)!,
-                    ),
-                    onPressed: hasSong ? audioSignal.skipPrevious : null,
-                  ),
+      )!;
 
-                  isMobile
-                      ? const SizedBox(width: 2)
-                      : const SizedBox(width: 0),
-                  // Play/Pause Button (Morphing)
-                  // Use dynamic padding to collapse the container width to 0 when hidden
-                  Container(
-                    alignment: Alignment.center,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: isMobile ? lerpDouble(0, 6, value)! : 6,
-                    ),
-                    child: playBtnSize >= 24
-                        ? IconButton(
-                            // Hide if too small
-                            padding: buttonPadding,
-                            constraints: isCompact
-                                ? const BoxConstraints()
-                                : null,
-                            splashColor: value > 0.05
-                                ? Colors.transparent
-                                : null,
-                            highlightColor: value > 0.05
-                                ? Colors.transparent
-                                : null,
-                            hoverColor: value > 0.05
-                                ? Colors.transparent
-                                : null,
-                            icon: FaIcon(
-                              isPlaying
-                                  ? FontAwesomeIcons.pause
-                                  : FontAwesomeIcons.play,
-                              color: hasSong
-                                  ? Theme.of(context).colorScheme.secondary
-                                  : Theme.of(
-                                      context,
-                                    ).colorScheme.secondary.withValues(alpha: 0.5),
-                              size: playBtnSize,
-                            ),
-                            onPressed: hasSong
-                                ? () {
-                                    if (isPlaying) {
-                                      audioSignal.pause();
-                                    } else {
-                                      audioSignal.play();
-                                    }
-                                  }
-                                : null,
-                          )
-                        : null,
-                  ),
+      return Positioned(
+        top: currentTop,
+        left: currentLeft,
+        width: currentWidth,
+        height: lerpDouble(_barHeight, targetRect.height, value),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 300),
+          opacity: show ? 1.0 : 0.0,
+          child: IgnorePointer(
+            ignoring: !show,
+            child: Listener(
+              onPointerDown: (_) => _resetImmersionTimer(),
+              child: RepaintBoundary(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (final buttonId in allButtons) ...[
+                      Builder(builder: (context) {
+                        final inMini = miniButtons.contains(buttonId);
+                        final inExpanded = expandedButtons.contains(buttonId);
 
-                  isMobile
-                      ? const SizedBox(width: 2)
-                      : const SizedBox(width: 0),
+                        // Calculate opacity
+                        double opacity;
+                        if (inMini && inExpanded) {
+                          opacity = 1.0; // Always visible
+                        } else if (inMini) {
+                          opacity = (1.0 - value * 2).clamp(0.0, 1.0); // Fade out
+                        } else {
+                          opacity = ((value - 0.5) * 2).clamp(0.0, 1.0); // Fade in
+                        }
 
-                  IconButton(
-                    padding: buttonPadding,
-                    constraints: isCompact ? const BoxConstraints() : null,
-                    splashColor: value > 0.05 ? Colors.transparent : null,
-                    highlightColor: value > 0.05 ? Colors.transparent : null,
-                    hoverColor: value > 0.05 ? Colors.transparent : null,
-                    icon: FaIcon(
-                      FontAwesomeIcons.forwardStep,
-                      color: hasSong
-                          ? Theme.of(context).colorScheme.secondary
-                          : Theme.of(
-                              context,
-                            ).colorScheme.secondary.withOpacity(0.5),
-                      size: lerpDouble(24, 40, value)!,
-                    ),
-                    onPressed: hasSong ? audioSignal.skipNext : null,
-                  ),
-                ],
+                        if (opacity <= 0) return const SizedBox.shrink();
+
+                        // Calculate size
+                        final miniSize = inMini ? (isCompact && buttonId == 'play_pause' ? 0.0 : 24.0) : 0.0;
+                        final expandedSize = inExpanded ? (buttonId == 'play_pause' ? 56.0 : 40.0) : 0.0;
+                        final size = lerpDouble(miniSize, expandedSize, value)!;
+
+                        if (size < 1) return const SizedBox.shrink();
+
+                        return Opacity(
+                          opacity: opacity,
+                          child: _buildPlayerButtonById(
+                            context: context,
+                            id: buttonId,
+                            iconSize: size,
+                            isPlaying: isPlaying,
+                            hasSong: hasSong,
+                            buttonPadding: buttonPadding,
+                            isCompact: isCompact,
+                            value: value,
+                          ),
+                        );
+                      }),
+                    ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    });
+  }
+
+  Widget _buildPlayerButtonById({
+    required BuildContext context,
+    required String id,
+    required double iconSize,
+    required bool isPlaying,
+    required bool hasSong,
+    required EdgeInsets buttonPadding,
+    required bool isCompact,
+    required double value,
+  }) {
+    final color = hasSong
+        ? Theme.of(context).colorScheme.secondary
+        : Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5);
+
+    switch (id) {
+      case 'previous':
+        return IconButton(
+          padding: buttonPadding,
+          constraints: isCompact ? const BoxConstraints() : null,
+          splashColor: value > 0.05 ? Colors.transparent : null,
+          highlightColor: value > 0.05 ? Colors.transparent : null,
+          hoverColor: value > 0.05 ? Colors.transparent : null,
+          icon: FaIcon(FontAwesomeIcons.backwardStep, color: color, size: iconSize),
+          onPressed: hasSong ? audioSignal.skipPrevious : null,
+        );
+      case 'play_pause':
+        return Container(
+          alignment: Alignment.center,
+          padding: EdgeInsets.symmetric(
+            horizontal: Platform.isAndroid || Platform.isIOS ? lerpDouble(0, 6, value)! : 6,
+          ),
+          child: IconButton(
+            padding: buttonPadding,
+            constraints: isCompact ? const BoxConstraints() : null,
+            splashColor: value > 0.05 ? Colors.transparent : null,
+            highlightColor: value > 0.05 ? Colors.transparent : null,
+            hoverColor: value > 0.05 ? Colors.transparent : null,
+            icon: FaIcon(
+              isPlaying ? FontAwesomeIcons.pause : FontAwesomeIcons.play,
+              color: color,
+              size: iconSize,
+            ),
+            onPressed: hasSong
+                ? () {
+                    if (isPlaying) {
+                      audioSignal.pause();
+                    } else {
+                      audioSignal.play();
+                    }
+                  }
+                : null,
+          ),
+        );
+      case 'next':
+        return IconButton(
+          padding: buttonPadding,
+          constraints: isCompact ? const BoxConstraints() : null,
+          splashColor: value > 0.05 ? Colors.transparent : null,
+          highlightColor: value > 0.05 ? Colors.transparent : null,
+          hoverColor: value > 0.05 ? Colors.transparent : null,
+          icon: FaIcon(FontAwesomeIcons.forwardStep, color: color, size: iconSize),
+          onPressed: hasSong ? audioSignal.skipNext : null,
+        );
+      default:
+        // Delegate to the existing actions builder for shuffle, repeat, etc.
+        return _buildActionById(
+          context: context,
+          id: id,
+          iconSize: iconSize,
+          currentSong: audioSignal.currentSong.value,
+        );
+    }
   }
 
   Widget _buildMorphingActions(
@@ -1610,7 +1608,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     final startRight = 16.0;
     final startTop = 15.0; // Moved up by 1px
     
-    // Calculate dynamic startWidth based on number of actions
     // IconButton is usually 48x48, spacing is 12
     final actionsCount = settingsSignal.playerBarActions.value.length;
     final maxActionsWidth = isCompact ? (collapsedWidth * 0.45) : 600.0;

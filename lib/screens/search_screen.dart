@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
-import 'package:super_sliver_list/super_sliver_list.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../signals/navigation_signal.dart';
 import '../services/song_cache.dart';
 import '../services/YoutubeDatasource.dart';
 import '../widgets/sliver_page_header.dart';
+import '../widgets/standard_sliver_list.dart';
 import '../models/song.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -322,46 +322,11 @@ class _RawResultsSliverList {
   }) {
     final resultsWidget = Watch((context) {
       final isSearchingYoutube = audioSignal.isSearchingYoutube.value;
-      if (isSearchingYoutube && results.isEmpty) {
-        return const SliverFillRemaining(
-            child: Center(child: CircularProgressIndicator()));
-      }
-
-      if (results.isEmpty) {
-        return SliverFillRemaining(
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FaIcon(
-                  isSearching
-                      ? FontAwesomeIcons.magnifyingGlass
-                      : FontAwesomeIcons.music,
-                  size: 48,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.1),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  isSearching ? 'No results found' : 'Start typing to search',
-                  style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.24),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-
-      return SuperSliverList(
-        delegate: SliverChildBuilderDelegate((context, index) {
-          final item = results[index];
+      return StandardSliverList<Map<String, dynamic>>(
+        items: results,
+        isLoading: isSearchingYoutube && results.isEmpty,
+        emptyMessage: isSearching ? 'No results found' : 'Start typing to search',
+        itemBuilder: (context, item, index) {
           final title = item['title'] ??
               item['name'] ??
               item['artist'] ??
@@ -451,14 +416,12 @@ class _RawResultsSliverList {
               }
             },
           );
-        }, childCount: results.length),
+        },
       );
     });
 
     return [
       resultsWidget,
-      SliverToBoxAdapter(
-          child: SizedBox(height: audioSignal.reservedHeight.value)),
     ];
   }
 
@@ -495,46 +458,11 @@ class _ResultsSliverList {
   }) {
     final resultsWidget = Watch((context) {
       final isSearchingYoutube = audioSignal.isSearchingYoutube.value;
-      if (isSearchingYoutube && songs.isEmpty) {
-        return const SliverFillRemaining(
-            child: Center(child: CircularProgressIndicator()));
-      }
-
-      if (songs.isEmpty) {
-        return SliverFillRemaining(
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FaIcon(
-                  isSearching
-                      ? FontAwesomeIcons.magnifyingGlass
-                      : FontAwesomeIcons.music,
-                  size: 48,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.1),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  isSearching ? emptyMessage : 'Start typing to search',
-                  style: TextStyle(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.24),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-
-      return SuperSliverList(
-        delegate: SliverChildBuilderDelegate((context, index) {
-          final song = songs[index];
+      return StandardSliverList<Song>(
+        items: songs,
+        isLoading: isSearchingYoutube && songs.isEmpty,
+        emptyMessage: isSearching ? emptyMessage : 'Start typing to search',
+        itemBuilder: (context, song, index) {
           final isYoutube = song.path.startsWith('yt:');
           final artPath = !isYoutube
               ? (artDirPath != null
@@ -601,14 +529,12 @@ class _ResultsSliverList {
                     fontSize: 12)),
             onTap: () => audioSignal.playSong(song),
           );
-        }, childCount: songs.length),
+        },
       );
     });
 
     return [
       resultsWidget,
-      SliverToBoxAdapter(
-          child: SizedBox(height: audioSignal.reservedHeight.value)),
     ];
   }
 }

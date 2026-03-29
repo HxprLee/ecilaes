@@ -142,7 +142,7 @@ class _SliverPageHeaderDelegate extends SliverPersistentHeaderDelegate {
                 clipBehavior: Clip.none,
                 children: [
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       if (leading != null) ...[
                         Transform.scale(
@@ -157,16 +157,24 @@ class _SliverPageHeaderDelegate extends SliverPersistentHeaderDelegate {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              title,
-                              style: TextStyle(
-                                fontSize: fontSize,
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).colorScheme.secondary,
-                                letterSpacing: -1,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    title,
+                                    style: TextStyle(
+                                      fontSize: fontSize,
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(context).colorScheme.secondary,
+                                      letterSpacing: -1,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (actions != null) ...actions!,
+                              ],
                             ),
                             if (subtitle != null) ...[
                               const SizedBox(height: 4),
@@ -193,7 +201,6 @@ class _SliverPageHeaderDelegate extends SliverPersistentHeaderDelegate {
                           ],
                         ),
                       ),
-                      if (actions != null) ...actions!,
                     ],
                   ),
                   if (topActions != null)
@@ -243,8 +250,13 @@ class _SliverPageHeaderDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant _SliverPageHeaderDelegate oldDelegate) {
     return title != oldDelegate.title ||
         subtitle != oldDelegate.subtitle ||
+        actions != oldDelegate.actions ||
+        leading != oldDelegate.leading ||
+        topActions != oldDelegate.topActions ||
+        underTextActions != oldDelegate.underTextActions ||
         maxExtent != oldDelegate.maxExtent ||
-        minExtent != oldDelegate.minExtent;
+        minExtent != oldDelegate.minExtent ||
+        bottom != oldDelegate.bottom;
   }
 
   double _lerp(double a, double b, double t) => a + (b - a) * t;

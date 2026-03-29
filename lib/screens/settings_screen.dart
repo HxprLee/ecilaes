@@ -48,10 +48,10 @@ class SettingsScreen extends StatelessWidget {
                         child: Column(
                           children: [
                             _SettingsTile(
-                              icon: FontAwesomeIcons.palette,
-                              title: 'Appearance',
-                              subtitle: 'Themes, fonts, and window controls',
-                              onTap: () => context.go('/settings/appearance'),
+                              icon: FontAwesomeIcons.sliders,
+                              title: 'Customization',
+                              subtitle: 'Themes, layouts, and visual effects',
+                              onTap: () => context.go('/settings/customization'),
                             ),
                             _divider(context),
                             _SettingsTile(

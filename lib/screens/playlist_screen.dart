@@ -11,6 +11,9 @@ import '../widgets/sliver_page_header.dart';
 import '../widgets/playlist_cover.dart';
 import '../widgets/song_actions_sheet.dart';
 import '../widgets/song_list_view.dart';
+import '../widgets/standard_sliver_grid.dart';
+import '../widgets/song_grid_card.dart';
+import '../widgets/song_tile.dart';
 
 class PlaylistScreen extends StatefulWidget {
   final Playlist playlist;
@@ -56,7 +59,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       }
 
       final allSongs = audioSignal.allSongs.value;
-      final songs = currentPlaylist.songPaths.map((path) {
+      final songsList = currentPlaylist.songPaths.map((path) {
         try {
           return allSongs.firstWhere((s) => s.path == path);
         } catch (_) {
@@ -64,6 +67,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         }
       }).toList();
 
+      final artDir = audioSignal.albumArtDir.value;
+      final isGrid = audioSignal.isPlaylistDetailGridView.value;
       final screenWidth = MediaQuery.sizeOf(context).width;
       final isSmallScreen = screenWidth < 600;
 
@@ -192,7 +197,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             // Header
             SliverPageHeader(
               title: currentPlaylist.name,
-              subtitle: '${songs.length} songs',
+              subtitle: '${songsList.length} songs',
+              actions: [
+                IconButton(
+                  onPressed: () => audioSignal.isPlaylistDetailGridView.value = !isGrid,
+                  icon: FaIcon(
+                    isGrid ? FontAwesomeIcons.list : FontAwesomeIcons.borderAll,
+                    color: Theme.of(context).colorScheme.secondary,
+                    size: 18,
+                  ),
+                ),
+              ],
               leading: PlaylistCover(
                 playlist: currentPlaylist,
                 width: isSmallScreen ? 120 : 140,
@@ -242,7 +257,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     ),
                   ]
                   : null,
-              actions: isSmallScreen ? null : null, // Handled by Sliver below for desktop
             ),
 
             // Action Buttons (Desktop only or custom mobile row)
@@ -265,30 +279,47 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             if (!isSmallScreen)
               const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
-            // Song List
-            SongListView(
-              songs: songs,
-              showIndex: false,
-              trailingBuilder: (context, song, index) {
-                return IconButton(
-                  onPressed: () {
-                    showSongMoreActionsSheet(
-                      context: context,
-                      song: song,
-                      playlistId: currentPlaylist.id,
-                    );
-                  },
-                  icon: FaIcon(
-                    FontAwesomeIcons.ellipsisVertical,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.38),
-                    size: 16,
-                  ),
-                );
-              },
-              emptyMessage: 'This playlist is empty',
-              playlistId: currentPlaylist.id,
+            // Song List/Grid
+            if (isGrid)
+              StandardSliverGrid<Song>(
+                items: songsList,
+                childAspectRatio: 0.8,
+                itemBuilder: (context, song, index) {
+                  return SongGridCard(
+                    song: song,
+                    artPath: SongTile.getArtPath(song.path, artDir),
+                    onTap: () => audioSignal.playSong(song, fromList: songsList),
+                  );
+                },
+              )
+            else
+              SongListView(
+                songs: songsList,
+                showIndex: false,
+                trailingBuilder: (context, song, index) {
+                  return IconButton(
+                    onPressed: () {
+                      showSongMoreActionsSheet(
+                        context: context,
+                        song: song,
+                        playlistId: currentPlaylist.id,
+                      );
+                    },
+                    icon: FaIcon(
+                      FontAwesomeIcons.ellipsisVertical,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.38),
+                      size: 16,
+                    ),
+                  );
+                },
+                emptyMessage: 'This playlist is empty',
+                playlistId: currentPlaylist.id,
+              ),
+            
+            SliverToBoxAdapter(
+              child: SizedBox(height: audioSignal.reservedHeight.value),
             ),
           ],
         ),

@@ -6,6 +6,7 @@ import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
 import '../../widgets/sliver_page_header.dart';
 
+
 class PlaybackSection extends StatelessWidget {
   const PlaybackSection({super.key});
 
@@ -288,6 +289,91 @@ class PlaybackSection extends StatelessWidget {
                               );
                             }),
                           ],
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Caching section
+                  _sectionLabel('Caching', context),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Card(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surface.withValues(alpha: 0.8),
+                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondary.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        children: [
+                          Watch((context) {
+                            return SwitchListTile(
+                              title: Text(
+                                'Cache While Playing',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Save YouTube songs to disk for instant replay and offline playback',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withValues(alpha: 0.54),
+                                  fontSize: 12,
+                                ),
+                              ),
+                              value: settingsSignal.enableStreamCaching.value,
+                              onChanged: (value) {
+                                settingsSignal.updateStreamCaching(value);
+                              },
+                              activeThumbColor: Theme.of(
+                                context,
+                              ).colorScheme.secondary,
+                            );
+                          }),
+                          _divider(context),
+                          Watch((context) {
+                            return SwitchListTile(
+                              title: Text(
+                                'Pre-cache Next Song',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Download the next song in queue while the current one plays',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface.withValues(alpha: 0.54),
+                                  fontSize: 12,
+                                ),
+                              ),
+                              value: settingsSignal.enablePreCaching.value,
+                              onChanged: (value) {
+                                settingsSignal.updatePreCaching(value);
+                              },
+                              activeThumbColor: Theme.of(
+                                context,
+                              ).colorScheme.secondary,
+                            );
+                          }),
                         ],
                       ),
                     ),

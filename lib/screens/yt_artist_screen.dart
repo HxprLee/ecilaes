@@ -140,6 +140,7 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
               SongListView(
                 songs: topSongs,
                 showIndex: false,
+                addBottomPadding: false,
                 trailingBuilder: (context, song, index) => IconButton(
                   onPressed: () => showSongMoreActionsSheet(context: context, song: song),
                   icon: FaIcon(FontAwesomeIcons.ellipsisVertical, size: 16,

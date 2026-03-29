@@ -1,3 +1,21 @@
+# Changelog - 2026-03-30
+
+### Added
+
+- **Sidebar Customization**: Added the ability to manage and reorder library sections in the sidebar from the Customization hub.
+- **Playback Caching and Pre-Caching**: Added caching for YouTube Music playbacks for faster loading when playing the songs again.
+
+### Changed
+- **Customization Page**: Change "Appearance" section to "Customization" section in Settings to include more customization options.
+- **Decoupling Library UI**: Decoupled library UI from the main app shell, allowing for more flexible layout configurations.
+- **Improved Settings Navigation**: Migrated all UI-related settings (Themes, Lyrics typography, and Layouts) into the Customization page.
+
+### Fixed
+- **Persistent Grid/List Toggles**: Resolved an issue where library view toggles became unresponsive after the first interaction.
+- **Player Bar Customization**: Fixed a routing issue that prevented "Player Bar Layout" settings from correctly applying to the UI.
+
+---
+
 # Changelog - 2026-03-24
 
 ### Added

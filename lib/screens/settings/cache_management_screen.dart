@@ -20,6 +20,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
   CacheStats? _albumArtStats;
   CacheStats? _artistArtStats;
   CacheStats? _lyricsStats;
+  CacheStats? _audioStats;
 
   @override
   void initState() {
@@ -34,6 +35,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
     final album = await cacheService.getAlbumArtStats();
     final artist = await cacheService.getArtistArtStats();
     final lyrics = await cacheService.getLyricsStats();
+    final audio = await cacheService.getAudioStats();
 
     if (mounted) {
       setState(() {
@@ -41,6 +43,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
         _albumArtStats = album;
         _artistArtStats = artist;
         _lyricsStats = lyrics;
+        _audioStats = audio;
         _isLoading = false;
       });
     }
@@ -252,6 +255,17 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                                 onClear: () async {
                                   await cacheService.clearLyrics();
                                   LyricsService().clearCache();
+                                  await _loadStats();
+                                },
+                              ),
+                              const Divider(height: 1, indent: 64),
+                              _buildCacheItem(
+                                title: 'Song Cache',
+                                description: 'Cached YouTube audio streams',
+                                icon: Icons.cloud_download,
+                                stats: _audioStats,
+                                onClear: () async {
+                                  await cacheService.clearAudioCache();
                                   await _loadStats();
                                 },
                               ),

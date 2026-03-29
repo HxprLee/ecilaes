@@ -134,6 +134,7 @@ class _YtAlbumScreenState extends State<YtAlbumScreen> {
             SongListView(
               songs: tracks,
               showIndex: true,
+              addBottomPadding: false,
               trailingBuilder: (context, song, index) => IconButton(
                 onPressed: () => showSongMoreActionsSheet(context: context, song: song),
                 icon: FaIcon(FontAwesomeIcons.ellipsisVertical, size: 16,

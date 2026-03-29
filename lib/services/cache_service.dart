@@ -111,11 +111,22 @@ class CacheService {
     }
   }
 
+  Future<CacheStats> getAudioStats() async {
+    final cacheDir = await SongCache.cacheDir;
+    return getDirectoryStats('$cacheDir/songs');
+  }
+
+  Future<void> clearAudioCache() async {
+    final cacheDir = await SongCache.cacheDir;
+    await clearDirectory('$cacheDir/songs');
+  }
+
   Future<void> clearAll() async {
     await clearAlbumArt();
     await clearArtistArt();
     await clearLyrics();
     await clearMetadata();
+    await clearAudioCache();
   }
 }
 

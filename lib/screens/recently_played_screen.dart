@@ -1,13 +1,15 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../services/song_cache.dart';
 import '../models/song.dart';
+import '../models/history_entry.dart';
 import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_tile.dart';
+import '../widgets/song_grid_card.dart';
+import '../widgets/standard_sliver_grid.dart';
 
 class RecentlyPlayedScreen extends StatefulWidget {
   const RecentlyPlayedScreen({super.key});
@@ -90,41 +92,22 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                 ),
               )
             else if (isGrid)
-              SliverMainAxisGroup(
-                slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    sliver: SliverGrid(
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 200,
-                            mainAxisSpacing: 24,
-                            crossAxisSpacing: 24,
-                            childAspectRatio: 0.75,
-                          ),
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final entry = history[index];
-                        final song = songs.firstWhere(
-                          (s) => s.path == entry.songPath,
-                          orElse: () => Song.fromPath(entry.songPath),
-                        );
+              StandardSliverGrid<HistoryEntry>(
+                items: history,
+                childAspectRatio: 0.75,
+                itemBuilder: (context, entry, index) {
+                  final song = songs.firstWhere(
+                    (s) => s.path == entry.songPath,
+                    orElse: () => Song.fromPath(entry.songPath),
+                  );
 
-                        return _GridSongCard(
-                          song: song,
-                          playCount: entry.playCount,
-                          artPath: SongTile.getArtPath(song.path, _artDirPath),
-                          onTap: () => audioSignal.playSong(song),
-                        );
-                      }, childCount: history.length),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Watch(
-                      (context) =>
-                          SizedBox(height: audioSignal.reservedHeight.value),
-                    ),
-                  ),
-                ],
+                  return SongGridCard(
+                    song: song,
+                    subtitle: '${entry.playCount} plays',
+                    artPath: SongTile.getArtPath(song.path, _artDirPath),
+                    onTap: () => audioSignal.playSong(song),
+                  );
+                },
               )
             else
               SongListView(
@@ -157,83 +140,4 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   }
 }
 
-class _GridSongCard extends StatelessWidget {
-  final Song song;
-  final int playCount;
-  final String artPath;
-  final VoidCallback onTap;
-
-  const _GridSongCard({
-    required this.song,
-    required this.playCount,
-    required this.artPath,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AspectRatio(
-          aspectRatio: 1.0,
-          child: GestureDetector(
-            onTap: onTap,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.secondary.withValues(alpha: 0.15),
-                ),
-                image: artPath.isNotEmpty && song.hasAlbumArt
-                    ? DecorationImage(
-                        image: FileImage(File(artPath)),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              child: !(artPath.isNotEmpty && song.hasAlbumArt)
-                  ? Center(
-                      child: FaIcon(
-                        FontAwesomeIcons.music,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.24),
-                        size: 48,
-                      ),
-                    )
-                  : null,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          song.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.secondary,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        Text(
-          '${song.artist} • $playCount plays',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: Theme.of(
-              context,
-            ).colorScheme.secondary.withValues(alpha: 0.7),
-            fontSize: 12,
-          ),
-        ),
-      ],
-    );
-  }
-}
+// Deleted _GridSongCard

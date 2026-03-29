@@ -9,6 +9,8 @@ import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_actions_sheet.dart';
 import '../widgets/song_tile.dart';
+import '../widgets/standard_sliver_grid.dart';
+import '../widgets/song_grid_card.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
   final String albumName;
@@ -72,6 +74,19 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             SliverPageHeader(
               title: album.name,
               subtitle: album.artist,
+              actions: [
+                IconButton(
+                  onPressed: () => audioSignal.isAlbumDetailGridView.value =
+                      !audioSignal.isAlbumDetailGridView.value,
+                  icon: FaIcon(
+                    audioSignal.isAlbumDetailGridView.value
+                        ? FontAwesomeIcons.list
+                        : FontAwesomeIcons.borderAll,
+                    color: Theme.of(context).colorScheme.secondary,
+                    size: 18,
+                  ),
+                ),
+              ],
               leading: Container(
                 width: 140,
                 height: 140,
@@ -158,18 +173,32 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
             // Track List
-            SongListView(
-              songs: album.songs,
-              showIndex: true,
-              trailingBuilder: (context, song, index) => IconButton(
-                onPressed: () => showSongMoreActionsSheet(context: context, song: song),
-                icon: FaIcon(
-                  FontAwesomeIcons.ellipsisVertical, 
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+            if (audioSignal.isAlbumDetailGridView.value)
+              StandardSliverGrid<Song>(
+                items: album.songs,
+                childAspectRatio: 0.8,
+                itemBuilder: (context, song, index) {
+                  return SongGridCard(
+                    song: song,
+                    artPath: SongTile.getArtPath(song.path, artDir),
+                    onTap: () => audioSignal.playSong(song, fromList: album.songs),
+                  );
+                },
+              )
+            else
+              SongListView(
+                songs: album.songs,
+                showIndex: true,
+                addBottomPadding: false,
+                trailingBuilder: (context, song, index) => IconButton(
+                  onPressed: () => showSongMoreActionsSheet(context: context, song: song),
+                  icon: FaIcon(
+                    FontAwesomeIcons.ellipsisVertical, 
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                  ),
                 ),
               ),
-            ),
 
             SliverToBoxAdapter(
               child: SizedBox(height: audioSignal.reservedHeight.value),

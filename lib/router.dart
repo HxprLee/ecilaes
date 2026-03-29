@@ -21,13 +21,14 @@ import 'screens/yt_playlist_screen.dart';
 import 'widgets/songs_list_content.dart';
 import 'signals/audio_signal.dart';
 import 'signals/navigation_signal.dart';
-import 'screens/settings/appearance_section.dart';
+import 'screens/settings/customization_screen.dart';
 import 'screens/settings/playback_section.dart';
 import 'screens/settings/library_section.dart';
 import 'screens/settings/about_section.dart';
 import 'screens/settings/actions_layout_section.dart';
 import 'screens/settings/player_bar_layout_section.dart';
 import 'screens/settings/lyrics_appearance_section.dart';
+import 'screens/settings/sidebar_layout_section.dart';
 import 'screens/settings/cache_management_screen.dart';
 
 /// Creates the GoRouter configuration.
@@ -205,9 +206,9 @@ final GoRouter router = GoRouter(
               _buildPageWithTransition(state, const SettingsScreen()),
           routes: [
             GoRoute(
-              path: 'appearance',
+              path: 'customization',
               pageBuilder: (context, state) =>
-                  _buildPageWithTransition(state, const AppearanceSection()),
+                  _buildPageWithTransition(state, const CustomizationScreen()),
               routes: [
                 GoRoute(
                   path: 'actions-layout',
@@ -217,7 +218,7 @@ final GoRouter router = GoRouter(
                   ),
                 ),
                 GoRoute(
-                  path: 'player-bar-layout',
+                  path: 'player-layout',
                   pageBuilder: (context, state) => _buildPageWithTransition(
                     state,
                     const PlayerBarLayoutSection(),
@@ -228,6 +229,13 @@ final GoRouter router = GoRouter(
                   pageBuilder: (context, state) => _buildPageWithTransition(
                     state,
                     const LyricsAppearanceSection(),
+                  ),
+                ),
+                GoRoute(
+                  path: 'sidebar-layout',
+                  pageBuilder: (context, state) => _buildPageWithTransition(
+                    state,
+                    const SidebarLayoutSection(),
                   ),
                 ),
               ],

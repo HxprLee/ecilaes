@@ -50,6 +50,13 @@ class AudioSignal {
   final historySongs = listSignal<HistoryEntry>([]);
   final queue = listSignal<MediaItem>([]);
   final isHistoryGridView = signal<bool>(false);
+  final isArtistsGridView = signal<bool>(false);
+  final isAlbumsGridView = signal<bool>(true); // Default albums to grid
+  final isSongsGridView = signal<bool>(false);
+  final isArtistDetailGridView = signal<bool>(false);
+  final isAlbumDetailGridView = signal<bool>(false);
+  final isPlaylistsGridView = signal<bool>(true); // Default playlists to grid
+  final isPlaylistDetailGridView = signal<bool>(false);
   final currentPlaylist = signal<Playlist?>(null);
   final isScanning = signal<bool>(false);
   final scanProgress = signal<double>(0.0);
@@ -800,6 +807,7 @@ class AudioSignal {
         album: song.album ?? "Unknown Album",
         title: song.title,
         artist: song.artist,
+        duration: song.duration,
         artUri: initialArtUri,
         extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
       );
@@ -831,6 +839,7 @@ class AudioSignal {
         album: song.album ?? "Unknown Album",
         title: song.title,
         artist: song.artist,
+        duration: song.duration,
         artUri: initialArtUri,
         extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
       );

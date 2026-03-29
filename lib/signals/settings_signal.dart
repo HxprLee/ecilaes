@@ -50,6 +50,8 @@ class SettingsSignal {
     'more',
   ]);
 
+  static const int maxButtonsPerRow = 5;
+
   final lyricsAlignment = signal<TextAlign>(TextAlign.center);
   final lyricsActiveFontSize = signal<double>(28.0);
   final lyricsInactiveFontSize = signal<double>(22.0);
@@ -72,6 +74,10 @@ class SettingsSignal {
   // Playback settings
   final gaplessPlayback = signal<bool>(true);
   final audioNormalization = signal<bool>(false);
+
+  // Stream caching
+  final enableStreamCaching = signal<bool>(true);
+  final enablePreCaching = signal<bool>(true);
   final normalizationTargetLufs = signal<double>(-14.0);
 
   Future<void> loadSettings() async {
@@ -158,6 +164,9 @@ class SettingsSignal {
     gaplessPlayback.value = prefs.getBool('gaplessPlayback') ?? true;
     audioNormalization.value = prefs.getBool('audioNormalization') ?? false;
     normalizationTargetLufs.value = prefs.getDouble('normalizationTargetLufs') ?? -14.0;
+
+    enableStreamCaching.value = prefs.getBool('enableStreamCaching') ?? true;
+    enablePreCaching.value = prefs.getBool('enablePreCaching') ?? true;
   }
 
   Future<void> updateMusicDirectory(String? value) async {
@@ -408,6 +417,18 @@ class SettingsSignal {
     normalizationTargetLufs.value = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('normalizationTargetLufs', value);
+  }
+
+  Future<void> updateStreamCaching(bool value) async {
+    enableStreamCaching.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enableStreamCaching', value);
+  }
+
+  Future<void> updatePreCaching(bool value) async {
+    enablePreCaching.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enablePreCaching', value);
   }
 }
 

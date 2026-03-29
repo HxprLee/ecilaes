@@ -9,6 +9,8 @@ import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_actions_sheet.dart';
 import '../widgets/song_tile.dart';
+import '../widgets/standard_sliver_grid.dart';
+import '../widgets/song_grid_card.dart';
 
 class ArtistDetailScreen extends StatefulWidget {
   final String artistName;
@@ -71,6 +73,19 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               title: artist.name,
               subtitle:
                   '${artist.songCount} songs • ${artist.albums.length} albums',
+              actions: [
+                IconButton(
+                  onPressed: () => audioSignal.isArtistDetailGridView.value =
+                      !audioSignal.isArtistDetailGridView.value,
+                  icon: FaIcon(
+                    audioSignal.isArtistDetailGridView.value
+                        ? FontAwesomeIcons.list
+                        : FontAwesomeIcons.borderAll,
+                    color: Theme.of(context).colorScheme.secondary,
+                    size: 18,
+                  ),
+                ),
+              ],
               leading: Container(
                 width: 120,
                 height: 120,
@@ -167,7 +182,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
                 child: Text(
-                  'Popular Songs',
+                  audioSignal.isArtistDetailGridView.value ? 'Songs' : 'Popular Songs',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         letterSpacing: -0.5,
@@ -176,20 +191,34 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               ),
             ),
 
-            // Songs List
-            SongListView(
-              songs: artist.songs,
-              showIndex: false,
-              trailingBuilder: (context, song, index) => IconButton(
-                onPressed: () =>
-                    showSongMoreActionsSheet(context: context, song: song),
-                icon: FaIcon(
-                  FontAwesomeIcons.ellipsisVertical,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+            // Songs List/Grid
+            if (audioSignal.isArtistDetailGridView.value)
+              StandardSliverGrid<Song>(
+                items: artist.songs,
+                childAspectRatio: 0.8,
+                itemBuilder: (context, song, index) {
+                  return SongGridCard(
+                    song: song,
+                    artPath: SongTile.getArtPath(song.path, artDir),
+                    onTap: () => audioSignal.playSong(song, fromList: artist.songs),
+                  );
+                },
+              )
+            else
+              SongListView(
+                songs: artist.songs,
+                showIndex: false,
+                addBottomPadding: false,
+                trailingBuilder: (context, song, index) => IconButton(
+                  onPressed: () =>
+                      showSongMoreActionsSheet(context: context, song: song),
+                  icon: FaIcon(
+                    FontAwesomeIcons.ellipsisVertical,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                  ),
                 ),
               ),
-            ),
 
             SliverToBoxAdapter(
               child: SizedBox(height: audioSignal.reservedHeight.value),

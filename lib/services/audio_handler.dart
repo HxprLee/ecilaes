@@ -8,6 +8,7 @@ import '../models/song.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
 import 'album_art_cache.dart';
+import 'audio_cache_service.dart';
 import 'playback_history_service.dart';
 import 'youtube_service.dart';
 import 'YoutubeDatasource.dart';
@@ -126,7 +127,12 @@ class MyAudioHandler extends BaseAudioHandler {
             final item = queue.value[index];
             if (item.duration != duration) {
               final newItem = item.copyWith(duration: duration);
-              queue.value[index] = newItem;
+              
+              // Correctly update and notify queue
+              final newQueue = List<MediaItem>.from(queue.value);
+              newQueue[index] = newItem;
+              queue.add(newQueue);
+              
               if (mediaItem.value?.id == item.id) {
                 mediaItem.add(newItem);
               }
@@ -252,6 +258,7 @@ class MyAudioHandler extends BaseAudioHandler {
         album: song.album ?? "Unknown Album",
         title: song.title,
         artist: song.artist,
+        duration: song.duration,
         artUri: initialArtUri,
         extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
       );
@@ -532,28 +539,19 @@ class MyAudioHandler extends BaseAudioHandler {
       }
     } else if (item.id.startsWith('yt:')) {
       final videoId = item.id.substring(3);
-      final thumbUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
-      item = item.copyWith(artUri: thumbUri);
       
-      // Cache artwork locally for OS controls/widgets
-      _artCache.getArt(item.id).then((file) {
-        if (file != null && file.existsSync()) {
-          final artUri = Uri.file(file.path);
-          final updatedItem = item.copyWith(artUri: artUri);
-          
-          // Update queue so subsequent updates (like duration) use the local URI
-          final currentQueue = queue.value;
-          if (_currentIndex < currentQueue.length && currentQueue[_currentIndex].id == item.id) {
-            final updatedQueue = List<MediaItem>.from(currentQueue);
-            updatedQueue[_currentIndex] = updatedItem;
-            queue.add(updatedQueue);
-          }
-
-          if (mediaItem.value?.id == item.id) {
-            mediaItem.add(updatedItem);
-          }
-        }
-      });
+      // Try local cache first (synchronous check)
+      final artPath = _artCache.getArtPathSync(item.id);
+      if (artPath != null) {
+        item = item.copyWith(artUri: Uri.file(artPath));
+      } else {
+        // Fallback to network thumbnail
+        final thumbUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
+        item = item.copyWith(artUri: thumbUri);
+        
+        // Start background download (completes later, will update next time or via duration stream listener)
+        _artCache.getArt(item.id);
+      }
     }
 
     mediaItem.add(item);
@@ -566,19 +564,35 @@ class MyAudioHandler extends BaseAudioHandler {
 
       if (item.id.startsWith('yt:')) {
         final videoId = item.id.substring(3);
-        final url = await youtubeService.getAudioStreamUrl(videoId);
-        if (url != null) {
+
+        // Check for cached audio first
+        final cachedPath = audioCacheService.getCachedPath(videoId);
+        if (cachedPath != null) {
+          print('AudioCache: Playing from cache: $videoId');
           await _player.setAudioSource(
-            AudioSource.uri(
-              Uri.parse(url),
-              tag: item,
-              headers: const {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              },
-            ),
+            AudioSource.file(cachedPath, tag: item),
           );
         } else {
-          throw Exception('Could not resolve YouTube stream');
+          // Stream from network
+          final url = await youtubeService.getAudioStreamUrl(videoId);
+          if (url != null) {
+            await _player.setAudioSource(
+              AudioSource.uri(
+                Uri.parse(url),
+                tag: item,
+                headers: const {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                },
+              ),
+            );
+
+            // Cache in background while playing
+            if (settingsSignal.enableStreamCaching.value) {
+              audioCacheService.cacheStream(videoId, streamUrl: url);
+            }
+          } else {
+            throw Exception('Could not resolve YouTube stream');
+          }
         }
       } else {
         await _player.setAudioSource(
@@ -589,6 +603,11 @@ class MyAudioHandler extends BaseAudioHandler {
       if (thisLoad.isCompleted || _isDisposed) return;
 
       await _player.play();
+
+      // Pre-cache next track in background
+      if (settingsSignal.enablePreCaching.value) {
+        _preCacheNext();
+      }
     } on PlayerInterruptedException catch (_) {
       print("Audio loading interrupted (switching tracks)");
     } catch (e) {
@@ -602,6 +621,24 @@ class MyAudioHandler extends BaseAudioHandler {
         thisLoad.complete();
       }
     }
+  }
+
+  /// Pre-cache the next YouTube track in the queue.
+  void _preCacheNext() {
+    if (_isDisposed || queue.value.isEmpty) return;
+
+    final nextIndex = _getNextIndex();
+    if (nextIndex == _currentIndex) return;
+
+    final nextItem = queue.value[nextIndex];
+    if (!nextItem.id.startsWith('yt:')) return;
+
+    final nextVideoId = nextItem.id.substring(3);
+    if (audioCacheService.getCachedPath(nextVideoId) != null) return;
+    if (audioCacheService.isCaching(nextVideoId)) return;
+
+    print('AudioCache: Pre-caching next track: $nextVideoId');
+    audioCacheService.cacheStream(nextVideoId);
   }
 
   void _handleHistoryTracking(bool isPlaying) {

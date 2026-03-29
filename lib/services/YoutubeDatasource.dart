@@ -109,7 +109,7 @@ class YoutubeDatasource {
       }
     }
     
-    final int durationMs = dItem['durationMs'] ?? 0;
+    final int? durationMs = dItem['durationMs'];
 
     // Cache the YouTube Music thumbnail (square, high-res)
     if (videoId.isNotEmpty) {
@@ -127,7 +127,7 @@ class YoutubeDatasource {
       title: title,
       artist: artistName,
       album: albumName,
-      duration: Duration(milliseconds: durationMs),
+      duration: durationMs != null && durationMs > 0 ? Duration(milliseconds: durationMs) : null,
       hasAlbumArt: true,
     );
   }
