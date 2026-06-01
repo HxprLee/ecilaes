@@ -46,7 +46,7 @@ class SongTile extends StatelessWidget {
       final isYoutube = song.path.startsWith('yt:');
       final hasArt = song.hasAlbumArt && (artDir != null || isYoutube);
       final artPath = hasArt && !isYoutube ? SongTile.getArtPath(song.path, artDir) : '';
-      final ytThumbnailUrl = isYoutube ? youtubeDatasource.getArtworkUrl(song.path.substring(3)) : null;
+      final ytThumbnailUrl = isYoutube ? youtubeDatasource.getSongArtworkUrl(song) : null;
 
       return ListTile(
         contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 24),

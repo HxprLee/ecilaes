@@ -27,6 +27,14 @@ class YoutubeDatasource {
         'https://img.youtube.com/vi/$videoId/hqdefault.jpg';
   }
 
+  /// Get the artwork URL for a Song.
+  /// Returns the thumbnailUrl stored on the Song if available (from YTM API),
+  /// otherwise falls back to the thumbnail cache, then YouTube CDN.
+  String getSongArtworkUrl(Song song) {
+    if (!song.path.startsWith('yt:')) return '';
+    return song.thumbnailUrl ?? getArtworkUrl(song.path.substring(3));
+  }
+
   Future<void> init() async {
     if (_initialized) return;
     if (_initCompleter != null) return _initCompleter!.future;
@@ -88,48 +96,77 @@ class YoutubeDatasource {
   }
 
   Song mapToSong(dynamic item) {
-    // ytmusicapi_dart returns maps
-    final Map<String, dynamic> dItem = item is Map ? Map<String, dynamic>.from(item) : {};
-    
-    final String videoId = dItem['videoId'] ?? '';
-    final String title = dItem['title'] ?? dItem['name'] ?? 'Unknown Title';
-    
-    final List<dynamic> artists = dItem['artists'] ?? [];
-    final String artistName = artists.isNotEmpty 
-        ? artists.map((a) => (a as Map)['name'] ?? 'Unknown').join(', ') 
-        : 'Unknown Artist';
-        
-    final dynamic album = dItem['album'];
-    String? albumName;
-    if (album != null) {
-      if (album is Map) {
-        albumName = album['name'];
-      } else if (album is String) {
-        albumName = album;
-      }
-    }
-    
-    final int? durationMs = dItem['durationMs'];
+    try {
+      // ytmusicapi_dart returns maps
+      final Map<String, dynamic> dItem = item is Map ? Map<String, dynamic>.from(item) : {};
 
-    // Cache the YouTube Music thumbnail (square, high-res)
-    if (videoId.isNotEmpty) {
-      final thumbnails = dItem['thumbnails'];
-      if (thumbnails is List && thumbnails.isNotEmpty) {
-        final rawUrl = thumbnails.last['url']?.toString() ?? '';
-        if (rawUrl.isNotEmpty) {
-          _thumbnailCache[videoId] = transformThumbnail(rawUrl);
+      final String videoId = dItem['videoId'] ?? '';
+      final String title = dItem['title'] ?? dItem['name'] ?? 'Unknown Title';
+
+      final List<dynamic> artists = dItem['artists'] ?? [];
+      final String artistName = artists.isNotEmpty
+          ? artists.map((a) => (a as Map)['name'] ?? 'Unknown').join(', ')
+          : 'Unknown Artist';
+
+      final dynamic album = dItem['album'];
+      String? albumName;
+      if (album != null) {
+        if (album is Map) {
+          albumName = album['name'];
+        } else if (album is String) {
+          albumName = album;
         }
       }
-    }
 
-    return Song(
-      path: 'yt:$videoId',
-      title: title,
-      artist: artistName,
-      album: albumName,
-      duration: durationMs != null && durationMs > 0 ? Duration(milliseconds: durationMs) : null,
-      hasAlbumArt: true,
-    );
+      final int? durationMs = dItem['durationMs'];
+
+      // Cache the YouTube Music thumbnail (square, high-res) and extract for the Song.
+      // Check 'thumbnails' first (YTM thumbnail list), then 'thumbnail' (raw YouTube thumbnail from watch playlist).
+      String? cachedThumbnailUrl;
+      if (videoId.isNotEmpty) {
+        // YTM thumbnail list (preferred) — used by search, albums, playlists, etc.
+        final thumbnails = dItem['thumbnails'];
+        if (thumbnails is List && thumbnails.isNotEmpty) {
+          final rawUrl = thumbnails.last['url']?.toString() ?? '';
+          if (rawUrl.isNotEmpty) {
+            cachedThumbnailUrl = transformThumbnail(rawUrl);
+            _thumbnailCache[videoId] = cachedThumbnailUrl;
+          }
+        }
+        // Raw YouTube thumbnail — used by watch playlist (radio)
+        if (cachedThumbnailUrl == null) {
+          final rawThumb = dItem['thumbnail'];
+          if (rawThumb is List && rawThumb.isNotEmpty) {
+            final rawUrl = rawThumb.last['url']?.toString() ?? '';
+            if (rawUrl.isNotEmpty) {
+              cachedThumbnailUrl = transformThumbnail(rawUrl);
+              _thumbnailCache[videoId] = cachedThumbnailUrl;
+            }
+          }
+        }
+      }
+
+      return Song(
+        path: 'yt:$videoId',
+        title: title,
+        artist: artistName,
+        album: albumName,
+        duration: durationMs != null && durationMs > 0 ? Duration(milliseconds: durationMs) : null,
+        hasAlbumArt: true,
+        thumbnailUrl: cachedThumbnailUrl,
+      );
+    } catch (e) {
+      // Fallback for malformed track data (e.g. watch playlist items with non-standard structure)
+      final Map<String, dynamic> dItem = item is Map ? Map<String, dynamic>.from(item) : {};
+      final videoId = dItem['videoId']?.toString() ?? '';
+      final title = dItem['title']?.toString() ?? dItem['name']?.toString() ?? 'Unknown Title';
+      debugPrint('mapToSong fallback for videoId=$videoId: $e');
+      return Song(
+        path: 'yt:$videoId',
+        title: title,
+        hasAlbumArt: true,
+      );
+    }
   }
 
   /// Get search suggestions for a query string.
@@ -149,14 +186,15 @@ class YoutubeDatasource {
   }
 
   /// Generic search with optional filter. Returns raw maps.
-  Future<List<Map<String, dynamic>>> search(String query, {SearchFilter? filter}) async {
+  /// Set [limit] to request more results (uses continuation to fill up to limit).
+  Future<List<Map<String, dynamic>>> search(String query, {SearchFilter? filter, int limit = 20}) async {
     await init();
     if (_ytm == null) {
       debugPrint('YTM search error: YTMusic is not initialized.');
       return [];
     }
     try {
-      final results = await _ytm!.search(query, filter: filter);
+      final results = await _ytm!.search(query, filter: filter, limit: limit);
       return results.map((r) => r is Map ? Map<String, dynamic>.from(r) : <String, dynamic>{}).toList();
     } catch (e) {
       debugPrint('YTM search error ($filter): $e');
@@ -372,6 +410,27 @@ class YoutubeDatasource {
     } catch (e) {
       debugPrint('YTM getPlaylistDetail error: $e');
       return {};
+    }
+  }
+
+  /// Get a radio/auto-play playlist of songs similar to the given video.
+  /// Uses YouTube Music's native radio endpoint (getWatchPlaylist with radio=true).
+  /// The first track is skipped since it is the seed/current song.
+  /// Fetches multiple pages via continuation until [limit] tracks are collected.
+  Future<List<Song>> getRadioSongs(String videoId, {int limit = 25}) async {
+    await init();
+    if (_ytm == null) return [];
+    try {
+      final result = await _ytm!.getWatchPlaylist(
+        videoId: videoId,
+        limit: limit,
+        radio: true,
+      );
+      final tracks = result['tracks'] as List? ?? [];
+      return tracks.skip(1).map((t) => mapToSong(t)).toList();
+    } catch (e) {
+      debugPrint('YTM getRadioSongs error: $e');
+      return [];
     }
   }
 }

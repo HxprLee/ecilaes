@@ -258,7 +258,7 @@ const _filterOptions = [
 ];
 
 /// YouTube results tab with filter chips
-class _YouTubeResultsTab extends StatelessWidget {
+class _YouTubeResultsTab extends StatefulWidget {
   final List<Map<String, dynamic>> rawResults;
   final List<Song> songResults;
   final bool isSearching;
@@ -278,34 +278,85 @@ class _YouTubeResultsTab extends StatelessWidget {
   });
 
   @override
+  State<_YouTubeResultsTab> createState() => _YouTubeResultsTabState();
+}
+
+class _YouTubeResultsTabState extends State<_YouTubeResultsTab> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.offset;
+    final hasMore = audioSignal.hasMoreYtResults.value;
+    final isLoading = audioSignal.isSearchingYoutube.value;
+    if (maxScroll - currentScroll < 300 && hasMore && !isLoading) {
+      audioSignal.loadMoreYtResults();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return CustomScrollView(
+      controller: _scrollController,
       slivers: [
         SliverOverlapInjector(
           handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
         ),
         ..._buildResultsSlivers(context),
+        Watch((context) {
+          final isLoading = audioSignal.isSearchingYoutube.value;
+          final hasMore = audioSignal.hasMoreYtResults.value;
+          if (!isLoading && !hasMore) return const SliverToBoxAdapter(child: SizedBox.shrink());
+          return SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: isLoading
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ),
+          );
+        }),
       ],
     );
   }
 
   List<Widget> _buildResultsSlivers(BuildContext context) {
-    if (currentFilter == SearchFilter.songs || currentFilter == null) {
+    if (widget.currentFilter == SearchFilter.songs || widget.currentFilter == null) {
       return _ResultsSliverList.buildSlivers(
         context,
-        songs: songResults,
-        isSearching: isSearching,
-        query: query,
-        artDirPath: artDirPath,
+        songs: widget.songResults,
+        isSearching: widget.isSearching,
+        query: widget.query,
+        artDirPath: widget.artDirPath,
         emptyMessage: 'No YouTube songs found',
       );
     }
 
     return _RawResultsSliverList.buildSlivers(
       context,
-      results: rawResults,
-      isSearching: isSearching,
-      filterType: currentFilter ?? SearchFilter.songs,
+      results: widget.rawResults,
+      isSearching: widget.isSearching,
+      filterType: widget.currentFilter ?? SearchFilter.songs,
     );
   }
 }

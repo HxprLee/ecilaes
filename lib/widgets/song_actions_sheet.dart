@@ -43,7 +43,7 @@ void showSongMoreActionsSheet({
             final artDir = audioSignal.albumArtDir.value;
 
             final isYoutube = song.path.startsWith('yt:');
-            final ytThumbnailUrl = isYoutube ? youtubeDatasource.getArtworkUrl(song.path.substring(3)) : null;
+            final ytThumbnailUrl = isYoutube ? youtubeDatasource.getSongArtworkUrl(song) : null;
 
             File? effectiveArt = albumArt;
             if (effectiveArt == null && song.hasAlbumArt && artDir != null && !isYoutube) {
@@ -358,6 +358,16 @@ ActionInfo? _getActionInfo(String id) {
         icon: Icons.repeat,
         label: 'Repeat mode',
         onTap: (context, song, _) => audioSignal.toggleRepeat(),
+      );
+    case 'radio':
+      return ActionInfo(
+        icon: Icons.radio,
+        label: 'Start radio',
+        onTap: (context, song, _) {
+          if (song.path.startsWith('yt:')) {
+            audioSignal.startRadio(song);
+          }
+        },
       );
     case 'lyrics':
       return ActionInfo(

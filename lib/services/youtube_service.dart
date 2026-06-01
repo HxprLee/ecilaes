@@ -1,4 +1,5 @@
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide SearchFilter;
+import 'package:youtube_explode_dart/youtube_explode_dart.dart'
+    hide SearchFilter;
 import '../models/song.dart';
 import 'YoutubeDatasource.dart';
 
@@ -24,8 +25,13 @@ class YoutubeService {
   }
 
   /// Generic YouTube Music search with filter. Returns raw maps.
-  Future<List<Map<String, dynamic>>> search(String query, {SearchFilter? filter}) async {
-    return youtubeDatasource.search(query, filter: filter);
+  /// Set [limit] to request more than the default 20 results.
+  Future<List<Map<String, dynamic>>> search(
+    String query, {
+    SearchFilter? filter,
+    int limit = 20,
+  }) async {
+    return youtubeDatasource.search(query, filter: filter, limit: limit);
   }
 
   /// Extracts the direct audio stream URL for a given YouTube Video ID.
@@ -37,15 +43,16 @@ class YoutubeService {
 
     // Try clients from most to least MPV-compatible
     final clients = <YoutubeApiClient>[
-      YoutubeApiClient.androidVr,      // Usually direct and most reliable in logs
-      iosClient,                       // Direct signed URLs, no proxy
-      YoutubeApiClient.tv,             // Also direct, no proxy
-      YoutubeApiClient.android,        // May use localhost proxy on v3
+      YoutubeApiClient.androidVr, // Usually direct and most reliable in logs
+      iosClient, // Direct signed URLs, no proxy
+      YoutubeApiClient.tv, // Also direct, no proxy
+      YoutubeApiClient.android, // May use localhost proxy on v3
     ];
 
     for (final client in clients) {
       final clientName =
-          (client.payload['context']?['client']?['clientName'] as String?) ?? 'Unknown';
+          (client.payload['context']?['client']?['clientName'] as String?) ??
+          'Unknown';
       try {
         print('YouTube: trying client $clientName...');
         final manifest = await _yt.videos.streamsClient.getManifest(
@@ -69,12 +76,15 @@ class YoutubeService {
 
         final url = chosen.url.toString();
         // Reject localhost proxy URLs — they won't work with MPV
-        if (url.startsWith('http://127.') || url.startsWith('http://localhost')) {
+        if (url.startsWith('http://127.') ||
+            url.startsWith('http://localhost')) {
           print('YouTube: $clientName returned proxy URL, skipping...');
           continue;
         }
 
-        print('YouTube: ✓ using $clientName | ${chosen.codec.mimeType} @ ${chosen.bitrate}');
+        print(
+          'YouTube: ✓ using $clientName | ${chosen.codec.mimeType} @ ${chosen.bitrate}',
+        );
         // Store for UI display in the player badge
         lastStreamMimeType = chosen.codec.mimeType;
         // Bitrate comes as bps e.g. 127520 -> 127 kbps

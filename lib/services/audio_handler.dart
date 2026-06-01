@@ -7,6 +7,7 @@ import 'package:home_widget/home_widget.dart';
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
+import '../signals/queue_signal.dart';
 import 'album_art_cache.dart';
 import 'audio_cache_service.dart';
 import 'playback_history_service.dart';
@@ -37,8 +38,14 @@ class MyAudioHandler extends BaseAudioHandler {
   bool _hasRecordedCurrent = false;
   String? _lastTrackId;
 
+  // Tracks actual playback order for session history (excludes unplayed songs when jumping around)
+  final List<String> _sessionPlayedOrder = [];
+
   // Gapless playback — instant switch mode (no ConcatenatingAudioSource)
   bool _gaplessMode = false;
+
+  // Radio mode: prevents concurrent fill operations
+  bool _isFillingRadio = false;
 
   // Audio normalization
   bool _normalizationEnabled = false;
@@ -47,6 +54,67 @@ class MyAudioHandler extends BaseAudioHandler {
 
   MyAudioHandler() {
     _init();
+  }
+
+  void _syncQueueSignal() {
+    final isShuffled = _shuffleMode == AudioServiceShuffleMode.all;
+    final effectiveIndex = isShuffled
+        ? _shuffledIndices.indexOf(_currentIndex)
+        : _currentIndex;
+    final effectiveQueue = isShuffled && _shuffledIndices.isNotEmpty
+        ? _shuffledIndices.map((i) => queue.value[i]).toList()
+        : queue.value;
+
+    // Build upNext from queue items after current index
+    final upNextPaths = effectiveIndex < effectiveQueue.length - 1
+        ? effectiveQueue.sublist(effectiveIndex + 1).map((i) => i.id).toList()
+        : <String>[];
+
+    // Use actual playback order for history (not position-based)
+    final historyPaths = _sessionPlayedOrder.toList();
+
+    queueSignal.updateFromQueueAndHistory(
+      upNext: upNextPaths,
+      history: historyPaths,
+    );
+
+    // Auto-fill: if radio mode is on and queue is running low, fetch more
+    if (audioSignal.isRadioMode.value && mediaItem.value != null) {
+      final remaining = queue.value.length - _currentIndex - 1;
+      if (remaining <= 3) {
+        _fillRadioQueue();
+      }
+    }
+  }
+
+  Future<void> _fillRadioQueue() async {
+    if (_isFillingRadio) return;
+    final current = mediaItem.value;
+    if (current == null || !current.id.startsWith('yt:')) return;
+
+    _isFillingRadio = true;
+    try {
+      final videoId = current.id.substring(3);
+      final songs = await youtubeDatasource.getRadioSongs(videoId);
+      audioSignal.cacheRadioSongs(songs);
+      for (final song in songs) {
+        final songVideoId = song.path.startsWith('yt:') ? song.path.substring(3) : '';
+        final artUri = Uri.parse(youtubeDatasource.getArtworkUrl(songVideoId));
+        final mediaItem = MediaItem(
+          id: song.path,
+          album: song.album ?? 'YouTube Music',
+          title: song.title,
+          artist: song.artist,
+          duration: song.duration,
+          artUri: artUri,
+          extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
+        );
+        await addQueueItem(mediaItem);
+      }
+      print('RADIO_DEBUG: Filled queue with ${songs.length} radio songs');
+    } finally {
+      _isFillingRadio = false;
+    }
   }
 
   Future<void> _init() async {
@@ -234,6 +302,9 @@ class MyAudioHandler extends BaseAudioHandler {
     // Initialize album art cache
     await _artCache.init();
 
+    // Reset session playback order when switching playlists
+    _sessionPlayedOrder.clear();
+
     // Store gain values for normalization
     _gainMap.clear();
     for (final song in songs) {
@@ -268,6 +339,7 @@ class MyAudioHandler extends BaseAudioHandler {
     queue.add(mediaItems);
     _currentIndex = 0;
     _shuffledIndices = [];
+    _syncQueueSignal();
 
     // Refresh gapless setting
     _gaplessMode = settingsSignal.gaplessPlayback.value;
@@ -336,6 +408,7 @@ class MyAudioHandler extends BaseAudioHandler {
     }
 
     queue.add(newQueue);
+    _syncQueueSignal();
   }
 
   @override
@@ -409,6 +482,7 @@ class MyAudioHandler extends BaseAudioHandler {
     }
 
     queue.add(currentQueue);
+    _syncQueueSignal();
   }
 
   void _generateShuffledIndices() {
@@ -485,6 +559,7 @@ class MyAudioHandler extends BaseAudioHandler {
       _currentIndex = _getNextIndex();
     }
     await _playCurrent();
+    _syncQueueSignal();
   }
 
   @override
@@ -492,14 +567,15 @@ class MyAudioHandler extends BaseAudioHandler {
     if (queue.value.isEmpty) return;
     _currentIndex = _getPreviousIndex();
     await _playCurrent();
+    _syncQueueSignal();
   }
 
-  @override
   Future<void> playMediaItem(MediaItem mediaItem) async {
     final index = queue.value.indexWhere((item) => item.id == mediaItem.id);
     if (index != -1) {
       _currentIndex = index;
       await _playCurrent();
+      _syncQueueSignal();
     }
   }
 
@@ -509,7 +585,16 @@ class MyAudioHandler extends BaseAudioHandler {
     if (index != -1) {
       _currentIndex = index;
       await _playCurrent();
+      _syncQueueSignal();
     }
+  }
+
+  /// Update _currentIndex without changing what is currently playing.
+  /// Used after a queue reorder to keep the now-playing song at the right index.
+  /// Does NOT call _syncQueueSignal — the UI signal was already updated by the reorder.
+  void updateQueueIndex(int newIndex) {
+    _currentIndex = newIndex;
+    _updateWidget();
   }
 
   Future<void> _playCurrent() async {
@@ -524,6 +609,11 @@ class MyAudioHandler extends BaseAudioHandler {
     _loadingCompleter = thisLoad;
 
     var item = queue.value[_currentIndex];
+
+    // Record this song in session playback order for history tracking
+    final path = item.id;
+    _sessionPlayedOrder.remove(path);
+    _sessionPlayedOrder.insert(0, path);
 
     // Lazily load art URI for MPRIS
     if (!item.id.startsWith('yt:') && item.artUri == null && item.extras?['hasAlbumArt'] == true) {

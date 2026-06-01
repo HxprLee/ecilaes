@@ -9,6 +9,7 @@ import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 import '../services/album_art_cache.dart';
 import '../signals/audio_signal.dart';
+import '../signals/queue_signal.dart' as q;
 import './playlist_dialogs.dart';
 import './song_info_dialog.dart';
 import '../signals/settings_signal.dart';
@@ -17,6 +18,7 @@ import '../theme/app_theme_extensions.dart';
 import 'package:marquee/marquee.dart';
 import 'song_actions_sheet.dart';
 import 'player/queue_view.dart';
+import 'player/lyrics_sheet.dart';
 import '../services/youtube_service.dart';
 import 'mobile_lyrics_view.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
@@ -187,9 +189,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         });
 
     // Listen to song changes via effect to trigger metadata/art loading
-    _effectDisposals.add(effect(() {
-      _handleSongChange(audioSignal.currentSong.value);
-    }));
+    _effectDisposals.add(
+      effect(() {
+        _handleSongChange(audioSignal.currentSong.value);
+      }),
+    );
 
     _visibilityController = AnimationController(
       vsync: this,
@@ -200,13 +204,16 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    _effectDisposals.add(effect(() {
-      if (audioSignal.showLyrics.value) {
-        _lyricsController.forward();
-      } else {
-        _lyricsController.reverse();
-      }
-    }));
+    _effectDisposals.add(
+      effect(() {
+        if (audioSignal.showLyrics.value ||
+            audioSignal.showQueueInPlayer.value) {
+          _lyricsController.forward();
+        } else {
+          _lyricsController.reverse();
+        }
+      }),
+    );
 
     _dragResetController =
         AnimationController(
@@ -228,45 +235,51 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     }
 
     // specific listener for song changes to drive visibility
-    _effectDisposals.add(effect(() {
-      final song = audioSignal.currentSong.value;
-      // On desktop, we always want the player to be visible
-      final isDesktop =
-          !kIsWeb &&
-          (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
+    _effectDisposals.add(
+      effect(() {
+        final song = audioSignal.currentSong.value;
+        // On desktop, we always want the player to be visible
+        final isDesktop =
+            !kIsWeb &&
+            (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
 
-      if (song != null || isDesktop) {
-        _visibilityController.forward();
-      } else {
-        _visibilityController.reverse();
-      }
-    }));
+        if (song != null || isDesktop) {
+          _visibilityController.forward();
+        } else {
+          _visibilityController.reverse();
+        }
+      }),
+    );
 
     // Listener for back button minimization from shell
-    _effectDisposals.add(effect(() {
-      final _ = audioSignal.minimizePlayerTrigger.value;
-      if (_controller.value > 0) {
-        _controller.animateTo(0.0, curve: Curves.fastLinearToSlowEaseIn);
-      }
-    }));
+    _effectDisposals.add(
+      effect(() {
+        final _ = audioSignal.minimizePlayerTrigger.value;
+        if (_controller.value > 0) {
+          _controller.animateTo(0.0, curve: Curves.fastLinearToSlowEaseIn);
+        }
+      }),
+    );
 
     // Listener for Immersion Mode
-    _effectDisposals.add(effect(() {
-      final showLyrics = audioSignal.showLyrics.value;
-      final isPlaying = audioSignal.isPlaying.value;
+    _effectDisposals.add(
+      effect(() {
+        final showLyrics = audioSignal.showLyrics.value;
+        final isPlaying = audioSignal.isPlaying.value;
 
-      if (showLyrics && isPlaying) {
-        _resetImmersionTimer();
-      } else {
-        // Force show and cancel timer when lyrics are dismissed OR playback is paused
-        _immersionTimer?.cancel();
-        if (mounted && !_showControls) {
-          setState(() {
-            _showControls = true;
-          });
+        if (showLyrics && isPlaying) {
+          _resetImmersionTimer();
+        } else {
+          // Force show and cancel timer when lyrics are dismissed OR playback is paused
+          _immersionTimer?.cancel();
+          if (mounted && !_showControls) {
+            setState(() {
+              _showControls = true;
+            });
+          }
         }
-      }
-    }));
+      }),
+    );
   }
 
   @override
@@ -559,10 +572,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           // --- Layout Interpolation ---
           // Clamping and Centering Logic for Desktop
           const paneGap_Value = 48.0;
-          final maxPaneWidth_Value = ((screenWidth - paneGap_Value - 64.0) / 2).clamp(
-            0.0,
-            600.0,
-          );
+          final maxPaneWidth_Value = ((screenWidth - paneGap_Value - 64.0) / 2)
+              .clamp(0.0, 600.0);
 
           // Calculate the target width for the player part
           final playerWidth = isDesktopLayoutMode
@@ -577,7 +588,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               _lastPadding != MediaQuery.of(context).padding ||
               _lastIsCompact != isCompactLayout ||
               _lastLyricsValue != rawLyricsValue) {
-            
             final rawLayout = _calculateExpandedLayout(
               playerWidth,
               screenHeight,
@@ -757,7 +767,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                         boxShadow: [
                           if (value > 0)
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
+                              color: Colors.black.withValues(alpha: 0.3),
                               blurRadius: 10,
                               offset: const Offset(0, -2),
                             ),
@@ -776,47 +786,71 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                           Positioned.fill(
                             child: Stack(
                               children: [
-                                // 2. Lyrics Body
+                                // 2. Lyrics / Queue Body
                                 // Mobile: overlay that fades in/out
                                 // Desktop Layout: side-by-side panel on the right half of the group
-                                if (!isDesktopLayoutMode &&
-                                    rawLyricsValue > 0.0)
-                                  Opacity(
-                                    opacity: rawLyricsValue,
-                                    child: IgnorePointer(
-                                      ignoring: rawLyricsValue < 0.8,
-                                      child: _buildLyricsBody(
-                                        currentSong,
-                                        screenWidth,
-                                        expandedLayout,
-                                        isDesktopLayout: false,
-                                      ),
-                                    ),
-                                  ),
-                                if (isDesktopLayoutMode && rawLyricsValue > 0.0)
-                                  Positioned(
-                                    top: 0,
-                                    bottom: 0,
-                                    // Slide in from the right relative to the group
-                                    left: lerpDouble(
-                                      screenWidth,
-                                      groupLeft + maxPaneWidth + paneGap,
-                                      rawLyricsValue,
-                                    )!,
-                                    width: maxPaneWidth,
-                                    child: Opacity(
-                                      opacity: rawLyricsValue,
+                                if (!isDesktopLayoutMode)
+                                  Watch((context) {
+                                    if (rawLyricsValue <= 0)
+                                      return const SizedBox.shrink();
+                                    return Opacity(
+                                      opacity: rawLyricsValue.clamp(0.0, 1.0),
                                       child: IgnorePointer(
                                         ignoring: rawLyricsValue < 0.8,
-                                        child: _buildLyricsBody(
-                                          currentSong,
-                                          maxPaneWidth,
-                                          expandedLayout,
-                                          isDesktopLayout: true,
+                                        child:
+                                            audioSignal.showQueueInPlayer.value
+                                            ? _buildQueueBody(
+                                                currentSong,
+                                                screenWidth,
+                                                expandedLayout,
+                                                isDesktopLayout: false,
+                                              )
+                                            : _buildLyricsBody(
+                                                currentSong,
+                                                screenWidth,
+                                                expandedLayout,
+                                                isDesktopLayout: false,
+                                              ),
+                                      ),
+                                    );
+                                  }),
+                                if (isDesktopLayoutMode)
+                                  Watch((context) {
+                                    if (rawLyricsValue <= 0)
+                                      return const SizedBox.shrink();
+                                    return Positioned(
+                                      top: 0,
+                                      bottom: 0,
+                                      left: lerpDouble(
+                                        screenWidth,
+                                        groupLeft + maxPaneWidth + paneGap,
+                                        rawLyricsValue,
+                                      )!,
+                                      width: maxPaneWidth,
+                                      child: Opacity(
+                                        opacity: rawLyricsValue.clamp(0.0, 1.0),
+                                        child: IgnorePointer(
+                                          ignoring: rawLyricsValue < 0.8,
+                                          child:
+                                              audioSignal
+                                                  .showQueueInPlayer
+                                                  .value
+                                              ? _buildQueueBody(
+                                                  currentSong,
+                                                  maxPaneWidth,
+                                                  expandedLayout,
+                                                  isDesktopLayout: true,
+                                                )
+                                              : _buildLyricsBody(
+                                                  currentSong,
+                                                  maxPaneWidth,
+                                                  expandedLayout,
+                                                  isDesktopLayout: true,
+                                                ),
                                         ),
                                       ),
-                                    ),
-                                  ),
+                                    );
+                                  }),
 
                                 // 3. Album Art
                                 Positioned(
@@ -926,7 +960,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     });
   }
 
-
   Widget _buildMorphingSeekbar(
     bool isMobile,
     double value,
@@ -939,8 +972,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   ) {
     if (value < 0.9) return const SizedBox.shrink();
 
-    // Fade out seekbar if lyrics are showing AND they exist
-    final effectLyricsOpacity = hasLyrics ? lyricsValue : 0.0;
+    // Fade out seekbar if lyrics or queue are showing
+    final hasLyricsOrQueue = hasLyrics || audioSignal.showQueueInPlayer.value;
+    final effectLyricsOpacity = hasLyricsOrQueue ? lyricsValue : 0.0;
     final seekbarOpacity =
         ((value - 0.9) * 10).clamp(0.0, 1.0) * (1.0 - effectLyricsOpacity);
 
@@ -1237,7 +1271,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     double value,
   ) {
     final title = currentSong?.title ?? 'No song playing';
-    
+
     return Column(
       spacing: value <= 0.5 ? 0 : 1,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1262,21 +1296,29 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             }
 
             return SizedBox(
-              height: (titleStyle.fontSize ?? 16.0) * (titleStyle.height ?? 1.2),
-              child: Marquee(
-                text: title,
-                style: titleStyle,
-                scrollAxis: Axis.horizontal,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                blankSpace: 50.0,
-                velocity: isPlaying ? 30.0 : 0.0,
-                pauseAfterRound: const Duration(seconds: 4),
-                startPadding: 0.0,
-                accelerationDuration: const Duration(milliseconds: 500),
-                accelerationCurve: Curves.linear,
-                decelerationDuration: const Duration(milliseconds: 500),
-                decelerationCurve: Curves.easeOut,
-              ),
+              height:
+                  (titleStyle.fontSize ?? 16.0) * (titleStyle.height ?? 1.2),
+              child: isPlaying
+                  ? Marquee(
+                      text: title,
+                      style: titleStyle,
+                      scrollAxis: Axis.horizontal,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      blankSpace: 50.0,
+                      velocity: 30.0,
+                      pauseAfterRound: const Duration(seconds: 4),
+                      startPadding: 0.0,
+                      accelerationDuration: const Duration(milliseconds: 500),
+                      accelerationCurve: Curves.linear,
+                      decelerationDuration: const Duration(milliseconds: 500),
+                      decelerationCurve: Curves.easeOut,
+                    )
+                  : Text(
+                      title,
+                      style: titleStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
             );
           },
         ),
@@ -1359,12 +1401,14 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                         ),
                     ],
                   ),
-                  child: ClipRRect(
+                    child: ClipRRect(
                     borderRadius: BorderRadius.circular(value == 0 ? 50 : 8),
                     child: isYoutube
                         ? Image.network(
                             ytThumbnailUrl!,
                             fit: BoxFit.cover,
+                            cacheWidth: 400,
+                            cacheHeight: 400,
                             errorBuilder: (c, e, s) => Container(
                               color: Colors.grey[800],
                               child: Icon(
@@ -1374,7 +1418,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                             ),
                           )
                         : _currentAlbumArt != null
-                        ? Image.file(_currentAlbumArt!, fit: BoxFit.cover)
+                        ? Image.file(
+                            _currentAlbumArt!,
+                            fit: BoxFit.cover,
+                            cacheWidth: 400,
+                            cacheHeight: 400,
+                          )
                         : (value == 0)
                         ? Center(
                             child: FaIcon(
@@ -1433,7 +1482,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
       if (isCompact) {
         startRight = 0.0;
-        startWidth = (miniButtons.length * 48.0 + (miniButtons.length - 1) * 2.0).clamp(48.0, 200.0);
+        startWidth =
+            (miniButtons.length * 48.0 + (miniButtons.length - 1) * 2.0).clamp(
+              48.0,
+              200.0,
+            );
         startLeft = collapsedWidth - startRight - startWidth;
       } else {
         startLeft = 0;
@@ -1469,43 +1522,61 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     for (final buttonId in allButtons) ...[
-                      Builder(builder: (context) {
-                        final inMini = miniButtons.contains(buttonId);
-                        final inExpanded = expandedButtons.contains(buttonId);
+                      Builder(
+                        builder: (context) {
+                          final inMini = miniButtons.contains(buttonId);
+                          final inExpanded = expandedButtons.contains(buttonId);
 
-                        // Calculate opacity
-                        double opacity;
-                        if (inMini && inExpanded) {
-                          opacity = 1.0; // Always visible
-                        } else if (inMini) {
-                          opacity = (1.0 - value * 2).clamp(0.0, 1.0); // Fade out
-                        } else {
-                          opacity = ((value - 0.5) * 2).clamp(0.0, 1.0); // Fade in
-                        }
+                          // Calculate opacity
+                          double opacity;
+                          if (inMini && inExpanded) {
+                            opacity = 1.0; // Always visible
+                          } else if (inMini) {
+                            opacity = (1.0 - value * 2).clamp(
+                              0.0,
+                              1.0,
+                            ); // Fade out
+                          } else {
+                            opacity = ((value - 0.5) * 2).clamp(
+                              0.0,
+                              1.0,
+                            ); // Fade in
+                          }
 
-                        if (opacity <= 0) return const SizedBox.shrink();
+                          if (opacity <= 0) return const SizedBox.shrink();
 
-                        // Calculate size
-                        final miniSize = inMini ? (isCompact && buttonId == 'play_pause' ? 0.0 : 24.0) : 0.0;
-                        final expandedSize = inExpanded ? (buttonId == 'play_pause' ? 56.0 : 40.0) : 0.0;
-                        final size = lerpDouble(miniSize, expandedSize, value)!;
+                          // Calculate size
+                          final miniSize = inMini
+                              ? (isCompact && buttonId == 'play_pause'
+                                    ? 0.0
+                                    : 24.0)
+                              : 0.0;
+                          final expandedSize = inExpanded
+                              ? (buttonId == 'play_pause' ? 56.0 : 40.0)
+                              : 0.0;
+                          final size = lerpDouble(
+                            miniSize,
+                            expandedSize,
+                            value,
+                          )!;
 
-                        if (size < 1) return const SizedBox.shrink();
+                          if (size < 1) return const SizedBox.shrink();
 
-                        return Opacity(
-                          opacity: opacity,
-                          child: _buildPlayerButtonById(
-                            context: context,
-                            id: buttonId,
-                            iconSize: size,
-                            isPlaying: isPlaying,
-                            hasSong: hasSong,
-                            buttonPadding: buttonPadding,
-                            isCompact: isCompact,
-                            value: value,
-                          ),
-                        );
-                      }),
+                          return Opacity(
+                            opacity: opacity,
+                            child: _buildPlayerButtonById(
+                              context: context,
+                              id: buttonId,
+                              iconSize: size,
+                              isPlaying: isPlaying,
+                              hasSong: hasSong,
+                              buttonPadding: buttonPadding,
+                              isCompact: isCompact,
+                              value: value,
+                            ),
+                          );
+                        },
+                      ),
                     ],
                   ],
                 ),
@@ -1539,14 +1610,20 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           splashColor: value > 0.05 ? Colors.transparent : null,
           highlightColor: value > 0.05 ? Colors.transparent : null,
           hoverColor: value > 0.05 ? Colors.transparent : null,
-          icon: FaIcon(FontAwesomeIcons.backwardStep, color: color, size: iconSize),
+          icon: FaIcon(
+            FontAwesomeIcons.backwardStep,
+            color: color,
+            size: iconSize,
+          ),
           onPressed: hasSong ? audioSignal.skipPrevious : null,
         );
       case 'play_pause':
         return Container(
           alignment: Alignment.center,
           padding: EdgeInsets.symmetric(
-            horizontal: Platform.isAndroid || Platform.isIOS ? lerpDouble(0, 6, value)! : 6,
+            horizontal: Platform.isAndroid || Platform.isIOS
+                ? lerpDouble(0, 6, value)!
+                : 6,
           ),
           child: IconButton(
             padding: buttonPadding,
@@ -1577,7 +1654,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           splashColor: value > 0.05 ? Colors.transparent : null,
           highlightColor: value > 0.05 ? Colors.transparent : null,
           hoverColor: value > 0.05 ? Colors.transparent : null,
-          icon: FaIcon(FontAwesomeIcons.forwardStep, color: color, size: iconSize),
+          icon: FaIcon(
+            FontAwesomeIcons.forwardStep,
+            color: color,
+            size: iconSize,
+          ),
           onPressed: hasSong ? audioSignal.skipNext : null,
         );
       default:
@@ -1587,6 +1668,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           id: id,
           iconSize: iconSize,
           currentSong: audioSignal.currentSong.value,
+          isExpanded: false,
         );
     }
   }
@@ -1599,98 +1681,99 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     bool isCompact,
   ) {
     return Watch((context) {
-    // Start State (Desktop Bar)
-    // Right aligned: Shuffle, Repeat, List, More
-    // Total width approx: 4 * 40 (icon + padding) + 3 * 12 (gap) = 160 + 36 = 196
-    // Start Right = 20
-    // Start Top = (80 - 48) / 2 = 16 - 1 = 15
+      // Start State (Desktop Bar)
+      // Right aligned: Shuffle, Repeat, List, More
+      // Total width approx: 4 * 40 (icon + padding) + 3 * 12 (gap) = 160 + 36 = 196
+      // Start Right = 20
+      // Start Top = (80 - 48) / 2 = 16 - 1 = 15
 
-    final startRight = 16.0;
-    final startTop = 15.0; // Moved up by 1px
-    
-    // IconButton is usually 48x48, spacing is 12
-    final actionsCount = settingsSignal.playerBarActions.value.length;
-    final maxActionsWidth = isCompact ? (collapsedWidth * 0.45) : 600.0;
-    final startWidth = (actionsCount * 48.0 + (actionsCount - 1) * 12.0).clamp(0.0, maxActionsWidth);
-    final startLeft = collapsedWidth - startRight - startWidth;
+      final startRight = 16.0;
+      final startTop = 15.0; // Moved up by 1px
 
-    // End State (Expanded)
-    // TargetRect is bottom anchored
+      // IconButton is usually 48x48, spacing is 12
+      final actionsCount = settingsSignal.playerBarActions.value.length;
+      final maxActionsWidth = isCompact ? (collapsedWidth * 0.45) : 600.0;
+      final startWidth = (actionsCount * 48.0 + (actionsCount - 1) * 12.0)
+          .clamp(0.0, maxActionsWidth);
+      final startLeft = collapsedWidth - startRight - startWidth;
 
-    // Interpolate Position
-    final currentLeft = lerpDouble(startLeft, targetRect.left, value)!;
-    final currentTop = lerpDouble(startTop, targetRect.top, value)!;
-    final currentWidth = lerpDouble(startWidth, targetRect.width, value)!;
-    final currentHeight = lerpDouble(48, targetRect.height, value)!;
+      // End State (Expanded)
+      // TargetRect is bottom anchored
 
-    // Opacity for Format Badge (Only visible in expanded)
-    final badgeOpacity = ((value - 0.5) * 2).clamp(0.0, 1.0);
+      // Interpolate Position
+      final currentLeft = lerpDouble(startLeft, targetRect.left, value)!;
+      final currentTop = lerpDouble(startTop, targetRect.top, value)!;
+      final currentWidth = lerpDouble(startWidth, targetRect.width, value)!;
+      final currentHeight = lerpDouble(48, targetRect.height, value)!;
 
-    // Opacity for Actions (Always visible on large Desktop bar, fade in on Compact/Mobile)
-    final actionsOpacity = isCompact ? value : 1.0;
+      // Opacity for Format Badge (Only visible in expanded)
+      final badgeOpacity = ((value - 0.5) * 2).clamp(0.0, 1.0);
 
-    // Interpolate Icon Size
-    final iconSize = lerpDouble(24, 24, value)!;
+      // Opacity for Actions (Always visible on large Desktop bar, fade in on Compact/Mobile)
+      final actionsOpacity = isCompact ? value : 1.0;
 
-    // Interpolate Spacing
-    final spacing = lerpDouble(12, 18, value)!;
+      // Interpolate Icon Size
+      final iconSize = lerpDouble(24, 24, value)!;
 
-    final show = _showControls || value < 0.9;
+      // Interpolate Spacing
+      final spacing = lerpDouble(12, 18, value)!;
 
-    return Positioned(
-      top: currentTop,
-      left: currentLeft,
-      width: currentWidth,
-      height: currentHeight,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 150),
-        opacity: show ? actionsOpacity : 0.0,
-        child: IgnorePointer(
-          ignoring: (isCompact && value < 0.05) || !show,
-          child: Listener(
-            onPointerDown: (_) => _resetImmersionTimer(),
-            child: Stack(
-              alignment: Alignment.bottomCenter, // Align to bottom
-              children: [
-                // Format Badge (Positioned above buttons)
-                if (currentSong != null)
-                  Positioned(
-                    bottom: 60, // 48px (buttons) + 12px (gap)
-                    child: Opacity(
-                      opacity: badgeOpacity,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.secondary,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.secondary.withValues(alpha: 0.2),
+      final show = _showControls || value < 0.9;
+
+      return Positioned(
+        top: currentTop,
+        left: currentLeft,
+        width: currentWidth,
+        height: currentHeight,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 150),
+          opacity: show ? actionsOpacity : 0.0,
+          child: IgnorePointer(
+            ignoring: (isCompact && value < 0.05) || !show,
+            child: Listener(
+              onPointerDown: (_) => _resetImmersionTimer(),
+              child: Stack(
+                alignment: Alignment.bottomCenter, // Align to bottom
+                children: [
+                  // Format Badge (Positioned above buttons)
+                  if (currentSong != null)
+                    Positioned(
+                      bottom: 60, // 48px (buttons) + 12px (gap)
+                      child: Opacity(
+                        opacity: badgeOpacity,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
                           ),
-                        ),
-                        child: Text(
-                          _codecBitrate ?? '...',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSecondary,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 10,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.secondary,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.secondary.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Text(
+                            _codecBitrate ?? '...',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSecondary,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 10,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
 
-                // Action Buttons (Pinned to bottom)
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: 48,
-                  child: Row(
+                  // Action Buttons (Pinned to bottom)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: 48,
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         for (int i = 0; i < actionsCount; i++) ...[
@@ -1700,16 +1783,17 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                             id: settingsSignal.playerBarActions.value[i],
                             iconSize: iconSize,
                             currentSong: currentSong,
+                            isExpanded: value >= 1.0,
                           ),
                         ],
                       ],
                     ),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
       );
     });
   }
@@ -1791,11 +1875,91 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     });
   }
 
+  Widget _buildQueueBody(
+    Song? currentSong,
+    double screenWidth,
+    dynamic expandedLayout, {
+    bool isDesktopLayout = false,
+  }) {
+    if (currentSong == null) return const SizedBox.shrink();
+
+    final topPadding = isDesktopLayout ? 80.0 : (expandedLayout.art.top + 46.0);
+
+    return Watch((context) {
+      final upNextPaths = q.queueSignal.upNext.value;
+      final historyPaths = q.queueSignal.history.value;
+
+      final upNextSongs = upNextPaths
+          .map((p) => audioSignal.resolveSong(p))
+          .toList();
+      final historySongs = historyPaths.reversed
+          .map((p) => audioSignal.resolveSong(p))
+          .toList();
+
+      final isEmpty = upNextSongs.isEmpty && historySongs.isEmpty;
+
+      final bottomEdge = isDesktopLayout
+          ? MediaQuery.of(context).size.height
+          : expandedLayout.controls.top;
+
+      final availableHeight = bottomEdge - topPadding;
+
+      if (isEmpty) {
+        return Padding(
+          padding: EdgeInsets.only(top: topPadding),
+          child: SizedBox(
+            width: screenWidth,
+            height: availableHeight,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FaIcon(
+                    FontAwesomeIcons.music,
+                    size: 40,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.secondary.withValues(alpha: 0.2),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Queue is empty',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      final content = _ExpandedPlayerQueueList(
+        upNextSongs: upNextSongs,
+        historySongs: historySongs,
+        currentSongPath: currentSong.path,
+      );
+
+      return Padding(
+        padding: EdgeInsets.only(top: topPadding),
+        child: SizedBox(
+          width: screenWidth,
+          height: availableHeight,
+          child: content,
+        ),
+      );
+    });
+  }
+
   Widget _buildActionById({
     required BuildContext context,
     required String id,
     required double iconSize,
     Song? currentSong,
+    bool isExpanded = true,
   }) {
     switch (id) {
       case 'shuffle':
@@ -1806,7 +1970,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               FontAwesomeIcons.shuffle,
               color: isShuffle
                   ? Theme.of(context).colorScheme.secondary
-                  : Theme.of(context).colorScheme.secondary.withValues(alpha: 0.4),
+                  : Theme.of(
+                      context,
+                    ).colorScheme.secondary.withValues(alpha: 0.4),
               size: iconSize,
             ),
             onPressed: audioSignal.toggleShuffle,
@@ -1825,7 +1991,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   FontAwesomeIcons.repeat,
                   color: !isNone
                       ? Theme.of(context).colorScheme.secondary
-                      : Theme.of(context).colorScheme.secondary.withValues(alpha: 0.4),
+                      : Theme.of(
+                          context,
+                        ).colorScheme.secondary.withValues(alpha: 0.4),
                   size: iconSize,
                 ),
                 if (isOne)
@@ -1853,9 +2021,33 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             onPressed: audioSignal.toggleRepeat,
           );
         });
+      case 'radio':
+        return Watch((context) {
+          final isRadio = audioSignal.isRadioMode.value;
+          final isYtSong = audioSignal.currentSong.value?.path.startsWith('yt:') ?? false;
+          return IconButton(
+            icon: Icon(
+              Icons.radio,
+              color: isRadio
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.secondary,
+              size: iconSize,
+            ),
+            onPressed: isYtSong && audioSignal.currentSong.value != null
+                ? () {
+                    if (isRadio) {
+                      audioSignal.stopRadio();
+                    } else {
+                      audioSignal.startRadio(audioSignal.currentSong.value!);
+                    }
+                  }
+                : null,
+          );
+        });
       case 'lyrics':
         return Watch((context) {
           final showLyrics = audioSignal.showLyrics.value;
+          final showQueue = audioSignal.showQueueInPlayer.value;
           return IconButton(
             icon: FaIcon(
               FontAwesomeIcons.music,
@@ -1865,19 +2057,43 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               size: iconSize,
             ),
             onPressed: () {
-              audioSignal.showLyrics.value = !showLyrics;
+              if (!isExpanded) {
+                showLyricsSheet(context);
+              } else if (showLyrics) {
+                audioSignal.showLyrics.value = false;
+              } else if (showQueue) {
+                audioSignal.showQueueInPlayer.value = false;
+              } else {
+                audioSignal.showLyrics.value = true;
+              }
             },
           );
         });
       case 'queue':
-        return IconButton(
-          icon: FaIcon(
-            FontAwesomeIcons.listUl,
-            color: Theme.of(context).colorScheme.secondary,
-            size: iconSize,
-          ),
-          onPressed: () => showQueueSheet(context),
-        );
+        return Watch((context) {
+          final showLyrics = audioSignal.showLyrics.value;
+          final showQueue = audioSignal.showQueueInPlayer.value;
+          return IconButton(
+            icon: FaIcon(
+              FontAwesomeIcons.listUl,
+              color: showQueue
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.secondary,
+              size: iconSize,
+            ),
+            onPressed: () {
+              if (!isExpanded) {
+                showQueueSheet(context);
+              } else if (showQueue) {
+                audioSignal.showQueueInPlayer.value = false;
+              } else if (showLyrics) {
+                audioSignal.showLyrics.value = false;
+              } else {
+                audioSignal.showQueueInPlayer.value = true;
+              }
+            },
+          );
+        });
       case 'more':
         return IconButton(
           icon: FaIcon(
@@ -1897,47 +2113,91 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         );
       case 'add_to_playlist':
         return IconButton(
-          icon: Icon(Icons.playlist_add, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
-          onPressed: currentSong != null ? () => PlaylistPickerDialog.show(context, song: currentSong) : null,
+          icon: Icon(
+            Icons.playlist_add,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize + 4,
+          ),
+          onPressed: currentSong != null
+              ? () => PlaylistPickerDialog.show(context, song: currentSong)
+              : null,
         );
       case 'play_next':
         return IconButton(
-          icon: Icon(Icons.playlist_play, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
-          onPressed: currentSong != null ? () => audioSignal.playNext(currentSong) : null,
+          icon: Icon(
+            Icons.playlist_play,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize + 4,
+          ),
+          onPressed: currentSong != null
+              ? () => audioSignal.playNext(currentSong)
+              : null,
         );
       case 'add_to_queue':
         return IconButton(
-          icon: Icon(Icons.queue_music, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
-          onPressed: currentSong != null ? () => audioSignal.addToQueue(currentSong) : null,
+          icon: Icon(
+            Icons.queue_music,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize + 4,
+          ),
+          onPressed: currentSong != null
+              ? () => audioSignal.addToQueue(currentSong)
+              : null,
         );
       case 'go_to_album':
         return IconButton(
-          icon: Icon(Icons.album_outlined, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          icon: Icon(
+            Icons.album_outlined,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize + 4,
+          ),
           onPressed: () {},
         );
       case 'go_to_artist':
         return IconButton(
-          icon: Icon(Icons.person_outline, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          icon: Icon(
+            Icons.person_outline,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize + 4,
+          ),
           onPressed: () {},
         );
       case 'info':
         return IconButton(
-          icon: Icon(Icons.info_outline, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
-          onPressed: currentSong != null ? () => showSongInfoDialog(context, currentSong) : null,
+          icon: Icon(
+            Icons.info_outline,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize + 4,
+          ),
+          onPressed: currentSong != null
+              ? () => showSongInfoDialog(context, currentSong)
+              : null,
         );
       case 'share':
         return IconButton(
-          icon: Icon(Icons.share_outlined, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          icon: Icon(
+            Icons.share_outlined,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize + 4,
+          ),
           onPressed: () {},
         );
       case 'sleep_timer':
         return IconButton(
-          icon: Icon(Icons.timer_outlined, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          icon: Icon(
+            Icons.timer_outlined,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize + 4,
+          ),
           onPressed: () => showSleepTimerDialog(context),
         );
       case 'remove_from_playlist':
         return IconButton(
-          icon: Icon(Icons.playlist_remove, color: Theme.of(context).colorScheme.secondary, size: iconSize + 4),
+          icon: Icon(
+            Icons.playlist_remove,
+            color: Theme.of(context).colorScheme.secondary,
+            size: iconSize + 4,
+          ),
           onPressed: () {
             // How do we know which playlist we are in?
             // currentPlaylist signal holds it if we played from a playlist
@@ -1950,6 +2210,188 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       default:
         return const SizedBox.shrink();
     }
+  }
+}
+
+// ─── Expanded Player Queue List ───────────────────────────────────────────────
+
+class _ExpandedPlayerQueueList extends StatelessWidget {
+  final List<Song> upNextSongs;
+  final List<Song> historySongs;
+  final String? currentSongPath;
+
+  const _ExpandedPlayerQueueList({
+    required this.upNextSongs,
+    required this.historySongs,
+    this.currentSongPath,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      children: [
+        if (historySongs.isNotEmpty) ...[
+          _buildSection(
+            context,
+            title: 'Played',
+            count: historySongs.length,
+            songs: historySongs,
+            colorScheme: colorScheme,
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (upNextSongs.isNotEmpty)
+          _buildSection(
+            context,
+            title: 'Up Next',
+            count: upNextSongs.length,
+            songs: upNextSongs,
+            colorScheme: colorScheme,
+          ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildSection(
+    BuildContext context, {
+    required String title,
+    required int count,
+    required List<Song> songs,
+    required ColorScheme colorScheme,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: colorScheme.secondary.withValues(alpha: 0.6),
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '($count)',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: colorScheme.secondary.withValues(alpha: 0.35),
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+        ),
+        ...songs.map((song) => _buildSongTile(context, song)),
+      ],
+    );
+  }
+
+  Widget _buildSongTile(BuildContext context, Song song) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isCurrentSong = song.path == currentSongPath;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+      leading: SizedBox(
+        width: 48,
+        height: 48,
+        child: _buildArtwork(context, song),
+      ),
+      title: Text(
+        song.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: isCurrentSong
+              ? colorScheme.primary
+              : colorScheme.secondary.withValues(alpha: 0.85),
+          fontWeight: isCurrentSong ? FontWeight.w600 : FontWeight.w500,
+          fontSize: 15,
+        ),
+      ),
+      subtitle: Text(
+        song.artist,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: colorScheme.secondary.withValues(alpha: 0.55),
+          fontSize: 13,
+        ),
+      ),
+      onTap: () {
+        if (!isCurrentSong) {
+          audioSignal.playSong(song);
+        }
+      },
+    );
+  }
+
+  Widget _buildArtwork(BuildContext context, Song song) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        color: Colors.grey[800],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: _buildArtworkImage(context, song),
+      ),
+    );
+  }
+
+  Widget _buildArtworkImage(BuildContext context, Song song) {
+    if (!song.hasAlbumArt) {
+      return Center(
+        child: Icon(Icons.music_note, color: Colors.white54, size: 18),
+      );
+    }
+
+    if (song.path.startsWith('yt:')) {
+      final url = youtubeDatasource.getSongArtworkUrl(song);
+      return Image.network(
+        url,
+        fit: BoxFit.cover,
+        cacheWidth: 72,
+        cacheHeight: 72,
+        errorBuilder: (_, __, ___) => Center(
+          child: Icon(Icons.music_note, color: Colors.white54, size: 18),
+        ),
+      );
+    }
+
+    return Watch((context) {
+      final artDir = audioSignal.albumArtDir.value;
+      if (artDir == null) {
+        return Center(
+          child: Icon(Icons.music_note, color: Colors.white54, size: 18),
+        );
+      }
+      final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
+      final file = File(artPath);
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          cacheWidth: 72,
+          cacheHeight: 72,
+          errorBuilder: (_, __, ___) => Center(
+            child: Icon(Icons.music_note, color: Colors.white54, size: 18),
+          ),
+        );
+      }
+      return Center(
+        child: Icon(Icons.music_note, color: Colors.white54, size: 18),
+      );
+    });
   }
 }
 
@@ -1982,9 +2424,11 @@ class _PlayerBackground extends StatelessWidget {
                 // 1. Image Background (Blurred)
                 if (isBlurEnabled)
                   Positioned.fill(
-                    child: ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
-                      child: _buildBackgroundImage(context),
+                    child: RepaintBoundary(
+                      child: ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                        child: _buildBackgroundImage(context),
+                      ),
                     ),
                   ),
 
@@ -2016,16 +2460,24 @@ class _PlayerBackground extends StatelessWidget {
   Widget _buildBackgroundImage(BuildContext context) {
     final isYoutube = song.path.startsWith('yt:');
     if (isYoutube) {
-      final ytThumbnailUrl =
-          youtubeDatasource.getArtworkUrl(song.path.substring(3));
+      final ytThumbnailUrl = youtubeDatasource.getArtworkUrl(
+        song.path.substring(3),
+      );
       return Image.network(
         ytThumbnailUrl,
         fit: BoxFit.cover,
-        errorBuilder:
-            (c, e, s) => Container(color: Theme.of(context).colorScheme.surface),
+        cacheWidth: 256,
+        cacheHeight: 256,
+        errorBuilder: (c, e, s) =>
+            Container(color: Theme.of(context).colorScheme.surface),
       );
     } else if (albumArt != null) {
-      return Image.file(albumArt!, fit: BoxFit.cover);
+      return Image.file(
+        albumArt!,
+        fit: BoxFit.cover,
+        cacheWidth: 256,
+        cacheHeight: 256,
+      );
     }
     return Container(color: Theme.of(context).colorScheme.surface);
   }

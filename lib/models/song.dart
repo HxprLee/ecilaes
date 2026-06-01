@@ -13,6 +13,8 @@ class Song {
   final double trackPeak; // ReplayGain track peak
   final double albumGainDb; // ReplayGain album gain in dB
   final double albumPeak; // ReplayGain album peak
+  /// Cached YouTube Music artwork URL — set when the song is fetched from YTM API.
+  final String? thumbnailUrl;
 
   Song({
     required this.path,
@@ -29,6 +31,7 @@ class Song {
     this.trackPeak = 1.0,
     this.albumGainDb = 0.0,
     this.albumPeak = 1.0,
+    this.thumbnailUrl,
   });
 
   // Extract title from filename
@@ -56,6 +59,7 @@ class Song {
     double? trackPeak,
     double? albumGainDb,
     double? albumPeak,
+    String? thumbnailUrl,
   }) {
     return Song(
       path: path,
@@ -72,6 +76,49 @@ class Song {
       trackPeak: trackPeak ?? this.trackPeak,
       albumGainDb: albumGainDb ?? this.albumGainDb,
       albumPeak: albumPeak ?? this.albumPeak,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'path': path,
+      'title': title,
+      'artist': artist,
+      'album': album,
+      'hasAlbumArt': hasAlbumArt,
+      'lyrics': lyrics,
+      'duration': duration?.inMilliseconds,
+      'bitrate': bitrate,
+      'size': size,
+      'modifiedAt': modifiedAt?.toIso8601String(),
+      'gainDb': gainDb,
+      'trackPeak': trackPeak,
+      'albumGainDb': albumGainDb,
+      'albumPeak': albumPeak,
+    };
+  }
+
+  factory Song.fromJson(Map<String, dynamic> json) {
+    return Song(
+      path: json['path'] as String,
+      title: json['title'] as String,
+      artist: json['artist'] as String? ?? 'Unknown Artist',
+      album: json['album'] as String?,
+      hasAlbumArt: json['hasAlbumArt'] as bool? ?? false,
+      lyrics: json['lyrics'] as String?,
+      duration: json['duration'] != null
+          ? Duration(milliseconds: json['duration'] as int)
+          : null,
+      bitrate: json['bitrate'] as int?,
+      size: json['size'] as int?,
+      modifiedAt: json['modifiedAt'] != null
+          ? DateTime.parse(json['modifiedAt'] as String)
+          : null,
+      gainDb: (json['gainDb'] as num?)?.toDouble() ?? 0.0,
+      trackPeak: (json['trackPeak'] as num?)?.toDouble() ?? 1.0,
+      albumGainDb: (json['albumGainDb'] as num?)?.toDouble() ?? 0.0,
+      albumPeak: (json['albumPeak'] as num?)?.toDouble() ?? 1.0,
     );
   }
 }
