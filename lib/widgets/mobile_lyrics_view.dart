@@ -7,6 +7,7 @@ import '../signals/settings_signal.dart';
 
 class MobileLyricsView extends StatefulWidget {
   final String lyricsText;
+
   /// Called when the user manually scrolls down (to show controls).
   final VoidCallback? onUserScrollDown;
 
@@ -106,14 +107,18 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
     return Watch((context) {
       final position = audioSignal.position.value;
 
-      // Find current line index (only if synced)
+      // Find current line index using binary search (O(log n) vs O(n))
       int currentIndex = -1;
       if (_isSynced) {
-        for (int i = 0; i < _lines.length; i++) {
-          if (position >= _lines[i].time) {
-            currentIndex = i;
+        int low = 0, high = _lines.length - 1;
+        while (low <= high) {
+          final mid = (low + high) ~/ 2;
+          final cmp = _lines[mid].time.compareTo(position);
+          if (cmp <= 0) {
+            currentIndex = mid;
+            low = mid + 1;
           } else {
-            break;
+            high = mid - 1;
           }
         }
       }
@@ -124,16 +129,18 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_controller.hasClients) {
             _isAutoScrolling = true;
-            _controller.scrollToIndex(
-              currentIndex,
-              preferPosition: AutoScrollPosition.begin,
-              duration: const Duration(milliseconds: 300),
-            ).then((_) {
-              _isAutoScrolling = false;
-              if (_controller.hasClients) {
-                _lastScrollOffset = _controller.offset;
-              }
-            });
+            _controller
+                .scrollToIndex(
+                  currentIndex,
+                  preferPosition: AutoScrollPosition.begin,
+                  duration: const Duration(milliseconds: 300),
+                )
+                .then((_) {
+                  _isAutoScrolling = false;
+                  if (_controller.hasClients) {
+                    _lastScrollOffset = _controller.offset;
+                  }
+                });
           }
         });
       }
@@ -169,8 +176,8 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
                 padding: EdgeInsets.symmetric(
                   horizontal:
                       settingsSignal.lyricsAlignment.value == TextAlign.center
-                          ? 24
-                          : 0,
+                      ? 24
+                      : 32,
                   vertical: _isSynced ? 200 : 24,
                 ),
                 itemCount: _lines.length,
@@ -185,13 +192,15 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
                     controller: _controller,
                     index: index,
                     child: GestureDetector(
-                      onTap: _isSynced ? () {
-                        audioSignal.seek(line.time);
-                        // Resume auto-scroll when user taps a lyric line
-                        if (_userScrolling) {
-                          _resumeAutoScroll();
-                        }
-                      } : null,
+                      onTap: _isSynced
+                          ? () {
+                              audioSignal.seek(line.time);
+                              // Resume auto-scroll when user taps a lyric line
+                              if (_userScrolling) {
+                                _resumeAutoScroll();
+                              }
+                            }
+                          : null,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -200,29 +209,34 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
                             child: AnimatedDefaultTextStyle(
                               duration: const Duration(milliseconds: 300),
                               curve: Curves.easeOut,
-                              style: Theme.of(context).textTheme.bodyMedium!.copyWith(
-                                color: (isActive || !_isSynced)
-                                    ? Theme.of(context).colorScheme.secondary
-                                    : Theme.of(
-                                        context,
-                                      ).colorScheme.secondary.withValues(
-                                        alpha: 0.3,
-                                      ),
-                                fontSize: (isActive || !_isSynced)
-                                    ? (_isSynced 
-                                        ? settingsSignal.lyricsActiveFontSize.value 
-                                        : settingsSignal.plainLyricsFontSize.value)
-                                    : settingsSignal
-                                          .lyricsInactiveFontSize
-                                          .value,
-                                fontWeight: isActive
-                                    ? FontWeight.w900
-                                    : FontWeight.w600,
-                              ),
+                              style: Theme.of(context).textTheme.bodyMedium!
+                                  .copyWith(
+                                    color: (isActive || !_isSynced)
+                                        ? Theme.of(
+                                            context,
+                                          ).colorScheme.secondary
+                                        : Theme.of(context)
+                                              .colorScheme
+                                              .secondary
+                                              .withValues(alpha: 0.3),
+                                    fontSize: (isActive || !_isSynced)
+                                        ? (_isSynced
+                                              ? settingsSignal
+                                                    .lyricsActiveFontSize
+                                                    .value
+                                              : settingsSignal
+                                                    .plainLyricsFontSize
+                                                    .value)
+                                        : settingsSignal
+                                              .lyricsInactiveFontSize
+                                              .value,
+                                    fontWeight: isActive
+                                        ? FontWeight.w900
+                                        : FontWeight.w600,
+                                  ),
                               child: Text(
                                 line.content,
-                                textAlign:
-                                    settingsSignal.lyricsAlignment.value,
+                                textAlign: settingsSignal.lyricsAlignment.value,
                                 maxLines: 4,
                               ),
                             ),
@@ -235,26 +249,34 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
                               child: AnimatedDefaultTextStyle(
                                 duration: const Duration(milliseconds: 300),
                                 curve: Curves.easeOut,
-                                style: Theme.of(context).textTheme.bodyMedium!.copyWith(
-                                  color: (isActive || !_isSynced)
-                                      ? Theme.of(context)
-                                            .colorScheme
-                                            .secondary
-                                            .withValues(alpha: 0.8)
-                                      : Theme.of(context)
-                                            .colorScheme
-                                            .secondary
-                                            .withValues(alpha: 0.2),
-                                  fontSize: ((isActive || !_isSynced)
-                                          ? (_isSynced 
-                                              ? settingsSignal.lyricsActiveFontSize.value 
-                                              : settingsSignal.plainLyricsFontSize.value)
-                                          : settingsSignal.lyricsInactiveFontSize.value) *
-                                      0.7,
-                                  fontWeight: (isActive || !_isSynced)
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                ),
+                                style: Theme.of(context).textTheme.bodyMedium!
+                                    .copyWith(
+                                      color: (isActive || !_isSynced)
+                                          ? Theme.of(context)
+                                                .colorScheme
+                                                .secondary
+                                                .withValues(alpha: 0.8)
+                                          : Theme.of(context)
+                                                .colorScheme
+                                                .secondary
+                                                .withValues(alpha: 0.2),
+                                      fontSize:
+                                          ((isActive || !_isSynced)
+                                              ? (_isSynced
+                                                    ? settingsSignal
+                                                          .lyricsActiveFontSize
+                                                          .value
+                                                    : settingsSignal
+                                                          .plainLyricsFontSize
+                                                          .value)
+                                              : settingsSignal
+                                                    .lyricsInactiveFontSize
+                                                    .value) *
+                                          0.7,
+                                      fontWeight: (isActive || !_isSynced)
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                    ),
                                 child: Text(
                                   line.romanizedContent!,
                                   textAlign:
