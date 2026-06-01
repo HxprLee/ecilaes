@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:palette_generator_master/palette_generator_master.dart';
 import 'package:http/http.dart' as http;
 import 'settings_signal.dart';
+import '../theme/app_theme_style.dart';
 import 'package:uuid/uuid.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 
@@ -26,6 +27,7 @@ import '../models/history_entry.dart';
 import '../services/metadata_service.dart';
 import '../services/album_art_cache.dart';
 import '../services/lyrics_service.dart';
+import '../signals/queue_signal.dart' as q;
 import '../models/library_models.dart';
 import '../services/artist_art_cache.dart';
 
@@ -36,7 +38,6 @@ class AudioSignal {
 
   late final AudioHandler _audioHandler;
   MyAudioHandler get audioHandler => _audioHandler as MyAudioHandler;
-  Timer? _discordTimer;
   final List<StreamSubscription> _subscriptions = [];
   final List<void Function()> _effectDisposals = [];
 
@@ -58,6 +59,7 @@ class AudioSignal {
   final isPlaylistsGridView = signal<bool>(true); // Default playlists to grid
   final isPlaylistDetailGridView = signal<bool>(false);
   final currentPlaylist = signal<Playlist?>(null);
+  final isRadioMode = signal<bool>(false);
   final isScanning = signal<bool>(false);
   final scanProgress = signal<double>(0.0);
   final searchQuery = signal<String>('');
@@ -77,11 +79,13 @@ class AudioSignal {
   final mutedColor = signal<Color?>(null);
   final sleepTimerRemaining = signal<Duration?>(null);
   Timer? _sleepInternalTimer;
+  final Map<String, bool> _hasMusicCache = {};
   final bottomPadding = signal<double>(0.0);
   final minimizePlayerTrigger = signal<int>(0);
   final albumArtDir = signal<String?>(null);
   final currentLyrics = signal<String?>(null);
   final showLyrics = signal<bool>(false);
+  final showQueueInPlayer = signal<bool>(false);
   final artistPictures = mapSignal<String, String?>(
     {},
   ); // artistName -> localPath
@@ -90,6 +94,22 @@ class AudioSignal {
   late final songMap = computed(() {
     return {for (var s in allSongs.value) s.path: s};
   });
+
+  /// Resolve a song path to a Song object.
+  /// Checks: local library (songMap) → YouTube radio cache → YouTube search results (yt: paths) → Song.fromPath fallback.
+  Song resolveSong(String path) {
+    return songMap.value[path] ??
+        (path.startsWith('yt:')
+            ? [
+                ...ytRadioSongs.value,
+                ...youtubeSearchResults.value,
+              ].firstWhere(
+                (s) => s.path == path,
+                orElse: () => Song.fromPath(path),
+              )
+            : Song.fromPath(path));
+  }
+
   late final storageStats = computed(() {
     int totalSize = 0;
     for (final song in allSongs.value) {
@@ -117,22 +137,22 @@ class AudioSignal {
   final ytSearchResults = listSignal<Map<String, dynamic>>([]);
   final ytSearchFilter = signal<SearchFilter?>(SearchFilter.songs);
   final isSearchingYoutube = signal<bool>(false);
+  final hasMoreYtResults = signal<bool>(false);
+  int _ytSearchLoadedCount = 0;
   Timer? _searchDebounce;
+  Timer? _localSearchDebounce;
   Timer? _suggestionDebounce;
+
+  /// Cache of all songs fetched from YouTube radio/playlists — indexed by path.
+  /// Used by [resolveSong] so queue items show proper title/artist/artwork.
+  final ytRadioSongs = listSignal<Song>([]);
 
   // Computed for backward compatibility or simple checks
   late final isPlayerExpanded = computed(() => playerExpansion.value > 0.1);
 
-  // Computed
-  late final localSearchResults = computed(() {
-    final query = searchQuery.value.toLowerCase();
-    if (query.isEmpty) return <Song>[];
-    return allSongs.value.where((song) {
-      return song.title.toLowerCase().contains(query) ||
-          song.artist.toLowerCase().contains(query) ||
-          (song.album?.toLowerCase().contains(query) ?? false);
-    }).toList();
-  });
+  // Debounced local search – only recomputes after user stops typing,
+  // not on every signal tick (unlike the previous computed approach)
+  final localSearchResults = listSignal<Song>([]);
 
   late final searchResults = computed(() {
     return [...localSearchResults.value, ...youtubeSearchResults.value];
@@ -257,14 +277,15 @@ class AudioSignal {
     _audioHandler = handler;
 
     if (isDesktop) {
-      _discordTimer = Timer.periodic(const Duration(seconds: 7), (_) {
-        _updateDiscordPresence();
-      });
+      unawaited(_updateDiscordPresence(force: true));
     }
     // Initialize album art directory
     unawaited(SongCache.artDir.then((path) {
       albumArtDir.value = path;
     }));
+
+    // Initialize queue service
+    unawaited(q.queueSignal.init());
 
     // Listen to streams
     _subscriptions.add(_audioHandler.playbackState.listen((state) {
@@ -342,6 +363,26 @@ class AudioSignal {
       });
     }));
 
+    // Local search effect – debounced to avoid recomputing on every signal tick
+    _effectDisposals.add(effect(() {
+      final query = searchQuery.value;
+      _localSearchDebounce?.cancel();
+
+      if (query.isEmpty) {
+        localSearchResults.value = [];
+        return;
+      }
+
+      _localSearchDebounce = Timer(const Duration(milliseconds: 150), () {
+        final q = query.toLowerCase();
+        localSearchResults.value = allSongs.value.where((song) {
+          return song.title.toLowerCase().contains(q) ||
+              song.artist.toLowerCase().contains(q) ||
+              (song.album?.toLowerCase().contains(q) ?? false);
+        }).toList();
+      });
+    }));
+
     // YouTube search effect – reacts to query AND filter changes
     _effectDisposals.add(effect(() {
       final query = searchQuery.value;
@@ -351,6 +392,8 @@ class AudioSignal {
       if (query.isEmpty) {
         youtubeSearchResults.value = [];
         ytSearchResults.value = [];
+        _ytSearchLoadedCount = 0;
+        hasMoreYtResults.value = false;
         return;
       }
 
@@ -362,8 +405,14 @@ class AudioSignal {
           isSearchingYoutube.value = true;
           debugPrint(
               'AudioSignal: Debounced search for "$trimmedQuery" (filter: $filter) starting...');
-          
-          final rawResults = await youtubeService.search(trimmedQuery, filter: filter);
+
+          // Reset pagination state for new query
+          _ytSearchLoadedCount = 0;
+          hasMoreYtResults.value = false;
+
+          final rawResults = await youtubeService.search(trimmedQuery, filter: filter, limit: 20);
+          _ytSearchLoadedCount = rawResults.length;
+          hasMoreYtResults.value = rawResults.length >= 20;
           ytSearchResults.value = rawResults;
           
           // Also map songs for backwards compatibility
@@ -594,6 +643,7 @@ class AudioSignal {
   Future<void> scanMusicDirectory() async {
     if (isScanning.value) return;
     isScanning.value = true;
+    _hasMusicCache.clear();
 
     final receivePort = ReceivePort();
     final exitPort = ReceivePort();
@@ -747,7 +797,10 @@ class AudioSignal {
 
   // Playback Control
   Future<void> play() => _audioHandler.play();
-  Future<void> pause() => _audioHandler.pause();
+  Future<void> pause() async {
+    await _audioHandler.pause();
+    if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+  }
   Future<void> seek(Duration pos) async {
     await _audioHandler.seek(pos);
     if (isDesktop) unawaited(_updateDiscordPresence(force: true));
@@ -755,14 +808,25 @@ class AudioSignal {
   Future<void> skipNext() => _audioHandler.skipToNext();
   Future<void> skipPrevious() => _audioHandler.skipToPrevious();
   Future<void> stop() async {
-    currentSong.value = null; // Update immediately for UI spacing
+    currentSong.value = null;
     isPlaying.value = false;
     position.value = Duration.zero;
     await _audioHandler.stop();
+    if (isDesktop) unawaited(_updateDiscordPresence(force: true));
   }
 
   Future<void> playSong(Song song, {List<Song>? fromList}) async {
     if (_audioHandler is MyAudioHandler) {
+      // Auto-stop radio when a non-YouTube song starts playing.
+      if (!song.path.startsWith('yt:') && isRadioMode.value) {
+        stopRadio();
+      }
+
+      // Auto-start radio when a YouTube song is played (if not already in radio mode)
+      if (song.path.startsWith('yt:') && !isRadioMode.value) {
+        startRadio(song);
+      }
+
       final handler = _audioHandler;
 
       if (fromList != null) {
@@ -785,6 +849,40 @@ class AudioSignal {
 
       await handler.playSong(song);
       _updateDynamicTheme(song);
+      if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+    }
+  }
+
+  /// Reorder the playback queue to match the given path order.
+  /// Used by the queue view's drag-to-reorder after the service updates.
+  /// `currentQueueIndex` is the current song's position in the queue before the reorder.
+  void reorderQueueFromPaths(List<String> orderedPaths, int currentQueueIndex) {
+    final currentQueue = queue.value;
+    if (currentQueue.isEmpty) return;
+
+    final currentPath = currentSong.value?.path;
+
+    final pathToItem = {for (var item in currentQueue) item.id: item};
+
+    final reordered = <MediaItem>[];
+    for (final path in orderedPaths) {
+      final item = pathToItem[path];
+      if (item != null) reordered.add(item);
+    }
+
+    final orderedSet = orderedPaths.toSet();
+    for (final item in currentQueue) {
+      if (!orderedSet.contains(item.id)) reordered.add(item);
+    }
+
+    audioHandler.queue.add(reordered);
+
+    // Restore _currentIndex to point to the now-playing song in its new position
+    if (currentPath != null) {
+      final newIndex = reordered.indexWhere((item) => item.id == currentPath);
+      if (newIndex >= 0) {
+        audioHandler.updateQueueIndex(newIndex);
+      }
     }
   }
 
@@ -817,16 +915,19 @@ class AudioSignal {
 
       final currentIndex = handler.playbackState.value.queueIndex ?? 0;
       await handler.insertQueueItem(currentIndex + 1, mediaItem);
+
+      // Also update queue signal
+      await q.queueSignal.playNext(song);
+      // _syncQueueSignal is called by handler.addQueueItem already
     }
   }
 
   Future<void> addToQueue(Song song) async {
     if (_audioHandler is MyAudioHandler) {
       final handler = _audioHandler;
-      final artCache = AlbumArtCache();
 
       Uri? initialArtUri;
-      final cachedPath = artCache.getArtPathSync(song.path);
+      final cachedPath = albumArtCache.getArtPathSync(song.path);
       if (cachedPath != null) {
         initialArtUri = Uri.file(cachedPath);
       } else if (song.path.startsWith('yt:')) {
@@ -845,10 +946,99 @@ class AudioSignal {
       );
 
       await handler.addQueueItem(mediaItem);
+      // _syncQueueSignal is called by handler.addQueueItem already
+    }
+  }
+
+  /// Start radio mode for the given song, fetching a batch of similar songs
+  /// from YouTube Music's radio endpoint and adding them to the queue.
+  Future<void> startRadio(Song seedSong) async {
+    if (!seedSong.path.startsWith('yt:')) return;
+    final videoId = seedSong.path.substring(3);
+
+    isRadioMode.value = true;
+    print('RADIO_DEBUG: Starting radio mode for videoId=$videoId');
+
+    final songs = await youtubeDatasource.getRadioSongs(videoId);
+    if (songs.isEmpty) {
+      print('RADIO_DEBUG: No radio songs returned for $videoId');
+      return;
+    }
+
+    print('RADIO_DEBUG: Fetched ${songs.length} radio songs');
+
+    // Cache all fetched songs for queue metadata resolution
+    ytRadioSongs.addAll(songs);
+
+    // Append radio songs to end of queue
+    for (final song in songs) {
+      await addToQueue(song);
+    }
+  }
+
+  /// Stop radio mode — no more auto-filling will occur.
+  void stopRadio() {
+    isRadioMode.value = false;
+  }
+
+  /// Cache songs from radio/fill operations so [resolveSong] can find them for queue display.
+  void cacheRadioSongs(List<Song> songs) {
+    for (final song in songs) {
+      if (!ytRadioSongs.value.any((s) => s.path == song.path)) {
+        ytRadioSongs.add(song);
+      }
+    }
+  }
+
+  /// Load the next page of YouTube search results.
+  /// Safe to call multiple times — guarded by [isSearchingYoutube].
+  Future<void> loadMoreYtResults() async {
+    if (isSearchingYoutube.value) return;
+    final query = searchQuery.value.trim();
+    if (query.isEmpty) return;
+
+    final filter = ytSearchFilter.value;
+    final offset = _ytSearchLoadedCount;
+
+    isSearchingYoutube.value = true;
+    try {
+      // ytmusicapi_dart's search() returns paginated results via continuation.
+      // Passing a higher limit returns all results up to that limit.
+      // We request a fixed batch size and slice off the already-loaded offset.
+      final rawResults = await youtubeService.search(
+        query,
+        filter: filter,
+        limit: offset + 20,
+      );
+
+      if (rawResults.length <= offset) {
+        hasMoreYtResults.value = false;
+        return;
+      }
+
+      final newItems = rawResults.skip(offset).toList();
+      final currentYt = List<Map<String, dynamic>>.from(ytSearchResults.value);
+      currentYt.addAll(newItems);
+      ytSearchResults.value = currentYt;
+
+      final currentSongs = List<Song>.from(youtubeSearchResults.value);
+      if (filter == SearchFilter.songs || filter == null) {
+        currentSongs.addAll(newItems.map((s) => youtubeDatasource.mapToSong(s)));
+        youtubeSearchResults.value = currentSongs;
+      }
+
+      _ytSearchLoadedCount = currentYt.length;
+      hasMoreYtResults.value = newItems.isNotEmpty;
+    } catch (e) {
+      debugPrint('AudioSignal: loadMoreYtResults error: $e');
+    } finally {
+      isSearchingYoutube.value = false;
     }
   }
 
   Future<void> _updateDynamicTheme(Song song) async {
+    if (settingsSignal.themeStyle.value == AppThemeStyle.signature) return;
+
     if (!song.hasAlbumArt) {
       dynamicThemeSeed.value = null;
       return;
@@ -1192,16 +1382,24 @@ class AudioSignal {
   // Removed _isSupportedAudio from class
 
   Future<bool> _hasMusic(Directory dir) async {
+    if (_hasMusicCache.containsKey(dir.path)) {
+      return _hasMusicCache[dir.path]!;
+    }
     try {
       await for (final entity in dir.list(recursive: true)) {
-        if (entity is File && _isSupportedAudio(entity.path)) return true;
+        if (entity is File && _isSupportedAudio(entity.path)) {
+          _hasMusicCache[dir.path] = true;
+          return true;
+        }
       }
     } catch (_) {}
+    _hasMusicCache[dir.path] = false;
     return false;
   }
 
   Future<void> addFolderToPlaylist(String playlistId, String folderPath) async {
     final dir = Directory(folderPath);
+    _hasMusicCache[dir.path] = true;
     if (await dir.exists()) {
       final List<String> songsToAdd = [];
       try {
@@ -1283,12 +1481,12 @@ class AudioSignal {
   }
 
   void dispose() {
-    _discordTimer?.cancel();
-    _discordTimer = null;
     _sleepInternalTimer?.cancel();
     _sleepInternalTimer = null;
     _searchDebounce?.cancel();
     _searchDebounce = null;
+    _localSearchDebounce?.cancel();
+    _localSearchDebounce = null;
     _suggestionDebounce?.cancel();
     _suggestionDebounce = null;
     
