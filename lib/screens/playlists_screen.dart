@@ -29,7 +29,8 @@ class PlaylistsScreen extends StatelessWidget {
               subtitle: 'Your music collections',
               actions: [
                 IconButton(
-                  onPressed: () => audioSignal.isPlaylistsGridView.value = !isGrid,
+                  onPressed: () =>
+                      audioSignal.isPlaylistsGridView.value = !isGrid,
                   icon: FaIcon(
                     isGrid ? FontAwesomeIcons.list : FontAwesomeIcons.borderAll,
                     color: Theme.of(context).colorScheme.secondary,
@@ -72,13 +73,18 @@ class PlaylistsScreen extends StatelessWidget {
                 emptyMessage: 'No playlists found',
                 leadingItems: [
                   ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 4,
+                    ),
                     leading: Container(
                       width: 48,
                       height: 48,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(8),
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                       ),
                       child: Center(
                         child: FaIcon(
@@ -101,7 +107,10 @@ class PlaylistsScreen extends StatelessWidget {
                 ],
                 itemBuilder: (context, playlist, index) {
                   return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 4,
+                    ),
                     leading: PlaylistCover(
                       playlist: playlist,
                       width: 48,
@@ -122,14 +131,18 @@ class PlaylistsScreen extends StatelessWidget {
                     subtitle: Text(
                       '${playlist.songPaths.length} songs',
                       style: TextStyle(
-                        color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.secondary.withValues(alpha: 0.7),
                         fontSize: 12,
                       ),
                     ),
                     trailing: Icon(
                       Icons.chevron_right,
                       size: 20,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.38),
                     ),
                     onTap: () => context.go('/playlist/${playlist.id}'),
                   );

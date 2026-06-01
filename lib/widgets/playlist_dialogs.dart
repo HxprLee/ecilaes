@@ -38,11 +38,10 @@ class PlaylistPickerDialog extends StatelessWidget {
               child: Text(
                 'No playlists found',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .secondary
-                          .withValues(alpha: 0.5),
-                    ),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.5),
+                ),
               ),
             ),
           );
@@ -63,27 +62,21 @@ class PlaylistPickerDialog extends StatelessWidget {
               title: Text(
                 playlist.name,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary,
-                    ),
+                  color: Theme.of(context).colorScheme.secondary,
+                ),
               ),
               subtitle: Text(
                 '${playlist.songPaths.length} songs',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .secondary
-                          .withValues(alpha: 0.5),
-                      fontSize: 12,
-                    ),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.5),
+                  fontSize: 12,
+                ),
               ),
               onTap: () async {
                 if (song != null) {
-                  await audioSignal.addSongToPlaylist(
-                    playlist.id,
-                    song!.path,
-                  );
+                  await audioSignal.addSongToPlaylist(playlist.id, song!.path);
                 } else if (folderPath != null) {
                   await audioSignal.addFolderToPlaylist(
                     playlist.id,
@@ -94,9 +87,7 @@ class PlaylistPickerDialog extends StatelessWidget {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(
-                        'Added to ${playlist.name}',
-                      ),
+                      content: Text('Added to ${playlist.name}'),
                       behavior: SnackBarBehavior.floating,
                       width: 300,
                     ),
@@ -122,9 +113,7 @@ class PlaylistPickerDialog extends StatelessWidget {
             backgroundColor: Theme.of(
               context,
             ).colorScheme.secondary.withValues(alpha: 0.8),
-            foregroundColor: Theme.of(
-              context,
-            ).colorScheme.surface,
+            foregroundColor: Theme.of(context).colorScheme.surface,
             shape: const StadiumBorder(),
           ),
         ),
@@ -173,15 +162,15 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
         controller: _controller,
         autofocus: true,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.secondary,
-            ),
+          color: Theme.of(context).colorScheme.secondary,
+        ),
         decoration: InputDecoration(
           hintText: 'Playlist name',
           hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondary.withValues(alpha: 0.4),
-              ),
+            color: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.4),
+          ),
           filled: true,
           fillColor: Theme.of(
             context,
@@ -206,10 +195,8 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
           child: Text(
             'Cancel',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.secondary,
-                ),
+              color: Theme.of(context).colorScheme.secondary,
+            ),
           ),
         ),
         FilledButton(
@@ -239,9 +226,7 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
                   }
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(
-                        'Created and added to $name',
-                      ),
+                      content: Text('Created and added to $name'),
                       behavior: SnackBarBehavior.floating,
                       width: 300,
                     ),
@@ -256,9 +241,7 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
             backgroundColor: Theme.of(
               context,
             ).colorScheme.secondary.withValues(alpha: 0.8),
-            foregroundColor: Theme.of(
-              context,
-            ).colorScheme.surface,
+            foregroundColor: Theme.of(context).colorScheme.surface,
             shape: const StadiumBorder(),
           ),
           child: const Text('Create'),

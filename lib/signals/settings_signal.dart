@@ -34,6 +34,7 @@ class SettingsSignal {
     'add_to_queue',
   ]);
   final actionsSheetListActions = listSignal<String>([
+    'radio',
     'go_to_album',
     'go_to_artist',
     'sleep_timer',
@@ -45,6 +46,7 @@ class SettingsSignal {
   final playerBarActions = listSignal<String>([
     'shuffle',
     'repeat',
+    'radio',
     'lyrics',
     'queue',
     'more',

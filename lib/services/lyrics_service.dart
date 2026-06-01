@@ -132,12 +132,13 @@ class LyricsService {
     final query = Uri.encodeQueryComponent('$cleanArtist $cleanTitle');
     final url = 'https://lrclib.net/api/search?q=$query';
 
-    debugPrint('LyricsService: Searching lrclib.net for "$cleanArtist - $cleanTitle"');
+    debugPrint(
+      'LyricsService: Searching lrclib.net for "$cleanArtist - $cleanTitle"',
+    );
 
-    final response = await http.get(
-      Uri.parse(url),
-      headers: {'User-Agent': 'MusicApp/1.0'},
-    ).timeout(const Duration(seconds: 8));
+    final response = await http
+        .get(Uri.parse(url), headers: {'User-Agent': 'MusicApp/1.0'})
+        .timeout(const Duration(seconds: 8));
 
     if (response.statusCode == 200) {
       final List<dynamic> results = jsonDecode(response.body);
@@ -159,7 +160,9 @@ class LyricsService {
       for (final result in results) {
         final plainLyrics = result['plainLyrics'] as String?;
         if (plainLyrics != null && plainLyrics.trim().isNotEmpty) {
-          debugPrint('LyricsService: Found plain lyrics on lrclib.net (no sync)');
+          debugPrint(
+            'LyricsService: Found plain lyrics on lrclib.net (no sync)',
+          );
           return _plainToLrc(plainLyrics);
         }
       }
@@ -176,10 +179,9 @@ class LyricsService {
     debugPrint('LyricsService: Searching SimpMusic for videoId: $videoId');
 
     try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {'User-Agent': 'MusicApp/1.0'},
-      ).timeout(const Duration(seconds: 8));
+      final response = await http
+          .get(Uri.parse(url), headers: {'User-Agent': 'MusicApp/1.0'})
+          .timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -210,13 +212,14 @@ class LyricsService {
     final searchUrl =
         'http://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword=$keyword&duration=$durationMs&hash=';
 
-    debugPrint('LyricsService: Searching KuGou for "$cleanArtist - $cleanTitle"');
+    debugPrint(
+      'LyricsService: Searching KuGou for "$cleanArtist - $cleanTitle"',
+    );
 
     try {
-      final searchResponse = await http.get(
-        Uri.parse(searchUrl),
-        headers: {'User-Agent': 'MusicApp/1.0'},
-      ).timeout(const Duration(seconds: 8));
+      final searchResponse = await http
+          .get(Uri.parse(searchUrl), headers: {'User-Agent': 'MusicApp/1.0'})
+          .timeout(const Duration(seconds: 8));
 
       if (searchResponse.statusCode == 200) {
         final searchData = jsonDecode(searchResponse.body);
@@ -236,10 +239,12 @@ class LyricsService {
 
         debugPrint('LyricsService: Downloading from KuGou id=$id');
 
-        final downloadResponse = await http.get(
-          Uri.parse(downloadUrl),
-          headers: {'User-Agent': 'MusicApp/1.0'},
-        ).timeout(const Duration(seconds: 8));
+        final downloadResponse = await http
+            .get(
+              Uri.parse(downloadUrl),
+              headers: {'User-Agent': 'MusicApp/1.0'},
+            )
+            .timeout(const Duration(seconds: 8));
 
         if (downloadResponse.statusCode == 200) {
           final downloadData = jsonDecode(downloadResponse.body);
@@ -265,13 +270,14 @@ class LyricsService {
     final query = Uri.encodeQueryComponent('a=$cleanArtist&s=$cleanTitle');
     final url = 'https://better-lyrics.vercel.app/api/getLyrics?$query';
 
-    debugPrint('LyricsService: Searching BetterLyrics for "$cleanArtist - $cleanTitle"');
+    debugPrint(
+      'LyricsService: Searching BetterLyrics for "$cleanArtist - $cleanTitle"',
+    );
 
     try {
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {'User-Agent': 'MusicApp/1.0'},
-      ).timeout(const Duration(seconds: 8));
+      final response = await http
+          .get(Uri.parse(url), headers: {'User-Agent': 'MusicApp/1.0'})
+          .timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

@@ -7,10 +7,10 @@ class AppThemeBuilder {
   AppThemeBuilder._();
 
   // ── Signature palette constants ──────────────────────────────────────
-  static const _sigSeed = Color.fromARGB(255, 17, 23, 28);
-  static const _sigSecondary = Color(0xFFFFEFAF);
+  static const _sigForeground = Color(0xFFFFEFAF);
+  static const _sigBackground = Color(0xFF11171C);
   static const _sigScaffoldTransparent = Color.fromARGB(178, 17, 23, 28);
-  static const _sigScaffoldOpaque = Color.fromARGB(255, 17, 23, 28);
+  static const _sigScaffoldOpaque = Color(0xFF11171C);
 
   // ── Material 3 palette constant ──────────────────────────────────────
   static const _m3Seed = Color(0xFF6750A4); // Material default purple
@@ -118,10 +118,31 @@ class AppThemeBuilder {
     return ThemeData(
       brightness: Brightness.dark,
       scaffoldBackgroundColor: scaffoldBg,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _sigSeed,
+      colorScheme: ColorScheme(
         brightness: Brightness.dark,
-        secondary: _sigSecondary,
+        primary: _sigForeground,
+        onPrimary: _sigBackground,
+        secondary: _sigForeground,
+        onSecondary: _sigBackground,
+        tertiary: _sigForeground,
+        onTertiary: _sigBackground,
+        error: const Color(0xFFFF6B6B),
+        onError: _sigBackground,
+        surface: _sigBackground,
+        onSurface: _sigForeground,
+        surfaceContainerHighest: _sigBackground,
+        surfaceContainerHigh: _sigBackground,
+        surfaceContainer: _sigBackground,
+        surfaceContainerLow: _sigBackground,
+        surfaceContainerLowest: _sigBackground,
+        outline: _sigForeground.withValues(alpha: 0.3),
+        outlineVariant: _sigForeground.withValues(alpha: 0.1),
+        shadow: Colors.black,
+        scrim: Colors.black,
+        inverseSurface: _sigForeground,
+        onInverseSurface: _sigBackground,
+        inversePrimary: _sigBackground,
+        surfaceTint: _sigForeground,
       ),
       useMaterial3: true,
       fontFamily: fontFamily,

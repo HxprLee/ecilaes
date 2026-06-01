@@ -47,25 +47,22 @@ class StandardSliverList<T> extends StatelessWidget {
       );
     }
 
-    return Watch((context) {
-      final reservedHeight = audioSignal.reservedHeight.value;
-
-      return SliverMainAxisGroup(
-        slivers: [
-          if (leadingItems != null)
-            ...leadingItems!.map((w) => SliverToBoxAdapter(child: w)),
-          SuperSliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => itemBuilder(context, items[index], index),
-              childCount: items.length,
-            ),
+    return SliverMainAxisGroup(
+      slivers: [
+        if (leadingItems != null)
+          ...leadingItems!.map((w) => SliverToBoxAdapter(child: w)),
+        SuperSliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => itemBuilder(context, items[index], index),
+            childCount: items.length,
           ),
-          if (addBottomPadding)
-            SliverToBoxAdapter(
-              child: SizedBox(height: reservedHeight),
-            ),
-        ],
-      );
-    });
+        ),
+        SliverToBoxAdapter(
+          child: Watch((context) {
+            return SizedBox(height: audioSignal.reservedHeight.value);
+          }),
+        ),
+      ],
+    );
   }
 }

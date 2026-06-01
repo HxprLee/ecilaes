@@ -84,12 +84,15 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       );
 
       final shuffleButton = OutlinedButton.icon(
-        onPressed: () => audioSignal.playPlaylist(currentPlaylist, shuffle: true),
+        onPressed: () =>
+            audioSignal.playPlaylist(currentPlaylist, shuffle: true),
         icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
         label: const Text('Shuffle'),
         style: OutlinedButton.styleFrom(
           side: BorderSide(
-            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
+            color: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.2),
           ),
           foregroundColor: Theme.of(context).colorScheme.secondary,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -118,8 +121,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 content: Text(
                   'Are you sure you want to delete "${currentPlaylist.name}"?',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.secondary,
-                      ),
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
                 ),
                 actions: [
                   OutlinedButton(
@@ -135,8 +138,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     child: Text(
                       'Cancel',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.secondary,
-                          ),
+                        color: Theme.of(context).colorScheme.secondary,
+                      ),
                     ),
                   ),
                   FilledButton(
@@ -184,7 +187,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           padding: const EdgeInsets.all(8),
           child: FaIcon(
             FontAwesomeIcons.ellipsisVertical,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.54),
             size: 20,
           ),
         ),
@@ -200,7 +205,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               subtitle: '${songsList.length} songs',
               actions: [
                 IconButton(
-                  onPressed: () => audioSignal.isPlaylistDetailGridView.value = !isGrid,
+                  onPressed: () =>
+                      audioSignal.isPlaylistDetailGridView.value = !isGrid,
                   icon: FaIcon(
                     isGrid ? FontAwesomeIcons.list : FontAwesomeIcons.borderAll,
                     color: Theme.of(context).colorScheme.secondary,
@@ -217,45 +223,47 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               topActions: isSmallScreen ? [moreOptionsMenu] : null,
               underTextActions: isSmallScreen
                   ? [
-                    ElevatedButton.icon(
-                      onPressed: () =>
-                          audioSignal.playPlaylist(currentPlaylist),
-                      icon: const FaIcon(FontAwesomeIcons.play, size: 14),
-                      label: const Text('Play'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            Theme.of(context).colorScheme.secondary,
-                        foregroundColor:
-                            Theme.of(context).colorScheme.onSecondary,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 8,
-                        ),
-                        shape: const StadiumBorder(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed: () => audioSignal.playPlaylist(
-                        currentPlaylist,
-                        shuffle: true,
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        shape: const CircleBorder(),
-                        padding: const EdgeInsets.all(12),
-                        side: BorderSide(
-                          color: Theme.of(
+                      ElevatedButton.icon(
+                        onPressed: () =>
+                            audioSignal.playPlaylist(currentPlaylist),
+                        icon: const FaIcon(FontAwesomeIcons.play, size: 14),
+                        label: const Text('Play'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(
                             context,
-                          ).colorScheme.secondary.withValues(alpha: 0.3),
+                          ).colorScheme.secondary,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onSecondary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 8,
+                          ),
+                          shape: const StadiumBorder(),
                         ),
                       ),
-                      child: FaIcon(
-                        FontAwesomeIcons.shuffle,
-                        size: 14,
-                        color: Theme.of(context).colorScheme.secondary,
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: () => audioSignal.playPlaylist(
+                          currentPlaylist,
+                          shuffle: true,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          shape: const CircleBorder(),
+                          padding: const EdgeInsets.all(12),
+                          side: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.secondary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: FaIcon(
+                          FontAwesomeIcons.shuffle,
+                          size: 14,
+                          color: Theme.of(context).colorScheme.secondary,
+                        ),
                       ),
-                    ),
-                  ]
+                    ]
                   : null,
             ),
 
@@ -288,7 +296,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   return SongGridCard(
                     song: song,
                     artPath: SongTile.getArtPath(song.path, artDir),
-                    onTap: () => audioSignal.playSong(song, fromList: songsList),
+                    onTap: () =>
+                        audioSignal.playSong(song, fromList: songsList),
                   );
                 },
               )
@@ -317,7 +326,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 emptyMessage: 'This playlist is empty',
                 playlistId: currentPlaylist.id,
               ),
-            
+
             SliverToBoxAdapter(
               child: SizedBox(height: audioSignal.reservedHeight.value),
             ),
