@@ -60,7 +60,7 @@ class AboutSection extends StatelessWidget {
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          'Music App',
+                          'ecilaes',
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.secondary,
                             fontSize: 26,

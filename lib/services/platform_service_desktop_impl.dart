@@ -103,8 +103,8 @@ class PlatformServiceDesktopImpl implements PlatformService {
         debugPrint("Failed to load tray icon");
       }
 
-      _trayIcon!.title = "Music App";
-      _trayIcon!.tooltip = "Music App";
+      _trayIcon!.title = "ecilaes";
+      _trayIcon!.tooltip = "ecilaes";
       _trayIcon!.contextMenu = _trayMenu;
       _trayIcon!.contextMenuTrigger = native.ContextMenuTrigger.rightClicked;
 
