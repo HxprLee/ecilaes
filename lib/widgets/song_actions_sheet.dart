@@ -359,16 +359,6 @@ ActionInfo? _getActionInfo(String id) {
         label: 'Repeat mode',
         onTap: (context, song, _) => audioSignal.toggleRepeat(),
       );
-    case 'radio':
-      return ActionInfo(
-        icon: Icons.radio,
-        label: 'Start radio',
-        onTap: (context, song, _) {
-          if (song.path.startsWith('yt:')) {
-            audioSignal.startRadio(song);
-          }
-        },
-      );
     case 'lyrics':
       return ActionInfo(
         icon: Icons.music_note,

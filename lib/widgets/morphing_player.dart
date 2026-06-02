@@ -2032,30 +2032,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             onPressed: audioSignal.toggleRepeat,
           );
         });
-      case 'radio':
-        return Watch((context) {
-          final isRadio = audioSignal.isRadioMode.value;
-          final isYtSong =
-              audioSignal.currentSong.value?.path.startsWith('yt:') ?? false;
-          return IconButton(
-            icon: Icon(
-              Icons.radio,
-              color: isRadio
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.secondary,
-              size: iconSize,
-            ),
-            onPressed: isYtSong && audioSignal.currentSong.value != null
-                ? () {
-                    if (isRadio) {
-                      audioSignal.stopRadio();
-                    } else {
-                      audioSignal.startRadio(audioSignal.currentSong.value!);
-                    }
-                  }
-                : null,
-          );
-        });
       case 'lyrics':
         return Watch((context) {
           final showLyrics = audioSignal.showLyrics.value;

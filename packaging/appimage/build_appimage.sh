@@ -27,7 +27,7 @@ APPDIR="$BUILD_DIR/appimage/$APP_NAME.AppDir"
 OUTPUT_DIR="$BUILD_DIR/appimage"
 OUTPUT="$OUTPUT_DIR/${APP_NAME}-${VERSION}-${ARCH}.AppImage"
 
-ICON_SVG="$PROJECT_DIR/assets/app_icon.svg"
+ICON_SRC="$PROJECT_DIR/assets/icons/ic_launcher.png"
 ICON_PNG="$APPDIR/${APPLICATION_ID}.png"
 
 # ---------------------------------------------------------------
@@ -56,21 +56,14 @@ mkdir -p "$APPDIR"
 
 # Copy binary, libraries, and data
 cp "$RELEASE_BUNDLE/$BINARY_NAME" "$APPDIR/"
-cp "$RELEASE_BUNDLE/lib/"*.so "$APPDIR/"
+cp -r "$RELEASE_BUNDLE/lib" "$APPDIR/"
 cp -r "$RELEASE_BUNDLE/data" "$APPDIR/"
 
 # ---------------------------------------------------------------
-# Step 3 — Generate icon (SVG→PNG 256×256)
+# Step 3 — Copy icon
 # ---------------------------------------------------------------
-echo "==> Generating icon..."
-if command -v rsvg-convert &>/dev/null; then
-  rsvg-convert -w 256 -h 256 "$ICON_SVG" -o "$ICON_PNG"
-elif command -v convert &>/dev/null; then
-  convert -background none -size 256x256 "$ICON_SVG" "$ICON_PNG"
-else
-  echo "Error: need rsvg-convert or ImageMagick convert for icon generation"
-  exit 1
-fi
+echo "==> Copying icon..."
+cp "$ICON_SRC" "$ICON_PNG"
 
 # ---------------------------------------------------------------
 # Step 4 — Create .desktop file
@@ -83,7 +76,7 @@ Comment=A local/streaming, cross-platform music player
 Exec=$BINARY_NAME
 Icon=${APPLICATION_ID}
 Type=Application
-Categories=Audio;Music;Player;
+Categories=AudioVideo;Music;Player;
 Terminal=false
 StartupWMClass=$APPLICATION_ID
 DESKTOP_EOF
@@ -100,10 +93,11 @@ cat > "$APPDIR/AppRun" <<'APPRUN_EOF'
 set -euo pipefail
 
 HERE="$(dirname "$(readlink -f "$0")")"
-export LD_LIBRARY_PATH="$HERE:$LD_LIBRARY_PATH"
+cd "$HERE"
+export LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export FLUTTER_PRESERVE_EXECUTION=1
 
-exec "$HERE/ecilaes" "$@"
+exec ./ecilaes "$@"
 APPRUN_EOF
 chmod +x "$APPDIR/AppRun"
 
