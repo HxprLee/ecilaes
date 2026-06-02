@@ -1,3 +1,21 @@
+# Changelog - 2026-06-02
+
+### Added
+- **Local Search Filter Chips**: Added tab-aware filter chips in the search screen — Local tab shows Songs, Playlists, Albums, Artists, and Folders filters with proper filtering logic.
+- **New Local Result Tabs**: Added dedicated list views for local playlists, albums, artists, and folders with proper navigation from search results.
+- **AppImage Packager**: Added `packaging/appimage/build_appimage.sh` script to package the Linux build as an AppImage.
+
+### Changed
+- **Rebrand to ecilaes**: Renamed the project from `music_app` to `ecilaes` across all platforms — package name, Android application ID, Kotlin package (`org.hxprlee.ecilaes`), Linux/Windows binary names, cache directories, and display strings.
+- **Version Bump**: Updated app version to 0.5.0.
+- **Android ProGuard Rules**: Added `proguard-rules.pro` for release build minification.
+
+### Fixed
+- **Search Suggestion Navigation**: Fixed search suggestion clicks on both desktop (now uses global router directly) and mobile (routes to `/search`).
+- **Seekbar Visibility**: The seekbar in the expanded player no longer disappears when the queue view is active — it only fades for the lyrics view.
+
+---
+
 # Changelog - 2026-03-30
 
 ### Added
