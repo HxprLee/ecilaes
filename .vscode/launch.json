@@ -5,18 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "music_app",
+            "name": "ecilaes",
             "request": "launch",
             "type": "dart"
         },
         {
-            "name": "music_app (profile mode)",
+            "name": "ecilaes (profile mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "profile"
         },
         {
-            "name": "music_app (release mode)",
+            "name": "ecilaes (release mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"

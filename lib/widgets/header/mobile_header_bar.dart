@@ -62,6 +62,10 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     audioSignal.searchQuery.value = suggestion;
     audioSignal.searchSuggestions.value = [];
     _removeSuggestionsOverlay();
+    final currentRoute = navigationSignal.currentRoute.value;
+    if (currentRoute != '/search') {
+      context.go('/search');
+    }
   }
 
   Widget _buildSuggestionsOverlay(BuildContext context) {

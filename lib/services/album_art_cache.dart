@@ -55,7 +55,7 @@ class AlbumArtCache {
   Future<void> init() async {
     if (_artDirPath != null) return;
     final dir = await getApplicationDocumentsDirectory();
-    _artDirPath = '${dir.path}/music_app_cache/album_art';
+    _artDirPath = '${dir.path}/ecilaes_cache/album_art';
     final artDir = Directory(_artDirPath!);
     if (!await artDir.exists()) {
       await artDir.create(recursive: true);

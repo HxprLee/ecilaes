@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../router.dart' as app_router;
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
 import '../../signals/navigation_signal.dart';
@@ -57,8 +58,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
       if (focused) {
         _showOverlay();
       } else {
-        // Delay removal so tap on suggestion can register
-        Future.delayed(const Duration(milliseconds: 200), _removeOverlay);
+        _removeOverlay();
       }
     }
   }
@@ -85,11 +85,9 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
     );
     audioSignal.searchQuery.value = suggestion;
     audioSignal.searchSuggestions.value = [];
+    _removeOverlay();
     _searchFocusNode.unfocus();
-    final currentRoute = navigationSignal.currentRoute.value;
-    if (currentRoute != '/search') {
-      context.go('/search');
-    }
+    app_router.router.go('/search');
   }
 
   Widget _buildOverlay(BuildContext context) {

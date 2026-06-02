@@ -19,7 +19,7 @@ class QueueService {
 
   Future<File> get _file async {
     final dir = await getApplicationDocumentsDirectory();
-    final path = '${dir.path}/music_app_cache';
+    final path = '${dir.path}/ecilaes_cache';
     final directory = Directory(path);
     if (!await directory.exists()) {
       await directory.create(recursive: true);

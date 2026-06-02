@@ -1,4 +1,4 @@
-package com.example.music_app
+package org.hxprlee.ecilaes
 
 import com.ryanheise.audioservice.AudioServiceActivity
 

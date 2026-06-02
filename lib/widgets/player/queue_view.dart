@@ -629,41 +629,47 @@ class _QueueTile extends StatelessWidget {
           ),
         ),
         onDismissed: (_) => onDismiss(),
-        child: ListTile(
-          contentPadding:
-              EdgeInsets.only(left: leading != null ? 16 : 24, right: 16, top: 4, bottom: 4),
-          leading: leading,
-          title: Text(
-            song.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: colorScheme.secondary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
+        child: Material(
+          color: Colors.transparent,
+          child: Ink(
+            color: Colors.transparent,
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.only(left: 16, right: 16, top: 4, bottom: 4),
+              leading: leading,
+              title: Text(
+                song.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: colorScheme.secondary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              subtitle: Text(
+                song.artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: colorScheme.secondary.withValues(alpha: 0.65),
+                  fontSize: 12,
+                ),
+              ),
+              trailing: IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: onMore,
+                icon: Icon(
+                  Icons.more_horiz,
+                  color: colorScheme.secondary.withValues(alpha: 0.45),
+                  size: 20,
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              onTap: onTap,
             ),
           ),
-          subtitle: Text(
-            song.artist,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: colorScheme.secondary.withValues(alpha: 0.65),
-              fontSize: 12,
-            ),
-          ),
-          trailing: IconButton(
-            visualDensity: VisualDensity.compact,
-            onPressed: onMore,
-            icon: Icon(
-              Icons.more_horiz,
-              color: colorScheme.secondary.withValues(alpha: 0.45),
-              size: 20,
-            ),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-          onTap: onTap,
         ),
       ),
     );
@@ -703,30 +709,36 @@ class _HistoryTile extends StatelessWidget {
         ),
       ),
       onDismissed: (_) => onDismiss(),
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-        leading: _Artwork(song: song, size: 48),
-        title: Text(
-          song.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: colorScheme.secondary.withValues(alpha: 0.8),
-            fontWeight: FontWeight.w500,
-            fontSize: 14,
+      child: Material(
+        color: Colors.transparent,
+        child: Ink(
+          color: Colors.transparent,
+          child: ListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            leading: _Artwork(song: song, size: 48),
+            title: Text(
+              song.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colorScheme.secondary.withValues(alpha: 0.8),
+                fontWeight: FontWeight.w500,
+                fontSize: 14,
+              ),
+            ),
+            subtitle: Text(
+              song.artist,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: colorScheme.secondary.withValues(alpha: 0.5),
+                fontSize: 12,
+              ),
+            ),
+            onTap: onTap,
           ),
         ),
-        subtitle: Text(
-          song.artist,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: colorScheme.secondary.withValues(alpha: 0.5),
-            fontSize: 12,
-          ),
-        ),
-        onTap: onTap,
       ),
       ),
     );
@@ -751,15 +763,18 @@ class _ActionTile extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Material(
       color: Colors.transparent,
-      child: ListTile(
-        leading: Icon(icon, color: colorScheme.secondary),
-        title: Text(
-          label,
-          style: TextStyle(color: colorScheme.secondary, fontSize: 15),
+      child: Ink(
+        color: Colors.transparent,
+        child: ListTile(
+          leading: Icon(icon, color: colorScheme.secondary),
+          title: Text(
+            label,
+            style: TextStyle(color: colorScheme.secondary, fontSize: 15),
+          ),
+          onTap: onTap,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+          dense: true,
         ),
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-        dense: true,
       ),
     );
   }

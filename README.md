@@ -1,4 +1,4 @@
-# music_app
+# ecilaes
 
 A music player written in Dart + Flutter. AI-assisted coding
 

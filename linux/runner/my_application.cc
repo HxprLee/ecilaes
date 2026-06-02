@@ -40,7 +40,7 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_set_app_paintable(GTK_WIDGET(window), TRUE);
 
   // bitsdojo_window handles the title bar if custom frame is enabled
-  gtk_window_set_title(window, "music_app");
+  gtk_window_set_title(window, "ecilaes");
 
   gtk_window_set_default_size(window, 1280, 720);
 

@@ -8,7 +8,7 @@ class PlaylistService {
 
   static Future<String> get _cacheDir async {
     final dir = await getApplicationDocumentsDirectory();
-    return '${dir.path}/music_app_cache';
+    return '${dir.path}/ecilaes_cache';
   }
 
   static Future<String> get _filePath async {

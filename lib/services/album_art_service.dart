@@ -10,7 +10,7 @@ class AlbumArtService {
 
   // MusicBrainz requires a descriptive User-Agent
   static const String _userAgent =
-      'MusicApp/1.0.0 ( https://github.com/lee/music_app )';
+      'Ecilaes/1.0.0 ( https://github.com/lee/ecilaes )';
 
   Future<String?> getAlbumArtUrl(
     String artist,

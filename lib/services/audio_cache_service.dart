@@ -7,7 +7,7 @@ import 'youtube_service.dart';
 /// Manages persistent disk caching of YouTube audio streams.
 ///
 /// Cached files are stored as `<videoId>.m4a` in the
-/// `music_app_cache/songs/` directory.
+/// `ecilaes_cache/songs/` directory.
 class AudioCacheService {
   static final AudioCacheService _instance = AudioCacheService._internal();
   factory AudioCacheService() => _instance;
@@ -22,7 +22,7 @@ class AudioCacheService {
   Future<void> init() async {
     if (_cacheDirPath != null) return;
     final dir = await getApplicationDocumentsDirectory();
-    _cacheDirPath = '${dir.path}/music_app_cache/songs';
+    _cacheDirPath = '${dir.path}/ecilaes_cache/songs';
     final cacheDir = Directory(_cacheDirPath!);
     if (!await cacheDir.exists()) {
       await cacheDir.create(recursive: true);

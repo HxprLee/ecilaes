@@ -13,7 +13,7 @@ import 'router.dart';
 import 'package:audio_service/audio_service.dart';
 import 'services/audio_handler.dart';
 import 'services/platform_service.dart';
-import 'package:music_app/theme/app_theme_builder.dart';
+import 'package:ecilaes/theme/app_theme_builder.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
 import 'signals/audio_signal.dart';
@@ -62,7 +62,7 @@ Future<void> main() async {
   _audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.music_app.channel.audio',
+      androidNotificationChannelId: 'com.example.ecilaes.channel.audio',
       androidNotificationChannelName: 'Music Playback',
     ),
   );
@@ -94,7 +94,7 @@ Future<void> main() async {
       appWindow.minSize = const Size(400, 600);
       appWindow.size = initialSize;
       appWindow.alignment = Alignment.center;
-      appWindow.title = "Music App";
+      appWindow.title = "Ecilaes";
       appWindow.show();
     });
   }
@@ -122,7 +122,7 @@ class MusicApp extends StatelessWidget {
       final useCustomFont = settingsSignal.useCustomFont.value;
 
       return MaterialApp.router(
-        title: 'Music App',
+        title: 'Ecilaes',
         debugShowCheckedModeBanner: false,
         scrollBehavior: const _TouchScrollBehavior(),
         routerConfig: router,

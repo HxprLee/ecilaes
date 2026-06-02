@@ -31,6 +31,8 @@ import '../signals/queue_signal.dart' as q;
 import '../models/library_models.dart';
 import '../services/artist_art_cache.dart';
 
+enum LocalSearchFilter { songs, playlists, albums, artists, folders }
+
 class AudioSignal {
   static final AudioSignal _instance = AudioSignal._internal();
   factory AudioSignal() => _instance;
@@ -153,6 +155,11 @@ class AudioSignal {
   // Debounced local search – only recomputes after user stops typing,
   // not on every signal tick (unlike the previous computed approach)
   final localSearchResults = listSignal<Song>([]);
+  final localSearchFilter = signal<LocalSearchFilter>(LocalSearchFilter.songs);
+  final localSearchPlaylists = listSignal<Playlist>([]);
+  final localSearchAlbums = listSignal<Album>([]);
+  final localSearchArtists = listSignal<Artist>([]);
+  final localSearchFolders = listSignal<String>([]);
 
   late final searchResults = computed(() {
     return [...localSearchResults.value, ...youtubeSearchResults.value];
@@ -366,20 +373,57 @@ class AudioSignal {
     // Local search effect – debounced to avoid recomputing on every signal tick
     _effectDisposals.add(effect(() {
       final query = searchQuery.value;
+      final filter = localSearchFilter.value;
       _localSearchDebounce?.cancel();
 
       if (query.isEmpty) {
         localSearchResults.value = [];
+        localSearchPlaylists.value = [];
+        localSearchAlbums.value = [];
+        localSearchArtists.value = [];
+        localSearchFolders.value = [];
         return;
       }
 
       _localSearchDebounce = Timer(const Duration(milliseconds: 150), () {
         final q = query.toLowerCase();
-        localSearchResults.value = allSongs.value.where((song) {
-          return song.title.toLowerCase().contains(q) ||
-              song.artist.toLowerCase().contains(q) ||
-              (song.album?.toLowerCase().contains(q) ?? false);
-        }).toList();
+        // Clear all result types first
+        localSearchResults.value = [];
+        localSearchPlaylists.value = [];
+        localSearchAlbums.value = [];
+        localSearchArtists.value = [];
+        localSearchFolders.value = [];
+
+        switch (filter) {
+          case LocalSearchFilter.songs:
+            localSearchResults.value = allSongs.value.where((song) {
+              return song.title.toLowerCase().contains(q) ||
+                  song.artist.toLowerCase().contains(q) ||
+                  (song.album?.toLowerCase().contains(q) ?? false);
+            }).toList();
+          case LocalSearchFilter.playlists:
+            localSearchPlaylists.value = playlists.value.where((p) {
+              return p.name.toLowerCase().contains(q);
+            }).toList();
+          case LocalSearchFilter.albums:
+            localSearchAlbums.value = albums.value.where((a) {
+              return a.name.toLowerCase().contains(q) ||
+                  a.artist.toLowerCase().contains(q);
+            }).toList();
+          case LocalSearchFilter.artists:
+            localSearchArtists.value = artists.value.where((a) {
+              return a.name.toLowerCase().contains(q);
+            }).toList();
+          case LocalSearchFilter.folders:
+            final dirs = allSongs.value
+                .where((song) => !song.path.startsWith('yt:'))
+                .map((s) => s.path.substring(0, s.path.lastIndexOf('/')))
+                .where((dir) => dir.toLowerCase().contains(q))
+                .toSet()
+                .toList()
+                  ..sort();
+            localSearchFolders.value = dirs;
+        }
       });
     }));
 
