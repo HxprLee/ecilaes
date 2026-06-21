@@ -75,7 +75,7 @@ else
   echo "=== Building Android (universal) ==="
   flutter build apk --release "${FLUTTER_ARGS[@]}"
   mkdir -p "$OUTPUT_DIR/android"
-  cp "$PROJECT_ROOT/build/app/outputs/flutter-apk/app-universal-release.apk" "$OUTPUT_DIR/android/"
+  cp "$PROJECT_ROOT/build/app/outputs/flutter-apk/app-release.apk" "$OUTPUT_DIR/android/"
 
   echo "=== Building Android (ABI splits) ==="
   flutter build apk --release --split-per-abi "${FLUTTER_ARGS[@]}"
