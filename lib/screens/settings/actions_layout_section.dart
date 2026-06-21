@@ -1,7 +1,25 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
+import '../../theme/app_theme_tokens.dart';
+import '../../widgets/settings/settings_section.dart';
 import '../../widgets/sliver_page_header.dart';
 
 class ActionsLayoutSection extends StatelessWidget {
@@ -44,7 +62,7 @@ class ActionsLayoutSection extends StatelessWidget {
                   children: [
                     const SizedBox(height: 24),
 
-                  _sectionLabel('Quick Actions Row', context),
+                  const SettingsSectionLabel('Quick Actions Row'),
                   _buildActionsList(
                     context: context,
                     actionsSignal: settingsSignal.actionsSheetQuickActions,
@@ -54,7 +72,7 @@ class ActionsLayoutSection extends StatelessWidget {
 
 
                   const SizedBox(height: 32),
-                  _sectionLabel('Menu List Actions', context),
+                  const SettingsSectionLabel('Menu List Actions'),
                   _buildActionsList(
                     context: context,
                     actionsSignal: settingsSignal.actionsSheetListActions,
@@ -66,28 +84,17 @@ class ActionsLayoutSection extends StatelessWidget {
                   _buildHiddenActions(context),
 
                   const SizedBox(height: 32),
-                  _sectionLabel('Options', context),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Card(
-                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(
-                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-                        ),
-                      ),
-                      child: Watch((context) {
-                        return SwitchListTile(
-                          title: const Text('Show labels in Row', style: TextStyle(fontSize: 14)),
-                          subtitle: const Text('Show text labels below icons in the quick actions row', style: TextStyle(fontSize: 12)),
-                          value: settingsSignal.actionsSheetShowLabels.value,
-                          onChanged: (value) => settingsSignal.updateActionsSheetShowLabels(value),
-                          activeThumbColor: Theme.of(context).colorScheme.secondary,
-                        );
-                      }),
-                    ),
+                  const SettingsSectionLabel('Options'),
+                  SettingsSection(
+                    child: Watch((context) {
+                      return SwitchListTile(
+                        title: const Text('Show labels in Row', style: TextStyle(fontSize: 14)),
+                        subtitle: const Text('Show text labels below icons in the quick actions row', style: TextStyle(fontSize: 12)),
+                        value: settingsSignal.actionsSheetShowLabels.value,
+                        onChanged: (value) => settingsSignal.updateActionsSheetShowLabels(value),
+                        activeThumbColor: context.colorScheme.secondary,
+                      );
+                    }),
                   ),
                   const SizedBox(height: 32),
                   Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
@@ -120,12 +127,12 @@ class ActionsLayoutSection extends StatelessWidget {
           builder: (context, candidateData, rejectedData) {
             return Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                color: context.tokens.sidebarBackground,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: candidateData.isNotEmpty
-                      ? Theme.of(context).colorScheme.secondary
-                      : Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                      ? context.colorScheme.secondary
+                      : context.accentBorder(0.1),
                 ),
               ),
               child: Column(
@@ -307,7 +314,7 @@ class ActionsLayoutSection extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionLabel('Hidden Actions', context),
+          const SettingsSectionLabel('Hidden Actions'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: DragTarget<_ActionDragData>(
@@ -319,21 +326,12 @@ class ActionsLayoutSection extends StatelessWidget {
               builder: (context, candidateData, rejectedData) {
                 return Container(
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surface
-                        .withValues(alpha: 0.8),
+                    color: context.tokens.sidebarBackground,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: candidateData.isNotEmpty
-                          ? Theme.of(context)
-                              .colorScheme
-                              .error
-                              .withValues(alpha: 0.5)
-                          : Theme.of(context)
-                              .colorScheme
-                              .secondary
-                              .withValues(alpha: 0.1),
+                          ? context.colorScheme.error.withValues(alpha: 0.5)
+                          : context.accentBorder(0.1),
                     ),
                   ),
                   child: Column(
@@ -431,21 +429,6 @@ class ActionsLayoutSection extends StatelessWidget {
 
     settingsSignal.updateActionsSheetQuickActions(quick);
     settingsSignal.updateActionsSheetListActions(list);
-  }
-
-  Widget _sectionLabel(String label, BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 20, bottom: 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
   }
 
   IconData _getSimplifiedActionIcon(String id) {

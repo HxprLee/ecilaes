@@ -1,360 +1,386 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+
 import 'package:audio_service/audio_service.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:just_audio/just_audio.dart';
+
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
 import '../signals/queue_signal.dart';
+import 'YoutubeDatasource.dart';
 import 'album_art_cache.dart';
 import 'audio_cache_service.dart';
 import 'playback_history_service.dart';
 import 'youtube_service.dart';
-import 'YoutubeDatasource.dart';
+
+/// A monotonically increasing token used to cancel in-flight load operations
+/// when a newer selection supersedes them. Each call to [MyAudioHandler.playSong]
+/// bumps the generation; any awaiting code compares its captured generation
+/// against the latest one to decide whether to abort.
+class _LoadToken {
+  _LoadToken._(this.generation);
+  factory _LoadToken(int generation) => _LoadToken._(generation);
+
+  final int generation;
+}
+
+/// Exception thrown when an in-flight load operation is cancelled by a newer
+/// selection or by [MyAudioHandler.dispose]. It is intentionally not logged —
+/// cancellation is a normal control-flow event, not an error.
+class _LoadCancelled implements Exception {
+  const _LoadCancelled();
+}
 
 class MyAudioHandler extends BaseAudioHandler {
-  final _player = AudioPlayer();
+  final AudioPlayer _player = AudioPlayer();
+
   int _currentIndex = 0;
-  List<int> _shuffledIndices = [];
-  final _shuffleIndicesController = StreamController<List<int>>.broadcast();
-  Stream<List<int>> get shuffleIndicesStream => _shuffleIndicesController.stream;
   AudioServiceShuffleMode _shuffleMode = AudioServiceShuffleMode.none;
   AudioServiceRepeatMode _repeatMode = AudioServiceRepeatMode.none;
 
-  // Loading lock to prevent concurrent _playCurrent calls
-  Completer<void>? _loadingCompleter;
+  // Shuffle state. _shuffledIndices maps a "shuffle position" to a queue
+  // index; the current song is always at shuffle-position 0.
+  List<int> _shuffledIndices = [];
+  final StreamController<List<int>> _shuffleIndicesController =
+      StreamController<List<int>>.broadcast();
+  Stream<List<int>> get shuffleIndicesStream => _shuffleIndicesController.stream;
+
+  // Load generation — bumped on every new playSong/skipToNext. In-flight
+  // loads capture this value and bail out if it changes before they finish.
+  int _loadGeneration = 0;
+  _LoadToken? _activeToken;
+
   bool _isDisposed = false;
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
 
-  // Subscriptions for proper cleanup
-  final List<StreamSubscription> _subscriptions = [];
-
-  // Album art cache
   final AlbumArtCache _artCache = AlbumArtCache();
 
   // History tracking
   Timer? _historyTimer;
   bool _hasRecordedCurrent = false;
   String? _lastTrackId;
-
-  // Tracks actual playback order for session history (excludes unplayed songs when jumping around)
   final List<String> _sessionPlayedOrder = [];
 
-  // Gapless playback — instant switch mode (no ConcatenatingAudioSource)
-  bool _gaplessMode = false;
-
-  // Radio mode: prevents concurrent fill operations
+  // Radio queue auto-fill guard
   bool _isFillingRadio = false;
+  Timer? _radioFillDebounce;
 
   // Audio normalization
   bool _normalizationEnabled = false;
   double _normalizationTargetLufs = -14.0;
-  final Map<String, double> _gainMap = {}; // path -> gainDb
+  final Map<String, double> _gainMap = {};
 
   MyAudioHandler() {
     _init();
   }
 
-  void _syncQueueSignal() {
-    final isShuffled = _shuffleMode == AudioServiceShuffleMode.all;
-    final effectiveIndex = isShuffled
-        ? _shuffledIndices.indexOf(_currentIndex)
-        : _currentIndex;
-    final effectiveQueue = isShuffled && _shuffledIndices.isNotEmpty
-        ? _shuffledIndices.map((i) => queue.value[i]).toList()
-        : queue.value;
+  // ---------------------------------------------------------------------------
+  // Public surface
+  // ---------------------------------------------------------------------------
 
-    // Build upNext from queue items after current index
-    final upNextPaths = effectiveIndex < effectiveQueue.length - 1
-        ? effectiveQueue.sublist(effectiveIndex + 1).map((i) => i.id).toList()
-        : <String>[];
+  AudioPlayer get player => _player;
 
-    // Use actual playback order for history (not position-based)
-    final historyPaths = _sessionPlayedOrder.toList();
-
-    queueSignal.updateFromQueueAndHistory(
-      upNext: upNextPaths,
-      history: historyPaths,
-    );
-
-    // Auto-fill: if radio mode is on and queue is running low, fetch more
-    if (audioSignal.isRadioMode.value && mediaItem.value != null) {
-      final remaining = queue.value.length - _currentIndex - 1;
-      if (remaining <= 3) {
-        _fillRadioQueue();
-      }
-    }
-  }
-
-  Future<void> _fillRadioQueue() async {
-    if (_isFillingRadio) return;
-    final current = mediaItem.value;
-    if (current == null || !current.id.startsWith('yt:')) return;
-
-    _isFillingRadio = true;
-    try {
-      final videoId = current.id.substring(3);
-      final songs = await youtubeDatasource.getRadioSongs(videoId);
-      audioSignal.cacheRadioSongs(songs);
-      for (final song in songs) {
-        final songVideoId = song.path.startsWith('yt:') ? song.path.substring(3) : '';
-        final artUri = Uri.parse(youtubeDatasource.getArtworkUrl(songVideoId));
-        final mediaItem = MediaItem(
-          id: song.path,
-          album: song.album ?? 'YouTube Music',
-          title: song.title,
-          artist: song.artist,
-          duration: song.duration,
-          artUri: artUri,
-          extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
-        );
-        await addQueueItem(mediaItem);
-      }
-      print('RADIO_DEBUG: Filled queue with ${songs.length} radio songs');
-    } finally {
-      _isFillingRadio = false;
-    }
-  }
+  // ---------------------------------------------------------------------------
+  // Initialization
+  // ---------------------------------------------------------------------------
 
   Future<void> _init() async {
-    // Load settings
-    _gaplessMode = settingsSignal.gaplessPlayback.value;
     _normalizationEnabled = settingsSignal.audioNormalization.value;
     _normalizationTargetLufs = settingsSignal.normalizationTargetLufs.value;
 
-    // Broadcast playback state changes
-    _subscriptions.add(
-      _player.playerStateStream.listen((state) {
-        if (_isDisposed) return;
-
-        final playing = state.playing;
-        final processingState = state.processingState;
-
-        playbackState.add(
-          playbackState.value.copyWith(
-            controls: [
-              MediaControl.skipToPrevious,
-              if (playing) MediaControl.pause else MediaControl.play,
-              MediaControl.stop,
-              MediaControl.skipToNext,
-            ],
-            systemActions: const {
-              MediaAction.seek,
-              MediaAction.seekForward,
-              MediaAction.seekBackward,
-            },
-            androidCompactActionIndices: const [0, 1, 3],
-            processingState: const {
-              ProcessingState.idle: AudioProcessingState.idle,
-              ProcessingState.loading: AudioProcessingState.loading,
-              ProcessingState.buffering: AudioProcessingState.buffering,
-              ProcessingState.ready: AudioProcessingState.ready,
-              ProcessingState.completed: AudioProcessingState.completed,
-            }[processingState]!,
-            playing: playing,
-            updatePosition: _player.position,
-            bufferedPosition: _player.bufferedPosition,
-            speed: _player.speed,
-            queueIndex: _currentIndex,
-            shuffleMode: _shuffleMode,
-            repeatMode: _repeatMode,
-          ),
-        );
-        _updateWidget();
-        _handleHistoryTracking(playing);
-      }),
-    );
-
-    // Handle auto-advance on track completion
-    _subscriptions.add(
-      _player.processingStateStream.listen((state) {
-        if (_isDisposed) return;
-        if (state == ProcessingState.completed) {
-          if (_repeatMode == AudioServiceRepeatMode.one) {
-            // Repeat one: just restart current track
-            _player.seek(Duration.zero);
-            _player.play();
-          } else if (_repeatMode == AudioServiceRepeatMode.none && _isAtEnd) {
-            stop();
-          } else {
-            // Auto-advance to next track (gapless or normal)
-            skipToNext();
-          }
-        }
-      }),
-    );
-
-    // Sync duration
-    _subscriptions.add(
-      _player.durationStream.listen((duration) {
-        if (_isDisposed) return;
-        if (duration != null) {
-          final index = _currentIndex;
-          if (index >= 0 && index < queue.value.length) {
-            final item = queue.value[index];
-            if (item.duration != duration) {
-              final newItem = item.copyWith(duration: duration);
-              
-              // Correctly update and notify queue
-              final newQueue = List<MediaItem>.from(queue.value);
-              newQueue[index] = newItem;
-              queue.add(newQueue);
-              
-              if (mediaItem.value?.id == item.id) {
-                mediaItem.add(newItem);
-              }
-            }
-          }
-        }
-      }),
-    );
-
-    // Listen for mediaItem changes to update widget
-    _subscriptions.add(
-      mediaItem.listen((item) {
-        if (item != null) {
-          _updateWidget();
-        }
-      }),
-    );
+    _subscriptions.add(_player.playerStateStream.listen(_onPlayerStateChanged));
+    _subscriptions
+        .add(_player.processingStateStream.listen(_onProcessingStateChanged));
+    _subscriptions.add(_player.durationStream.listen(_onDurationChanged));
+    _subscriptions.add(mediaItem.listen((item) {
+      if (!_isDisposed && item != null) _updateWidget();
+    }));
   }
 
-  /// Apply per-track volume normalization
-  void _applyNormalization(String trackId) {
-    if (_normalizationEnabled) {
-      final gainDb = _gainMap[trackId] ?? 0.0;
-      // Volume multiplier: 10^(gainDb / 20)
-      // targetLufs adjusts relative to reference (-14 LUFS is standard)
-      final adjustedGain = gainDb + (_normalizationTargetLufs + 14.0);
-      final volume = pow(10.0, adjustedGain / 20.0).clamp(0.1, 2.0).toDouble();
-      _player.setVolume(volume);
+  void _onPlayerStateChanged(PlayerState state) {
+    if (_isDisposed) return;
+    final playing = state.playing;
+
+    playbackState.add(playbackState.value.copyWith(
+      controls: [
+        MediaControl.skipToPrevious,
+        if (playing) MediaControl.pause else MediaControl.play,
+        MediaControl.stop,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      androidCompactActionIndices: const [0, 1, 3],
+      processingState: _mapProcessingState(state.processingState),
+      playing: playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
+      queueIndex: _currentIndex,
+      shuffleMode: _shuffleMode,
+      repeatMode: _repeatMode,
+    ));
+    _updateWidget();
+    _handleHistoryTracking(playing);
+  }
+
+  void _onProcessingStateChanged(ProcessingState state) {
+    if (_isDisposed) return;
+    if (state != ProcessingState.completed) return;
+
+    if (_repeatMode == AudioServiceRepeatMode.one) {
+      _player.seek(Duration.zero);
+      _player.play();
+    } else if (_repeatMode == AudioServiceRepeatMode.none && _isAtEnd) {
+      stop();
     } else {
-      _player.setVolume(1.0);
+      skipToNext();
     }
   }
 
-  /// Update normalization setting at runtime
-  void setNormalizationEnabled(bool enabled) {
-    _normalizationEnabled = enabled;
-    if (mediaItem.value != null) {
-      _applyNormalization(mediaItem.value!.id);
+  void _onDurationChanged(Duration? duration) {
+    if (_isDisposed || duration == null) return;
+    final index = _currentIndex;
+    if (index < 0 || index >= queue.value.length) return;
+
+    final item = queue.value[index];
+    if (item.duration == duration) return;
+
+    final newItem = item.copyWith(duration: duration);
+    final newQueue = List<MediaItem>.from(queue.value)..[index] = newItem;
+    queue.add(newQueue);
+
+    if (mediaItem.value?.id == item.id) {
+      mediaItem.add(newItem);
     }
   }
 
-  /// Update normalization target LUFS at runtime
-  void setNormalizationTargetLufs(double lufs) {
-    _normalizationTargetLufs = lufs;
-    if (_normalizationEnabled && mediaItem.value != null) {
-      _applyNormalization(mediaItem.value!.id);
-    }
-  }
+  static AudioProcessingState _mapProcessingState(ProcessingState state) =>
+      switch (state) {
+        ProcessingState.idle => AudioProcessingState.idle,
+        ProcessingState.loading => AudioProcessingState.loading,
+        ProcessingState.buffering => AudioProcessingState.buffering,
+        ProcessingState.ready => AudioProcessingState.ready,
+        ProcessingState.completed => AudioProcessingState.completed,
+      };
 
-  /// Store gain values for normalization lookup
-  void setGainMap(Map<String, double> gainMap) {
-    _gainMap.clear();
-    _gainMap.addAll(gainMap);
-  }
-
-  /// Update a single gain entry (e.g. after metadata edit)
-  void updateGain(String path, double gainDb) {
-    _gainMap[path] = gainDb;
-  }
-
-  /// Update gapless mode setting (no source rebuild needed — just a flag)
-  Future<void> setGaplessMode(bool enabled) async {
-    _gaplessMode = enabled;
-  }
-
-  Future<void> _updateWidget() async {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
-
-    final item = mediaItem.value;
-    final isPlaying = playbackState.value.playing;
-
-    if (item == null ||
-        playbackState.value.processingState == AudioProcessingState.idle) {
-      await HomeWidget.saveWidgetData<String>('title', 'Not Playing');
-      await HomeWidget.saveWidgetData<String>('artist', '-');
-      await HomeWidget.saveWidgetData<bool>('isPlaying', false);
-      await HomeWidget.saveWidgetData<String?>('artPath', null);
-    } else {
-      await HomeWidget.saveWidgetData<String>('title', item.title);
-      await HomeWidget.saveWidgetData<String>('artist', item.artist ?? "-");
-      await HomeWidget.saveWidgetData<bool>('isPlaying', isPlaying);
-
-      String? artPath;
-      if (item.artUri != null && item.artUri!.isScheme('file')) {
-        artPath = item.artUri!.toFilePath();
-      }
-      await HomeWidget.saveWidgetData<String?>('artPath', artPath);
-    }
-
-    await HomeWidget.updateWidget(
-      name: 'MusicWidgetProvider',
-      androidName: 'MusicWidgetProvider',
-    );
-  }
+  // ---------------------------------------------------------------------------
+  // Queue management
+  // ---------------------------------------------------------------------------
 
   Future<void> setPlaylist(List<Song> songs) async {
-    print('Setting playlist with ${songs.length} songs');
-
-    // Initialize album art cache
     await _artCache.init();
 
-    // Reset session playback order when switching playlists
     _sessionPlayedOrder.clear();
 
-    // Store gain values for normalization
-    _gainMap.clear();
-    for (final song in songs) {
-      if (song.gainDb != 0.0) {
-        _gainMap[song.path] = song.gainDb;
-      }
-    }
+    _gainMap
+      ..clear()
+      ..addEntries(songs
+          .where((s) => s.gainDb != 0.0)
+          .map((s) => MapEntry(s.path, s.gainDb)));
 
-    // Convert songs to MediaItems (without art URIs for local files - loaded lazily when played)
-    final mediaItems = songs.map((song) {
-      Uri? initialArtUri;
-      final cachedPath = _artCache.getArtPathSync(song.path);
-      if (cachedPath != null) {
-        initialArtUri = Uri.file(cachedPath);
-      } else if (song.path.startsWith('yt:')) {
-        final videoId = song.path.substring(3);
-        initialArtUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
-      }
+    final mediaItems = songs.map(_toMediaItem).toList(growable: false);
 
-      return MediaItem(
-        id: song.path,
-        album: song.album ?? "Unknown Album",
-        title: song.title,
-        artist: song.artist,
-        duration: song.duration,
-        artUri: initialArtUri,
-        extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
-      );
-    }).toList();
-
-    // Update the queue
     queue.add(mediaItems);
     _currentIndex = 0;
-    _shuffledIndices = [];
+    _shuffledIndices = const [];
     _syncQueueSignal();
-
-    // Refresh gapless setting
-    _gaplessMode = settingsSignal.gaplessPlayback.value;
 
     if (_shuffleMode == AudioServiceShuffleMode.all) {
       _generateShuffledIndices();
     } else {
-      _shuffleIndicesController.add([]);
-    }
-
-    // Don't auto-play, just be ready
-    if (mediaItems.isNotEmpty) {
-      mediaItem.add(mediaItems[0]);
+      _shuffleIndicesController.add(const []);
     }
   }
+
+  MediaItem _toMediaItem(Song song) {
+    Uri? artUri;
+    final cached = _artCache.getArtPathSync(song.path);
+    if (cached != null) {
+      artUri = Uri.file(cached);
+    } else if (song.path.startsWith('yt:')) {
+      artUri = Uri.parse(youtubeDatasource.getArtworkUrl(song.path.substring(3)));
+    }
+
+    return MediaItem(
+      id: song.path,
+      album: song.album ?? 'Unknown Album',
+      title: song.title,
+      artist: song.artist,
+      duration: song.duration,
+      artUri: artUri,
+      extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
+    );
+  }
+
+  @override
+  Future<void> addQueueItem(MediaItem mediaItem) async {
+    final newQueue = [...queue.value, mediaItem];
+    if (_shuffleMode == AudioServiceShuffleMode.all) {
+      _shuffledIndices.add(newQueue.length - 1);
+      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
+    }
+    queue.add(newQueue);
+    _syncQueueSignal();
+  }
+
+  @override
+  Future<void> removeQueueItem(MediaItem mediaItem) async {
+    final id = mediaItem.id;
+    final current = List<MediaItem>.from(queue.value);
+
+    final indices =
+        [for (var i = 0; i < current.length; i++) if (current[i].id == id) i];
+    if (indices.isEmpty) return;
+
+    for (final index in indices.reversed) {
+      current.removeAt(index);
+
+      if (_shuffledIndices.isNotEmpty) {
+        _shuffledIndices.remove(index);
+        for (var i = 0; i < _shuffledIndices.length; i++) {
+          if (_shuffledIndices[i] > index) _shuffledIndices[i]--;
+        }
+      }
+
+      if (index < _currentIndex) {
+        _currentIndex--;
+      } else if (index == _currentIndex && _currentIndex >= current.length) {
+        _currentIndex = current.isEmpty ? 0 : current.length - 1;
+      }
+    }
+
+    if (_shuffledIndices.isNotEmpty) {
+      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
+    }
+    queue.add(current);
+  }
+
+  @override
+  Future<void> insertQueueItem(int index, MediaItem mediaItem) async {
+    final current = List<MediaItem>.from(queue.value);
+    final clamped = index.clamp(0, current.length);
+    current.insert(clamped, mediaItem);
+
+    if (_shuffledIndices.isNotEmpty) {
+      for (var i = 0; i < _shuffledIndices.length; i++) {
+        if (_shuffledIndices[i] >= clamped) _shuffledIndices[i]++;
+      }
+      final currentShuffledPos = _shuffledIndices.indexOf(_currentIndex);
+      if (currentShuffledPos != -1) {
+        _shuffledIndices.insert(currentShuffledPos + 1, clamped);
+      } else {
+        _shuffledIndices.add(clamped);
+      }
+      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
+    }
+
+    if (clamped <= _currentIndex) _currentIndex++;
+    queue.add(current);
+    _syncQueueSignal();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shuffle / repeat
+  // ---------------------------------------------------------------------------
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
+    _shuffleMode = shuffleMode;
+    if (shuffleMode == AudioServiceShuffleMode.all) {
+      if (_shuffledIndices.isEmpty) {
+        _generateShuffledIndices();
+      }
+    } else {
+      if (_shuffledIndices.isNotEmpty) {
+        _currentIndex = _shuffledIndices[_currentIndex];
+      }
+      _shuffledIndices = const [];
+      _shuffleIndicesController.add(const []);
+    }
+    playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
+    _syncQueueSignal();
+  }
+
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    _repeatMode = repeatMode;
+    playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
+  }
+
+  void _generateShuffledIndices() {
+    final count = queue.value.length;
+    if (count == 0) return;
+    _shuffledIndices = List<int>.generate(count, (i) => i)..shuffle();
+    _shuffledIndices.remove(_currentIndex);
+    _shuffledIndices.insert(0, _currentIndex);
+    _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
+  }
+
+  int _getNextIndex() {
+    final count = queue.value.length;
+    if (count == 0) return 0;
+    if (_repeatMode == AudioServiceRepeatMode.one) return _currentIndex;
+
+    if (_shuffleMode == AudioServiceShuffleMode.none || _shuffledIndices.isEmpty) {
+      final next = _currentIndex + 1;
+      if (next < count) return next;
+      return _repeatMode == AudioServiceRepeatMode.all ? 0 : _currentIndex;
+    }
+
+    final pos = _shuffledIndices.indexOf(_currentIndex);
+    if (pos != -1 && pos < _shuffledIndices.length - 1) {
+      return _shuffledIndices[pos + 1];
+    }
+    return _repeatMode == AudioServiceRepeatMode.all
+        ? _shuffledIndices[0]
+        : _currentIndex;
+  }
+
+  int _getPreviousIndex() {
+    if (_shuffleMode == AudioServiceShuffleMode.none || _shuffledIndices.isEmpty) {
+      final len = queue.value.length;
+      return len == 0 ? 0 : (_currentIndex - 1 + len) % len;
+    }
+    final pos = _shuffledIndices.indexOf(_currentIndex);
+    if (pos > 0) return _shuffledIndices[pos - 1];
+    return _shuffledIndices.last;
+  }
+
+  bool get _isAtEnd {
+    final count = queue.value.length;
+    if (count == 0) return true;
+    if (_shuffledIndices.isNotEmpty) {
+      return _currentIndex == _shuffledIndices.length - 1;
+    }
+    return _currentIndex == count - 1;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Transport controls
+  // ---------------------------------------------------------------------------
 
   @override
   Future<void> stop() async {
@@ -379,180 +405,11 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
-    _shuffleMode = shuffleMode;
-    if (shuffleMode == AudioServiceShuffleMode.all) {
-      _generateShuffledIndices();
-    } else {
-      _shuffledIndices = [];
-      _shuffleIndicesController.add([]);
-    }
-    playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
-  }
-
-  @override
-  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
-    _repeatMode = repeatMode;
-    playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
-  }
-
-  @override
-  Future<void> addQueueItem(MediaItem mediaItem) async {
-    final currentQueue = queue.value;
-    final newQueue = [...currentQueue, mediaItem];
-
-    if (_shuffleMode == AudioServiceShuffleMode.all) {
-      final newIndex = newQueue.length - 1;
-      _shuffledIndices.add(newIndex);
-      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-    }
-
-    queue.add(newQueue);
-    _syncQueueSignal();
-  }
-
-  @override
-  Future<void> removeQueueItem(MediaItem mediaItem) async {
-    final id = mediaItem.id;
-    final currentQueue = List<MediaItem>.from(queue.value);
-    
-    final indicesToRemove = <int>[];
-    for (int i = 0; i < currentQueue.length; i++) {
-      if (currentQueue[i].id == id) {
-        indicesToRemove.add(i);
-      }
-    }
-
-    if (indicesToRemove.isEmpty) return;
-
-    for (final index in indicesToRemove.reversed) {
-      currentQueue.removeAt(index);
-
-      if (_shuffledIndices.isNotEmpty) {
-        _shuffledIndices.remove(index);
-        for (int i = 0; i < _shuffledIndices.length; i++) {
-          if (_shuffledIndices[i] > index) {
-            _shuffledIndices[i]--;
-          }
-        }
-      }
-
-      if (index < _currentIndex) {
-        _currentIndex--;
-      } else if (index == _currentIndex) {
-        if (_currentIndex >= currentQueue.length) {
-          _currentIndex = currentQueue.isNotEmpty ? currentQueue.length - 1 : 0;
-        }
-      }
-    }
-
-    if (_shuffledIndices.isNotEmpty) {
-      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-    }
-
-    queue.add(currentQueue);
-  }
-
-  @override
-  Future<void> insertQueueItem(int index, MediaItem mediaItem) async {
-    final currentQueue = List<MediaItem>.from(queue.value);
-    if (index < 0) index = 0;
-    if (index > currentQueue.length) index = currentQueue.length;
-
-    currentQueue.insert(index, mediaItem);
-
-    if (_shuffledIndices.isNotEmpty) {
-      for (int i = 0; i < _shuffledIndices.length; i++) {
-        if (_shuffledIndices[i] >= index) {
-          _shuffledIndices[i]++;
-        }
-      }
-
-      final currentShuffledPos = _shuffledIndices.indexOf(_currentIndex);
-      if (currentShuffledPos != -1) {
-        _shuffledIndices.insert(currentShuffledPos + 1, index);
-      } else {
-        _shuffledIndices.add(index);
-      }
-      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-    }
-
-    if (index <= _currentIndex) {
-      _currentIndex++;
-    }
-
-    queue.add(currentQueue);
-    _syncQueueSignal();
-  }
-
-  void _generateShuffledIndices() {
-    final count = queue.value.length;
-    _shuffledIndices = List.generate(count, (i) => i);
-    _shuffledIndices.shuffle();
-
-    if (count > 0) {
-      _shuffledIndices.remove(_currentIndex);
-      _shuffledIndices.insert(0, _currentIndex);
-    }
-    _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-  }
-
-  int _getNextIndex() {
-    final count = queue.value.length;
-    if (count == 0) return 0;
-
-    if (_repeatMode == AudioServiceRepeatMode.one) {
-      return _currentIndex;
-    }
-
-    if (_shuffleMode == AudioServiceShuffleMode.none ||
-        _shuffledIndices.isEmpty) {
-      final nextIndex = _currentIndex + 1;
-      if (nextIndex < count) {
-        return nextIndex;
-      } else {
-        return _repeatMode == AudioServiceRepeatMode.all ? 0 : _currentIndex;
-      }
-    }
-
-    final currentShuffledPos = _shuffledIndices.indexOf(_currentIndex);
-    if (currentShuffledPos != -1 &&
-        currentShuffledPos < _shuffledIndices.length - 1) {
-      return _shuffledIndices[currentShuffledPos + 1];
-    }
-
-    return _repeatMode == AudioServiceRepeatMode.all
-        ? _shuffledIndices[0]
-        : _currentIndex;
-  }
-
-  int _getPreviousIndex() {
-    if (_shuffleMode == AudioServiceShuffleMode.none ||
-        _shuffledIndices.isEmpty) {
-      return (_currentIndex - 1 + queue.value.length) % queue.value.length;
-    }
-    final currentShuffledPos = _shuffledIndices.indexOf(_currentIndex);
-    if (currentShuffledPos != -1 && currentShuffledPos > 0) {
-      return _shuffledIndices[currentShuffledPos - 1];
-    }
-    return _shuffledIndices.last;
-  }
-
-  bool get _isAtEnd {
-    final count = queue.value.length;
-    if (count == 0) return true;
-    if (_shuffleMode == AudioServiceShuffleMode.all && _shuffledIndices.isNotEmpty) {
-      return _shuffledIndices.last == _currentIndex;
-    }
-    return _currentIndex == count - 1;
-  }
-
-  @override
   Future<void> skipToNext() async {
     if (queue.value.isEmpty) return;
-
     if (_repeatMode == AudioServiceRepeatMode.none && _isAtEnd) {
-      _currentIndex = _shuffleMode == AudioServiceShuffleMode.all && _shuffledIndices.isNotEmpty
+      _currentIndex = _shuffleMode == AudioServiceShuffleMode.all &&
+              _shuffledIndices.isNotEmpty
           ? _shuffledIndices[0]
           : 0;
     } else {
@@ -570,166 +427,302 @@ class MyAudioHandler extends BaseAudioHandler {
     _syncQueueSignal();
   }
 
+  @override
   Future<void> playMediaItem(MediaItem mediaItem) async {
     final index = queue.value.indexWhere((item) => item.id == mediaItem.id);
-    if (index != -1) {
-      _currentIndex = index;
-      await _playCurrent();
-      _syncQueueSignal();
-    }
+    if (index == -1) return;
+    _currentIndex = index;
+    await _playCurrent();
+    _syncQueueSignal();
   }
 
-  // Custom method to play a specific song from the provider
+  /// Play a specific song. If [song.path] is already in the queue, jumps to
+  /// that position; otherwise no-op (the caller is expected to call
+  /// [setPlaylist] first to establish the queue context).
   Future<void> playSong(Song song) async {
     final index = queue.value.indexWhere((item) => item.id == song.path);
-    if (index != -1) {
-      _currentIndex = index;
-      await _playCurrent();
-      _syncQueueSignal();
-    }
+    if (index == -1) return;
+    _currentIndex = index;
+    await _playCurrent();
+    _syncQueueSignal();
   }
 
-  /// Update _currentIndex without changing what is currently playing.
-  /// Used after a queue reorder to keep the now-playing song at the right index.
-  /// Does NOT call _syncQueueSignal — the UI signal was already updated by the reorder.
+  /// Update the tracked queue index without triggering playback.
+  /// Used after a queue reorder to keep the now-playing song at the right
+  /// index. Does NOT call `_syncQueueSignal` — the UI signal was already
+  /// updated by the reorder.
   void updateQueueIndex(int newIndex) {
     _currentIndex = newIndex;
     _updateWidget();
   }
 
+  // ---------------------------------------------------------------------------
+  // Normalization
+  // ---------------------------------------------------------------------------
+
+  void setNormalizationEnabled(bool enabled) {
+    _normalizationEnabled = enabled;
+    final current = mediaItem.value;
+    if (current != null) _applyNormalization(current.id);
+  }
+
+  void setNormalizationTargetLufs(double lufs) {
+    _normalizationTargetLufs = lufs;
+    if (_normalizationEnabled) {
+      final current = mediaItem.value;
+      if (current != null) _applyNormalization(current.id);
+    }
+  }
+
+  void setGainMap(Map<String, double> gainMap) {
+    _gainMap
+      ..clear()
+      ..addAll(gainMap);
+  }
+
+  void updateGain(String path, double gainDb) {
+    _gainMap[path] = gainDb;
+  }
+
+  void _applyNormalization(String trackId) {
+    if (!_normalizationEnabled) {
+      _player.setVolume(1.0);
+      return;
+    }
+    final gainDb = _gainMap[trackId] ?? 0.0;
+    final adjusted = gainDb + (_normalizationTargetLufs + 14.0);
+    final volume = pow(10.0, adjusted / 20.0).clamp(0.1, 2.0).toDouble();
+    _player.setVolume(volume);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Queue signal bridge
+  // ---------------------------------------------------------------------------
+
+  void _syncQueueSignal() {
+    if (_currentIndex < 0 || queue.value.isEmpty) {
+      queueSignal.updateFromQueueAndHistory(
+        upNext: const [],
+        history: _sessionPlayedOrder.toList(growable: false),
+      );
+      return;
+    }
+
+    final List<String> upNextPaths;
+    if (_shuffledIndices.isNotEmpty) {
+      if (_currentIndex < _shuffledIndices.length - 1) {
+        upNextPaths = _shuffledIndices
+            .sublist(_currentIndex + 1)
+            .map((idx) => queue.value[idx].id)
+            .toList();
+      } else {
+        upNextPaths = const [];
+      }
+    } else {
+      upNextPaths = _currentIndex < queue.value.length - 1
+          ? queue.value
+              .sublist(_currentIndex + 1)
+              .map((i) => i.id)
+              .toList()
+          : const [];
+    }
+
+    queueSignal.updateFromQueueAndHistory(
+      upNext: upNextPaths,
+      history: _sessionPlayedOrder.toList(growable: false),
+    );
+
+    _scheduleRadioFill();
+  }
+
+  void _scheduleRadioFill() {
+    if (!audioSignal.isRadioMode.value) return;
+    if (mediaItem.value == null) return;
+    final remaining = queue.value.length - _currentIndex - 1;
+    if (remaining > 3) return;
+    // Debounce so a burst of queue updates doesn't trigger multiple fills.
+    _radioFillDebounce?.cancel();
+    _radioFillDebounce = Timer(const Duration(milliseconds: 250), _fillRadioQueue);
+  }
+
+  Future<void> _fillRadioQueue() async {
+    if (_isFillingRadio || _isDisposed) return;
+    final current = mediaItem.value;
+    if (current == null || !current.id.startsWith('yt:')) return;
+
+    _isFillingRadio = true;
+    try {
+      final videoId = current.id.substring(3);
+      final songs = await youtubeDatasource.getRadioSongs(videoId);
+      if (_isDisposed) return;
+      audioSignal.cacheRadioSongs(songs);
+      for (final song in songs) {
+        if (_isDisposed) return;
+        final songVideoId =
+            song.path.startsWith('yt:') ? song.path.substring(3) : '';
+        final artUri =
+            Uri.parse(youtubeDatasource.getArtworkUrl(songVideoId));
+        await addQueueItem(MediaItem(
+          id: song.path,
+          album: song.album ?? 'YouTube Music',
+          title: song.title,
+          artist: song.artist,
+          duration: song.duration,
+          artUri: artUri,
+          extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
+        ));
+      }
+    } finally {
+      _isFillingRadio = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Playback orchestration
+  // ---------------------------------------------------------------------------
+
+  /// Orchestrates a single "play the current item" cycle. Safe to call
+  /// concurrently — each call is serialized via [_activeToken] and any
+  /// superseded call bails out at the next await boundary.
   Future<void> _playCurrent() async {
     if (_isDisposed || queue.value.isEmpty) return;
 
-    // Cancel any ongoing load operation
-    if (_loadingCompleter != null && !_loadingCompleter!.isCompleted) {
-      _loadingCompleter!.complete();
-    }
+    // Pause the underlying player immediately so the previous track doesn't
+    // keep playing while we resolve a new source.
+    if (_player.playing) await _player.pause();
 
-    final thisLoad = Completer<void>();
-    _loadingCompleter = thisLoad;
+    final token = _LoadToken(++_loadGeneration);
+    _activeToken = token;
 
     var item = queue.value[_currentIndex];
 
-    // Record this song in session playback order for history tracking
-    final path = item.id;
-    _sessionPlayedOrder.remove(path);
-    _sessionPlayedOrder.insert(0, path);
-
-    // Lazily load art URI for MPRIS
-    if (!item.id.startsWith('yt:') && item.artUri == null && item.extras?['hasAlbumArt'] == true) {
-      final artUri = await _artCache.getArtUri(item.id);
-      if (artUri != null) {
-        item = item.copyWith(artUri: artUri);
-        final updatedQueue = List<MediaItem>.from(queue.value);
-        updatedQueue[_currentIndex] = item;
-        queue.add(updatedQueue);
-        if (mediaItem.value?.id == item.id) {
-          mediaItem.add(item);
-        }
-      }
-    } else if (item.id.startsWith('yt:')) {
-      final videoId = item.id.substring(3);
-      
-      // Try local cache first (synchronous check)
-      final artPath = _artCache.getArtPathSync(item.id);
-      if (artPath != null) {
-        item = item.copyWith(artUri: Uri.file(artPath));
-      } else {
-        // Fallback to network thumbnail
-        final thumbUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
-        item = item.copyWith(artUri: thumbUri);
-        
-        // Start background download (completes later, will update next time or via duration stream listener)
-        _artCache.getArt(item.id);
-      }
-    }
-
-    mediaItem.add(item);
-
-    // Apply normalization for the new track
-    _applyNormalization(item.id);
+    // History bookkeeping for the new track.
+    _sessionPlayedOrder
+      ..remove(item.id)
+      ..insert(0, item.id);
 
     try {
-      if (thisLoad.isCompleted || _isDisposed) return;
+      item = await _resolveArt(item, token);
+      _throwIfCancelled(token);
 
-      if (item.id.startsWith('yt:')) {
-        final videoId = item.id.substring(3);
+      // Publish metadata early so the UI updates with the new selection.
+      // Cancellation past this point is fine: a newer load will overwrite
+      // mediaItem with its own item.
+      mediaItem.add(item);
+      _applyNormalization(item.id);
 
-        // Check for cached audio first
-        final cachedPath = audioCacheService.getCachedPath(videoId);
-        if (cachedPath != null) {
-          print('AudioCache: Playing from cache: $videoId');
-          await _player.setAudioSource(
-            AudioSource.file(cachedPath, tag: item),
-          );
-        } else {
-          // Stream from network
-          final url = await youtubeService.getAudioStreamUrl(videoId);
-          if (url != null) {
-            await _player.setAudioSource(
-              AudioSource.uri(
-                Uri.parse(url),
-                tag: item,
-                headers: const {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                },
-              ),
-            );
+      final source = await _resolveSource(item, token);
+      _throwIfCancelled(token);
 
-            // Cache in background while playing
-            if (settingsSignal.enableStreamCaching.value) {
-              audioCacheService.cacheStream(videoId, streamUrl: url);
-            }
-          } else {
-            throw Exception('Could not resolve YouTube stream');
-          }
-        }
-      } else {
-        await _player.setAudioSource(
-          AudioSource.uri(Uri.file(item.id), tag: item),
-        );
-      }
-
-      if (thisLoad.isCompleted || _isDisposed) return;
+      await _player.setAudioSource(source);
+      _throwIfCancelled(token);
 
       await _player.play();
-
-      // Pre-cache next track in background
-      if (settingsSignal.enablePreCaching.value) {
-        _preCacheNext();
-      }
-    } on PlayerInterruptedException catch (_) {
-      print("Audio loading interrupted (switching tracks)");
+    } on _LoadCancelled {
+      // Normal control flow; no logging.
+    } on PlayerInterruptedException {
+      // Already handled by the player; no-op.
     } catch (e) {
-      if (e.toString().contains('Loading interrupted')) {
-        print("Audio loading interrupted (switching tracks)");
-      } else {
-        print("Error playing audio: $e");
+      if (e.toString().contains('Loading interrupted')) return;
+      // Only surface errors for the still-active load.
+      if (_activeToken == token) {
+        playbackState.add(playbackState.value.copyWith(
+          processingState: AudioProcessingState.error,
+        ));
       }
     } finally {
-      if (_loadingCompleter == thisLoad && !thisLoad.isCompleted) {
-        thisLoad.complete();
+      // Pre-cache the next track only if this load is still the active one.
+      if (_activeToken == token &&
+          !_isDisposed &&
+          settingsSignal.enablePreCaching.value) {
+        _preCacheNext();
       }
     }
   }
 
-  /// Pre-cache the next YouTube track in the queue.
+  /// Throws [_LoadCancelled] if [token] has been superseded by a newer load
+  /// or the handler has been disposed.
+  void _throwIfCancelled(_LoadToken token) {
+    if (_isDisposed || token != _activeToken) throw const _LoadCancelled();
+  }
+
+  /// Resolves the art URI for [item], mutating and returning a copy with the
+  /// art URI set. Yields (does not cancel) if [token] becomes stale — the
+  /// next code path will throw.
+  Future<MediaItem> _resolveArt(MediaItem item, _LoadToken token) async {
+    if (!item.id.startsWith('yt:') &&
+        item.artUri == null &&
+        item.extras?['hasAlbumArt'] == true) {
+      final uri = await _artCache.getArtUri(item.id);
+      if (token != _activeToken || _isDisposed) return item;
+      if (uri == null) return item;
+      final updated = item.copyWith(artUri: uri);
+      final newQueue = List<MediaItem>.from(queue.value)
+        ..[_currentIndex] = updated;
+      queue.add(newQueue);
+      return updated;
+    }
+
+    if (item.id.startsWith('yt:')) {
+      final videoId = item.id.substring(3);
+      final cached = _artCache.getArtPathSync(item.id);
+      if (cached != null) return item.copyWith(artUri: Uri.file(cached));
+
+      final thumb = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
+      _artCache.getArt(item.id); // background download
+      return item.copyWith(artUri: thumb);
+    }
+
+    return item;
+  }
+
+  /// Resolves the audio source for [item] (file, cache, or network stream).
+  /// Throws [_LoadCancelled] on supersession.
+  Future<AudioSource> _resolveSource(MediaItem item, _LoadToken token) async {
+    if (item.id.startsWith('yt:')) {
+      final videoId = item.id.substring(3);
+      final cached = audioCacheService.getCachedPath(videoId);
+      if (cached != null) {
+        _throwIfCancelled(token);
+        return AudioSource.file(cached, tag: item);
+      }
+      final url = await youtubeService.getAudioStreamUrl(videoId);
+      _throwIfCancelled(token);
+      if (url == null) throw Exception('Could not resolve YouTube stream');
+
+      if (settingsSignal.enableStreamCaching.value) {
+        unawaited(audioCacheService.cacheStream(videoId, streamUrl: url));
+      }
+      return AudioSource.uri(
+        Uri.parse(url),
+        tag: item,
+        headers: const {
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      );
+    }
+    return AudioSource.uri(Uri.file(item.id), tag: item);
+  }
+
   void _preCacheNext() {
     if (_isDisposed || queue.value.isEmpty) return;
 
     final nextIndex = _getNextIndex();
     if (nextIndex == _currentIndex) return;
 
-    final nextItem = queue.value[nextIndex];
-    if (!nextItem.id.startsWith('yt:')) return;
+    final next = queue.value[nextIndex];
+    if (!next.id.startsWith('yt:')) return;
 
-    final nextVideoId = nextItem.id.substring(3);
-    if (audioCacheService.getCachedPath(nextVideoId) != null) return;
-    if (audioCacheService.isCaching(nextVideoId)) return;
-
-    print('AudioCache: Pre-caching next track: $nextVideoId');
-    audioCacheService.cacheStream(nextVideoId);
+    final videoId = next.id.substring(3);
+    if (audioCacheService.getCachedPath(videoId) != null) return;
+    if (audioCacheService.isCaching(videoId)) return;
+    audioCacheService.cacheStream(videoId);
   }
+
+  // ---------------------------------------------------------------------------
+  // History tracking
+  // ---------------------------------------------------------------------------
 
   void _handleHistoryTracking(bool isPlaying) {
     final currentId = mediaItem.value?.id;
@@ -741,13 +734,15 @@ class MyAudioHandler extends BaseAudioHandler {
       _lastTrackId = currentId;
     }
 
-    if (isPlaying && !_hasRecordedCurrent && currentId != null && !currentId.startsWith('yt:')) {
+    if (isPlaying &&
+        !_hasRecordedCurrent &&
+        currentId != null &&
+        !currentId.startsWith('yt:')) {
       _historyTimer ??= Timer(const Duration(seconds: 40), () async {
         if (mediaItem.value?.id == currentId && !_hasRecordedCurrent) {
           _hasRecordedCurrent = true;
           await PlaybackHistoryService.recordPlay(currentId);
-          await audioSignal.refreshHistory();
-          print('HISTORY_DEBUG: Recorded play for $currentId');
+          if (!_isDisposed) await audioSignal.refreshHistory();
         }
       });
     } else if (!isPlaying) {
@@ -758,28 +753,64 @@ class MyAudioHandler extends BaseAudioHandler {
     }
   }
 
-  // Expose player for direct access if needed
-  AudioPlayer get player => _player;
+  // ---------------------------------------------------------------------------
+  // Android home-screen widget
+  // ---------------------------------------------------------------------------
 
-  /// Dispose of resources
+  Future<void> _updateWidget() async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+
+    final item = mediaItem.value;
+    final isPlaying = playbackState.value.playing;
+    final isIdle =
+        playbackState.value.processingState == AudioProcessingState.idle;
+
+    if (item == null || isIdle) {
+      await HomeWidget.saveWidgetData<String>('title', 'Not Playing');
+      await HomeWidget.saveWidgetData<String>('artist', '-');
+      await HomeWidget.saveWidgetData<bool>('isPlaying', false);
+      await HomeWidget.saveWidgetData<String?>('artPath', null);
+    } else {
+      await HomeWidget.saveWidgetData<String>('title', item.title);
+      await HomeWidget.saveWidgetData<String>('artist', item.artist ?? '-');
+      await HomeWidget.saveWidgetData<bool>('isPlaying', isPlaying);
+
+      String? artPath;
+      final artUri = item.artUri;
+      if (artUri != null && artUri.isScheme('file')) {
+        artPath = artUri.toFilePath();
+      }
+      await HomeWidget.saveWidgetData<String?>('artPath', artPath);
+    }
+
+    await HomeWidget.updateWidget(
+      name: 'MusicWidgetProvider',
+      androidName: 'MusicWidgetProvider',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Disposal
+  // ---------------------------------------------------------------------------
+
   Future<void> dispose() async {
     if (_isDisposed) return;
     _isDisposed = true;
 
-    if (_loadingCompleter != null && !_loadingCompleter!.isCompleted) {
-      _loadingCompleter!.complete();
-    }
+    // Bump generation so any in-flight load throws _LoadCancelled on its
+    // next check.
+    _loadGeneration++;
+    _activeToken = null;
+
+    _radioFillDebounce?.cancel();
+    _historyTimer?.cancel();
 
     for (final sub in _subscriptions) {
       await sub.cancel();
     }
     _subscriptions.clear();
 
-    _historyTimer?.cancel();
-    _historyTimer = null;
-
     await _shuffleIndicesController.close();
-
     await _player.dispose();
   }
 }

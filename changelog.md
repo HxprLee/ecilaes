@@ -1,3 +1,28 @@
+# Changelog - 2026-06-21
+
+### Added
+- **Platform-Specific Home Shell**: Split `HomeShell` into `HomeShellDesktop` and `HomeShellMobile` under `lib/screens/home/`, each with their own layout logic.
+- **Player Layout Refactor**: Extracted expanded-player layout constants into `player_layout_spec.dart` and layout logic into `player_layout_calculator.dart`.
+- **Queue List Core**: Extracted queue list rendering into `queue_list_core.dart` for cleaner separation.
+- **Settings Section Widget**: Reusable `SettingsSection` widget for consistent settings UI.
+- **Discord Presence Section**: New `discord_presence_section.dart` for Discord RPC settings.
+- **Theme Tokens & Palette**: New `app_theme_tokens.dart` and `app_theme_palette.dart` for centralized theme values.
+- **Platform Utils**: New `platform_utils.dart` for cross-platform path helpers.
+- **More bugs to fix**: Yep.
+
+### Changed
+- **Home Shell Simplification**: Reduced `HomeShell` from ~410 lines to ~35 lines — now delegates to platform-specific shells.
+- **Morphing Player Refactor**: Extracted layout constants and logic, simplified main widget.
+- **Theme System Reorganization**: Split monolithic theme builder into tokens, palette, extension, and style files.
+- **App Icon Color**: App icon in about page now uses `ColorFilter.mode` to inherit the app's secondary color.
+- **License Header**: Added GNU GPL v3 license header to all source files.
+- **url_launcher_linux**: Added explicit `url_launcher_linux` dependency for GitHub link launching on Linux.
+
+### Fixed
+- **Queue Signal**: Fixed `reorderQueue` and `updateFromQueueAndHistory` call sites after signal refactor.
+
+---
+
 # Changelog - 2026-06-02
 
 ### Added

@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +22,8 @@ import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
 import '../../theme/app_theme_style.dart';
+import '../../theme/app_theme_tokens.dart';
+import '../../widgets/settings/settings_section.dart';
 import '../../widgets/sliver_page_header.dart';
 
 class CustomizationScreen extends StatelessWidget {
@@ -21,10 +39,7 @@ class CustomizationScreen extends StatelessWidget {
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
-          const SliverPageHeader(
-            title: 'Customization',
-            maxWidth: 600,
-          ),
+          const SliverPageHeader(title: 'Customization', maxWidth: 600),
           SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
@@ -33,166 +48,209 @@ class CustomizationScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 24),
-                    
+
                     // Display section
-                    _sectionLabel('Display', context),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Card(
-                        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                        surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-                          ),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Watch((context) {
-                          final scale = settingsSignal.textScaleFactor.value;
-                          return Column(
-                            children: [
-                              // Theme Style selector
-                              if (_isMobile)
-                                _buildMobileThemeStyle(context)
-                              else
-                                ListTile(
-                                  title: const Text('Theme Style', style: TextStyle(fontSize: 14)),
-                                  subtitle: const Text('Choose color palette', style: TextStyle(fontSize: 12)),
-                                  trailing: _buildThemeStyleButton(context),
-                                ),
-                              _divider(context),
-                              // Theme mode selector
-                              if (_isMobile)
-                                _buildMobileThemeMode(context)
-                              else
-                                ListTile(
-                                  title: const Text('Theme', style: TextStyle(fontSize: 14)),
-                                  subtitle: const Text('Choose app appearance', style: TextStyle(fontSize: 12)),
-                                  trailing: _buildThemeModeButton(context),
-                                ),
-                              _divider(context),
-                              ListTile(
-                                title: const Text('Text Scale', style: TextStyle(fontSize: 14)),
-                                subtitle: Text('${(scale * 100).round()}%', 
-                                  style: TextStyle(color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.8), fontSize: 12)),
-                              ),
-                              _buildTextScaleSlider(context, scale),
-                            ],
-                          );
-                        }),
+                    const SettingsSectionLabel('Display'),
+                    SettingsSection(
+                      child: Column(
+                        children: [
+                          if (_isMobile) ...[
+                            _buildMobileThemeStyle(context),
+                            const SettingsDivider(indent: 16),
+                            _buildMobileThemeMode(context),
+                          ] else ...[
+                            SettingsTile(
+                              title: 'Theme Style',
+                              subtitle: 'Choose color palette',
+                              showLeading: false,
+                              trailing: _buildThemeStyleButton(context),
+                            ),
+                            const SettingsDivider(indent: 16),
+                            SettingsTile(
+                              title: 'Theme',
+                              subtitle: 'Choose app appearance',
+                              showLeading: false,
+                              trailing: _buildThemeModeButton(context),
+                            ),
+                            const SettingsDivider(indent: 16),
+                          ],
+                          Watch((context) {
+                            final scale = settingsSignal.textScaleFactor.value;
+                            return SettingsTile(
+                              title: 'Text Scale',
+                              subtitle: '${(scale * 100).round()}%',
+                              subtitleColor: context.colorScheme.secondary
+                                  .withValues(alpha: 0.8),
+                              showLeading: false,
+                              bottom: _buildTextScaleSlider(context, scale),
+                            );
+                          }),
+                        ],
                       ),
                     ),
 
                     const SizedBox(height: 32),
 
                     // Visual Effects section
-                    _sectionLabel('Visual Effects', context),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Card(
-                        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                        surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                    const SettingsSectionLabel('Visual Effects'),
+                    SettingsSection(
+                      child: Column(
+                        children: [
+                          SettingsTile(
+                            title: 'Custom Font (Iosevka)',
+                            subtitle: 'Use bundled Iosevka Nerd Font',
+                            showLeading: false,
+                            trailing: Watch(
+                              (context) => Switch(
+                                value: settingsSignal.useCustomFont.value,
+                                onChanged: (value) =>
+                                    settingsSignal.updateCustomFont(value),
+                                activeThumbColor:
+                                    context.colorScheme.secondary,
+                              ),
+                            ),
                           ),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Column(
-                          children: [
-                            Watch((context) => SwitchListTile(
-                              title: const Text('Custom Font (Iosevka)', style: TextStyle(fontSize: 14)),
-                              subtitle: const Text('Use bundled Iosevka Nerd Font', style: TextStyle(fontSize: 12)),
-                              value: settingsSignal.useCustomFont.value,
-                              onChanged: (value) => settingsSignal.updateCustomFont(value),
-                              activeThumbColor: Theme.of(context).colorScheme.secondary,
-                            )),
-                            if (_isDesktop) ...[
-                              _divider(context),
-                              Watch((context) => SwitchListTile(
-                                title: const Text('Custom Window Controls', style: TextStyle(fontSize: 14)),
-                                subtitle: const Text('Use custom buttons', style: TextStyle(fontSize: 12)),
-                                value: settingsSignal.useCustomWindowControls.value,
-                                onChanged: (value) => settingsSignal.updateCustomWindowControls(value),
-                                activeThumbColor: Theme.of(context).colorScheme.secondary,
-                              )),
-                            ],
-                            _divider(context),
-                            Watch((context) => SwitchListTile(
-                              title: const Text('Blur Effect', style: TextStyle(fontSize: 14)),
-                              subtitle: const Text('Enable backdrop blur globally', style: TextStyle(fontSize: 12)),
-                              value: settingsSignal.enableGlobalBlur.value,
-                              onChanged: (value) => settingsSignal.updateGlobalBlur(value),
-                              activeThumbColor: Theme.of(context).colorScheme.secondary,
-                            )),
-                            if (_isDesktop) ...[
-                              _divider(context),
-                              Watch((context) => SwitchListTile(
-                                title: const Text('Window Transparency', style: TextStyle(fontSize: 14)),
-                                subtitle: const Text('Translucent background (requires restart)', style: TextStyle(fontSize: 12)),
-                                value: settingsSignal.enableWindowTransparency.value,
-                                onChanged: (value) => settingsSignal.updateWindowTransparency(value),
-                                activeThumbColor: Theme.of(context).colorScheme.secondary,
-                              )),
-                            ],
+                          if (_isDesktop) ...[
+                            const SettingsDivider(indent: 16),
+                            SettingsTile(
+                              title: 'Custom Window Controls',
+                              subtitle: 'Use custom buttons',
+                              showLeading: false,
+                              trailing: Watch(
+                                (context) => Switch(
+                                  value: settingsSignal
+                                      .useCustomWindowControls
+                                      .value,
+                                  onChanged: (value) => settingsSignal
+                                      .updateCustomWindowControls(value),
+                                  activeThumbColor:
+                                      context.colorScheme.secondary,
+                                ),
+                              ),
+                            ),
                           ],
-                        ),
+                          const SettingsDivider(indent: 16),
+                          SettingsTile(
+                            title: 'Blur Effect',
+                            subtitle: 'Enable backdrop blur globally',
+                            showLeading: false,
+                            trailing: Watch(
+                              (context) => Switch(
+                                value: settingsSignal.enableGlobalBlur.value,
+                                onChanged: (value) =>
+                                    settingsSignal.updateGlobalBlur(value),
+                                activeThumbColor:
+                                    context.colorScheme.secondary,
+                              ),
+                            ),
+                          ),
+                          if (_isDesktop) ...[
+                            const SettingsDivider(indent: 16),
+                            SettingsTile(
+                              title: 'Window Transparency',
+                              subtitle:
+                                  'Translucent background (requires restart)',
+                              showLeading: false,
+                              trailing: Watch(
+                                (context) => Switch(
+                                  value: settingsSignal
+                                      .enableWindowTransparency
+                                      .value,
+                                  onChanged: (value) => settingsSignal
+                                      .updateWindowTransparency(value),
+                                  activeThumbColor:
+                                      context.colorScheme.secondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
 
                     const SizedBox(height: 32),
 
                     // Layout section
-                    _sectionLabel('Layout', context),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Card(
-                        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                        surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                    const SettingsSectionLabel('Layout'),
+                    SettingsSection(
+                      child: Column(
+                        children: [
+                          SettingsTile(
+                            title: 'Player Layout',
+                            subtitle: 'Customize the action buttons row',
+                            showLeading: false,
+                            onTap: () => context.go(
+                              '/settings/customization/player-layout',
+                            ),
                           ),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Column(
-                          children: [
-                            _LayoutTile(
-                              title: 'Player Layout',
-                              subtitle: 'Customize the action buttons row',
-                              onTap: () => context.go('/settings/customization/player-layout'),
+                          const SettingsDivider(indent: 16),
+                          SettingsTile(
+                            title: 'Context Menu Actions',
+                            subtitle: 'Customize the long-press menu actions',
+                            showLeading: false,
+                            onTap: () => context.go(
+                              '/settings/customization/actions-layout',
                             ),
-                            _divider(context),
-                            _LayoutTile(
-                              title: 'Context Menu Actions',
-                              subtitle: 'Customize the long-press menu actions',
-                              onTap: () => context.go('/settings/customization/actions-layout'),
+                          ),
+                          const SettingsDivider(indent: 16),
+                          SettingsTile(
+                            title: 'Lyrics View Layout',
+                            subtitle: 'Customize lyrics alignment and fonts',
+                            showLeading: false,
+                            onTap: () => context.go(
+                              '/settings/customization/lyrics-layout',
                             ),
-                            _divider(context),
-                            _LayoutTile(
-                              title: 'Lyrics View Layout',
-                              subtitle: 'Customize lyrics alignment and fonts',
-                              onTap: () => context.go('/settings/customization/lyrics-layout'),
+                          ),
+                          const SettingsDivider(indent: 16),
+                          SettingsTile(
+                            title: 'Sidebar Items',
+                            subtitle:
+                                'Choose which library items appear in sidebar',
+                            showLeading: false,
+                            onTap: () => context.go(
+                              '/settings/customization/sidebar-layout',
                             ),
-                            _divider(context),
-                            _LayoutTile(
-                              title: 'Sidebar Items',
-                              subtitle: 'Choose which library items appear in sidebar',
-                              onTap: () => context.go('/settings/customization/sidebar-layout'),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
 
+                    if (_isDesktop) ...[
+                      const SizedBox(height: 32),
+                      const SettingsSectionLabel('Discord Rich Presence'),
+                      SettingsSection(
+                        child: SettingsTile(
+                          title: 'Discord Rich Presence',
+                          subtitle: 'Configure Discord status buttons',
+                          showLeading: false,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Watch(
+                                (context) => Switch(
+                                  value: settingsSignal.enableDiscordRpc.value,
+                                  onChanged: (value) =>
+                                      settingsSignal.updateDiscordRpc(value),
+                                  activeThumbColor:
+                                      context.colorScheme.secondary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.chevron_right, size: 20),
+                            ],
+                          ),
+                          onTap: () => context.go(
+                            '/settings/customization/discord-presence',
+                          ),
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(height: 24),
-                    Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+                    Watch(
+                      (context) =>
+                          SizedBox(height: audioSignal.reservedHeight.value),
+                    ),
                   ],
                 ),
               ),
@@ -209,11 +267,20 @@ class CustomizationScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Theme Style', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          const Text(
+            'Theme Style',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          ),
           const SizedBox(height: 4),
-          const Text('Choose color palette', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          const Text(
+            'Choose color palette',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
           const SizedBox(height: 12),
-          SizedBox(width: double.infinity, child: _buildThemeStyleButton(context)),
+          SizedBox(
+            width: double.infinity,
+            child: _buildThemeStyleButton(context),
+          ),
         ],
       ),
     );
@@ -225,11 +292,20 @@ class CustomizationScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Theme', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+          const Text(
+            'Theme',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          ),
           const SizedBox(height: 4),
-          const Text('Choose app appearance', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          const Text(
+            'Choose app appearance',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
           const SizedBox(height: 12),
-          SizedBox(width: double.infinity, child: _buildThemeModeButton(context)),
+          SizedBox(
+            width: double.infinity,
+            child: _buildThemeModeButton(context),
+          ),
         ],
       ),
     );
@@ -237,16 +313,18 @@ class CustomizationScreen extends StatelessWidget {
 
   Widget _buildTextScaleSlider(BuildContext context, double scale) {
     return Padding(
-      padding: const EdgeInsets.only(left: 20, right: 20, bottom: 16),
+      padding: const EdgeInsets.only(left: 0, right: 20, bottom: 16),
       child: Row(
         children: [
           const Text('A', style: TextStyle(fontSize: 12, color: Colors.grey)),
           Expanded(
             child: SliderTheme(
               data: SliderThemeData(
-                activeTrackColor: const Color(0xFFFCE7AC),
-                inactiveTrackColor: const Color(0xFFFCE7AC).withValues(alpha: 0.2),
-                thumbColor: const Color(0xFFFCE7AC),
+                activeTrackColor: context.colorScheme.secondary,
+                inactiveTrackColor: context.colorScheme.secondary.withValues(
+                  alpha: 0.2,
+                ),
+                thumbColor: context.colorScheme.secondary,
               ),
               child: Slider(
                 value: scale,
@@ -266,8 +344,16 @@ class CustomizationScreen extends StatelessWidget {
   Widget _buildThemeStyleButton(BuildContext context) {
     return SegmentedButton<AppThemeStyle>(
       segments: const [
-        ButtonSegment(value: AppThemeStyle.signature, icon: Icon(Icons.palette, size: 16), label: Text('eclipx', style: TextStyle(fontSize: 12))),
-        ButtonSegment(value: AppThemeStyle.material3, icon: Icon(Icons.auto_awesome, size: 16), label: Text('Material', style: TextStyle(fontSize: 12))),
+        ButtonSegment(
+          value: AppThemeStyle.signature,
+          icon: Icon(Icons.palette, size: 16),
+          label: Text('eclipx', style: TextStyle(fontSize: 12)),
+        ),
+        ButtonSegment(
+          value: AppThemeStyle.material3,
+          icon: Icon(Icons.auto_awesome, size: 16),
+          label: Text('Material', style: TextStyle(fontSize: 12)),
+        ),
       ],
       selected: {settingsSignal.themeStyle.value},
       onSelectionChanged: (set) => settingsSignal.updateThemeStyle(set.first),
@@ -279,54 +365,26 @@ class CustomizationScreen extends StatelessWidget {
   Widget _buildThemeModeButton(BuildContext context) {
     return SegmentedButton<ThemeMode>(
       segments: const [
-        ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto, size: 16), label: Text('System', style: TextStyle(fontSize: 12))),
-        ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode, size: 16), label: Text('Light', style: TextStyle(fontSize: 12))),
-        ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode, size: 16), label: Text('Dark', style: TextStyle(fontSize: 12))),
+        ButtonSegment(
+          value: ThemeMode.system,
+          icon: Icon(Icons.brightness_auto, size: 16),
+          label: Text('System', style: TextStyle(fontSize: 12)),
+        ),
+        ButtonSegment(
+          value: ThemeMode.light,
+          icon: Icon(Icons.light_mode, size: 16),
+          label: Text('Light', style: TextStyle(fontSize: 12)),
+        ),
+        ButtonSegment(
+          value: ThemeMode.dark,
+          icon: Icon(Icons.dark_mode, size: 16),
+          label: Text('Dark', style: TextStyle(fontSize: 12)),
+        ),
       ],
       selected: {settingsSignal.themeMode.value},
       onSelectionChanged: (set) => settingsSignal.updateThemeMode(set.first),
       style: const ButtonStyle(visualDensity: VisualDensity.compact),
       showSelectedIcon: false,
-    );
-  }
-
-  Widget _sectionLabel(String label, BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 20, bottom: 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _divider(BuildContext context) => Divider(
-    height: 1,
-    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
-    indent: 16,
-    endIndent: 16,
-  );
-}
-
-class _LayoutTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _LayoutTile({required this.title, required this.subtitle, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      title: Text(title, style: const TextStyle(fontSize: 14)),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-      trailing: const Icon(Icons.chevron_right, size: 20),
-      onTap: onTap,
     );
   }
 }

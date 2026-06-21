@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -127,7 +143,7 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
                               Icons.arrow_back,
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.54),
+                              ).colorScheme.onSurface.withValues(alpha: 0.54),
                             ),
                             onPressed: () async {
                               final musicPath = await audioSignal.getMusicPath();
@@ -157,7 +173,7 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
                             style: TextStyle(
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.38),
+                              ).colorScheme.onSurface.withValues(alpha: 0.38),
                               fontSize: 14,
                             ),
                             maxLines: 1,
@@ -179,7 +195,7 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
                           style: TextStyle(
                             color: Theme.of(
                               context,
-                            ).colorScheme.onSurface.withOpacity(0.54),
+                            ).colorScheme.onSurface.withValues(alpha: 0.54),
                           ),
                         ),
                       )
@@ -250,11 +266,11 @@ class _FolderTile extends StatelessWidget {
       trailing: IconButton(
         icon: Icon(
           Icons.more_vert,
-          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.54),
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
         ),
         onPressed: () => _showFolderMenu(context),
       ),
-      hoverColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.05),
+      hoverColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     );
   }
@@ -284,7 +300,7 @@ class _FolderTile extends StatelessWidget {
           child: ListTile(
             leading: Icon(
               Icons.playlist_add,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
             title: Text(
               'Add Folder to Playlist',
@@ -411,11 +427,11 @@ class _FileTileState extends State<_FileTile> {
       trailing: IconButton(
         icon: Icon(
           Icons.more_vert,
-          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.54),
+          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
         ),
         onPressed: () => _showFileMenu(context),
       ),
-      hoverColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.05),
+      hoverColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     );
   }
@@ -445,7 +461,7 @@ class _FileTileState extends State<_FileTile> {
           child: ListTile(
             leading: Icon(
               Icons.playlist_add,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
             title: Text(
               'Add to Playlist',

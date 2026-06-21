@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -6,6 +22,7 @@ import '../models/playlist.dart';
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
 import '../services/YoutubeDatasource.dart';
+import '../theme/app_theme_tokens.dart';
 import 'song_tile.dart';
 
 class PlaylistCover extends StatelessWidget {
@@ -14,6 +31,7 @@ class PlaylistCover extends StatelessWidget {
   final double? height;
   final double borderRadius;
   final FaIconData? iconOverride;
+  final Color? iconColor;
 
   const PlaylistCover({
     super.key,
@@ -22,6 +40,7 @@ class PlaylistCover extends StatelessWidget {
     this.height,
     this.borderRadius = 12,
     this.iconOverride,
+    this.iconColor,
   });
 
   @override
@@ -119,24 +138,33 @@ class PlaylistCover extends StatelessWidget {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.7,
-        ),
+        color: _buildPlaceholderBackground(context),
         borderRadius: BorderRadius.circular(borderRadius),
       ),
       child: Center(
-        child: FaIcon(
+child: FaIcon(
           iconOverride ??
               (playlist.id == 'favorites'
                   ? FontAwesomeIcons.solidHeart
                   : FontAwesomeIcons.list),
-          color: Theme.of(context).colorScheme.secondary,
-          size: (width != null && width! < 30) 
-              ? width! * 0.7 
+          color: iconColor ?? Theme.of(context).colorScheme.secondary,
+          size: (width != null && width! < 30)
+              ? width! * 0.7
               : (width ?? 100) / 3,
         ),
       ),
     );
+  }
+
+  static Color _buildPlaceholderBackground(BuildContext context) {
+    if (context.isMaterial3) {
+      return context.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7);
+    }
+    return Color.lerp(
+      context.colorScheme.surface,
+      Colors.white,
+      0.05,
+    )!.withValues(alpha: 0.7);
   }
 
   Widget _buildGrid(BuildContext context, List<Song> songs, String? artDir) {

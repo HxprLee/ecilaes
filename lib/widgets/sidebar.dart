@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -7,7 +23,7 @@ import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
-import '../theme/app_theme_extensions.dart';
+import '../theme/app_theme_tokens.dart';
 import '../models/playlist.dart';
 import 'playlist_cover.dart';
 import 'dart:io';
@@ -88,18 +104,13 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                 child: Container(
                   width: expandedWidth,
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .extension<AppThemeExtension>()!
-                        .sidebarBackground
-                        .withValues(
-                          alpha: settingsSignal.enableGlobalBlur.value
-                              ? 0.67
-                              : 1.0,
-                        ),
+                    color: context.tokens.sidebarBackground.withValues(
+                      alpha: settingsSignal.enableGlobalBlur.value
+                          ? 0.67
+                          : 1.0,
+                    ),
                     border: Border.all(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: 0.15),
+                      color: context.accentBorder(0.15),
                     ),
                   ),
                   child: Column(
@@ -151,7 +162,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                         child: Padding(
                                           padding: const EdgeInsets.only(left: 12),
                                           child: Text(
-                                            'Music',
+                                            'ecilaes',
                                             style: TextStyle(
                                               fontSize: 22,
                                               fontWeight: FontWeight.bold,
@@ -260,8 +271,16 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                   ),
                                   onTap: () => context.go('/library'),
                                 ),
-                                if (value > 0.5 && pinnedItems.isNotEmpty)
-                                  _buildSectionTitle('Library', value),
+                                if (pinnedItems.isNotEmpty) ...[
+                                  Divider(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface.withValues(alpha: 0.1),
+                                    height: 16,
+                                  ),
+                                  if (value > 0.5)
+                                    _buildSectionTitle('Library', value),
+                                ],
                                 ...pinnedItems.map(
                                   (item) => _buildNavItem(
                                     item['icon'] as FaIconData,
@@ -274,7 +293,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                 Divider(
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.onSurface.withOpacity(0.1),
+                                  ).colorScheme.onSurface.withValues(alpha: 0.1),
                                   height: 32,
                                 ),
                                 if (value > 0.5)
@@ -294,7 +313,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                             color: Theme.of(context)
                                                 .colorScheme
                                                 .onSurface
-                                                .withOpacity(0.54),
+                                                .withValues(alpha: 0.54),
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -305,7 +324,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                             color: Theme.of(context)
                                                 .colorScheme
                                                 .onSurface
-                                                .withOpacity(0.54),
+                                                .withValues(alpha: 0.54),
                                             size: 16,
                                           ),
                                           onPressed: () =>
@@ -393,7 +412,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           child: Text(
             title,
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.54),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -447,6 +466,9 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                           width: 18,
                           height: 18,
                           borderRadius: 4,
+                          iconColor: isSelected
+                              ? Theme.of(context).colorScheme.onSecondary
+                              : Theme.of(context).colorScheme.secondary,
                         );
                       }
 
@@ -463,7 +485,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                           : FaIcon(
                               icon,
                               color: isSelected
-                                  ? Colors.black87
+                                  ? Theme.of(context).colorScheme.onSecondary
                                   : Theme.of(context).colorScheme.secondary,
                               size: 18,
                             );
@@ -550,10 +572,11 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                             ),
                             builder: (context, snapshot) {
                               final playlist = snapshot.data;
-                              if (playlist == null)
+                              if (playlist == null) {
                                 return SizedBox(
                                   key: ValueKey('missing_${pinnedIds[i]}'),
                                 );
+                              }
 
                               return ListTile(
                                 key: ValueKey(playlist.id),

@@ -1,7 +1,25 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
+import '../../theme/app_theme_tokens.dart';
+import '../../widgets/settings/settings_section.dart';
 import '../../widgets/sliver_page_header.dart';
 
 class LyricsAppearanceSection extends StatelessWidget {
@@ -26,222 +44,150 @@ class LyricsAppearanceSection extends StatelessWidget {
                   children: [
                     const SizedBox(height: 24),
 
-                    _sectionLabel('Text Alignment', context),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Card(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surface.withValues(alpha: 0.8),
-                        surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.secondary.withValues(alpha: 0.1),
+                    const SettingsSectionLabel('Text Alignment'),
+                    SettingsSection(
+                      child: Watch((context) {
+                        return Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Alignment',
+                                style: TextStyle(
+                                  color: context.colorScheme.onSurface,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Choose how lyrics text aligns horizontally',
+                                style: TextStyle(
+                                  color: context.colorScheme.onSurface
+                                      .withValues(alpha: 0.54),
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: _buildAlignmentButton(context),
+                              ),
+                            ],
                           ),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Watch((context) {
-                          return Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Alignment',
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Choose how lyrics text aligns horizontally',
-                                  style: TextStyle(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withOpacity(0.54),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: _buildAlignmentButton(context),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ),
+                        );
+                      }),
                     ),
 
                     const SizedBox(height: 24),
 
-                    _sectionLabel('Typography', context),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Card(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surface.withValues(alpha: 0.8),
-                        surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.secondary.withValues(alpha: 0.1),
+                    const SettingsSectionLabel('Typography'),
+                    SettingsSection(
+                      child: Column(
+                        children: [
+                          _buildSliderSetting(
+                            context: context,
+                            title: 'Active Text Size',
+                            valueType: 'active',
                           ),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Column(
-                          children: [
-                            _buildSliderSetting(
-                              context: context,
-                              title: 'Active Text Size',
-                              valueType: 'active',
-                            ),
-                            Divider(
-                              height: 1,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.05),
-                              indent: 16,
-                              endIndent: 16,
-                            ),
-                            _buildSliderSetting(
-                              context: context,
-                              title: 'Inactive Text Size',
-                              valueType: 'inactive',
-                            ),
-                            Divider(
-                              height: 1,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.05),
-                              indent: 16,
-                              endIndent: 16,
-                            ),
-                            _buildSliderSetting(
-                              context: context,
-                              title: 'Plain Text Size',
-                              valueType: 'plain',
-                            ),
-                            Divider(
-                              height: 1,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.05),
-                              indent: 16,
-                              endIndent: 16,
-                            ),
-                            Watch((context) {
-                              return SwitchListTile(
-                                title: Text(
-                                  'Romanized Lyrics',
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                    fontSize: 14,
-                                  ),
+                          const SettingsDivider(indent: 16),
+                          _buildSliderSetting(
+                            context: context,
+                            title: 'Inactive Text Size',
+                            valueType: 'inactive',
+                          ),
+                          const SettingsDivider(indent: 16),
+                          _buildSliderSetting(
+                            context: context,
+                            title: 'Plain Text Size',
+                            valueType: 'plain',
+                          ),
+                          const SettingsDivider(indent: 16),
+                          Watch((context) {
+                            return SwitchListTile(
+                              title: Text(
+                                'Romanized Lyrics',
+                                style: TextStyle(
+                                  color: context.colorScheme.onSurface,
+                                  fontSize: 14,
                                 ),
-                                subtitle: Text(
-                                  'Show transliterated text beneath original lyrics',
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withValues(alpha: 0.54),
-                                    fontSize: 12,
-                                  ),
+                              ),
+                              subtitle: Text(
+                                'Show transliterated text beneath original lyrics',
+                                style: TextStyle(
+                                  color: context.colorScheme.onSurface
+                                      .withValues(alpha: 0.54),
+                                  fontSize: 12,
                                 ),
-                                value: settingsSignal.showRomanizedLyrics.value,
-                                onChanged: (value) =>
-                                    settingsSignal.updateShowRomanizedLyrics(value),
-                                activeThumbColor: Theme.of(
-                                  context,
-                                ).colorScheme.secondary,
-                              );
-                            }),
-                          ],
-                        ),
+                              ),
+                              value: settingsSignal.showRomanizedLyrics.value,
+                              onChanged: (value) =>
+                                  settingsSignal.updateShowRomanizedLyrics(value),
+                              activeThumbColor:
+                                  context.colorScheme.secondary,
+                            );
+                          }),
+                        ],
                       ),
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    _sectionLabel('Lyrics Providers', context),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Card(
-                        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                        surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-                          ),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Watch((context) {
-                          final providers = settingsSignal.lyricsProviders.value;
-                          final enabled = settingsSignal.enabledLyricsProviders.value;
+                    const SettingsSectionLabel('Lyrics Providers'),
+                    SettingsSection(
+                      child: Watch((context) {
+                        final providers = settingsSignal.lyricsProviders.value;
+                        final enabled = settingsSignal.enabledLyricsProviders.value;
 
-                          return ReorderableListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: providers.length,
-                            onReorder: (oldIndex, newIndex) {
-                              if (oldIndex < newIndex) {
-                                newIndex -= 1;
-                              }
-                              final items = List<String>.from(providers);
-                              final item = items.removeAt(oldIndex);
-                              items.insert(newIndex, item);
-                              settingsSignal.updateLyricsProviders(items);
-                            },
-                            itemBuilder: (context, index) {
-                              final id = providers[index];
-                              final name = _getProviderName(id);
-                              final isEnabled = enabled.contains(id);
+                        return ReorderableListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: providers.length,
+                          onReorder: (oldIndex, newIndex) {
+                            if (oldIndex < newIndex) {
+                              newIndex -= 1;
+                            }
+                            final items = List<String>.from(providers);
+                            final item = items.removeAt(oldIndex);
+                            items.insert(newIndex, item);
+                            settingsSignal.updateLyricsProviders(items);
+                          },
+                          itemBuilder: (context, index) {
+                            final id = providers[index];
+                            final name = _getProviderName(id);
+                            final isEnabled = enabled.contains(id);
 
-                              return ListTile(
-                                key: ValueKey(id),
-                                title: Text(
-                                  name,
-                                  style: TextStyle(
-                                    color: Theme.of(context).colorScheme.onSurface,
-                                    fontSize: 14,
-                                  ),
+                            return ListTile(
+                              key: ValueKey(id),
+                              title: Text(
+                                name,
+                                style: TextStyle(
+                                  color: context.colorScheme.onSurface,
+                                  fontSize: 14,
                                 ),
-                                leading: ReorderableDragStartListener(
-                                  index: index,
-                                  child: Icon(
-                                    Icons.drag_indicator,
-                                    size: 20,
-                                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
-                                  ),
+                              ),
+                              leading: ReorderableDragStartListener(
+                                index: index,
+                                child: Icon(
+                                  Icons.drag_indicator,
+                                  size: 20,
+                                  color: context.colorScheme.onSurface
+                                      .withValues(alpha: 0.3),
                                 ),
-                                trailing: Switch(
-                                  value: isEnabled,
-                                  activeThumbColor: Theme.of(context).colorScheme.secondary,
-                                  onChanged: (value) => settingsSignal.toggleLyricsProvider(id),
-                                ),
-                                contentPadding: const EdgeInsets.only(left: 8, right: 16),
-                              );
-                            },
-                          );
-                        }),
-                      ),
+                              ),
+                              trailing: Switch(
+                                value: isEnabled,
+                                activeThumbColor:
+                                    context.colorScheme.secondary,
+                                onChanged: (value) => settingsSignal
+                                    .toggleLyricsProvider(id),
+                              ),
+                              contentPadding: const EdgeInsets.only(
+                                  left: 8, right: 16),
+                            );
+                          },
+                        );
+                      }),
                     ),
 
                     const SizedBox(height: 24),
@@ -277,14 +223,14 @@ class LyricsAppearanceSection extends StatelessWidget {
             title: Text(
               title,
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface,
+                color: context.colorScheme.onSurface,
                 fontSize: 14,
               ),
             ),
             subtitle: Text(
               '${value.round()}px',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.8),
+                color: context.colorScheme.secondary.withValues(alpha: 0.8),
                 fontSize: 12,
               ),
             ),
@@ -304,17 +250,20 @@ class LyricsAppearanceSection extends StatelessWidget {
                 Text(
                   'A',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.54),
+                    color: context.colorScheme.onSurface
+                        .withValues(alpha: 0.54),
                     fontSize: 12,
                   ),
                 ),
                 Expanded(
                   child: SliderTheme(
                     data: SliderThemeData(
-                      activeTrackColor: const Color(0xFFFCE7AC),
-                      inactiveTrackColor: const Color(0xFFFCE7AC).withValues(alpha: 0.2),
-                      thumbColor: const Color(0xFFFCE7AC),
-                      overlayColor: const Color(0xFFFCE7AC).withValues(alpha: 0.1),
+                      activeTrackColor: context.colorScheme.secondary,
+                      inactiveTrackColor: context.colorScheme.secondary
+                          .withValues(alpha: 0.2),
+                      thumbColor: context.colorScheme.secondary,
+                      overlayColor: context.colorScheme.secondary
+                          .withValues(alpha: 0.1),
                     ),
                     child: Slider(
                       value: value,
@@ -336,7 +285,8 @@ class LyricsAppearanceSection extends StatelessWidget {
                 Text(
                   'A',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.54),
+                    color: context.colorScheme.onSurface
+                        .withValues(alpha: 0.54),
                     fontSize: 20,
                   ),
                 ),
@@ -378,21 +328,6 @@ class LyricsAppearanceSection extends StatelessWidget {
         ),
       ),
       showSelectedIcon: false,
-    );
-  }
-
-  Widget _sectionLabel(String label, BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 20, bottom: 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
-      ),
     );
   }
 

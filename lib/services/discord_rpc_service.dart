@@ -1,7 +1,24 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:dart_discord_presence/dart_discord_presence.dart';
 import '../models/song.dart';
+import '../signals/settings_signal.dart';
 
 class DiscordRpcService {
   static final DiscordRpcService _instance = DiscordRpcService._internal();
@@ -66,6 +83,7 @@ class DiscordRpcService {
     bool isPlaying = true,
     int? startTimeStamp,
     int? endTimeStamp,
+    List<DiscordButton>? buttons,
   }) async {
     try {
       if (!_isConnected || _rpc == null) {
@@ -97,6 +115,7 @@ class DiscordRpcService {
                 key: artworkUrl ?? 'app_icon',
                 text: isPlaying ? '▸ Playing' : '⏸︎ Paused',
               ),
+        buttons: _buildButtons(song, buttons),
       );
 
       await _rpc!.setPresence(presence);
@@ -106,6 +125,31 @@ class DiscordRpcService {
       print('Stack trace: $stack');
       _isConnected = false;
     }
+  }
+
+  List<DiscordButton>? _buildButtons(Song song, List<DiscordButton>? defaultButtons) {
+    final enabledButtons = <DiscordButton>[];
+
+    final listenEnabled = settingsSignal.enableDiscordListenButton.value;
+    final projectEnabled = settingsSignal.enableDiscordProjectLink.value;
+
+    if (listenEnabled) {
+      final url = song.path.startsWith('yt:')
+          ? 'https://www.youtube.com/watch?v=${song.path.substring(3)}'
+          : null;
+      if (url != null) {
+        enabledButtons.add(DiscordButton(label: 'Listen on YouTube', url: url));
+      }
+    }
+
+    if (projectEnabled) {
+      enabledButtons.add(DiscordButton(
+        label: 'Open Project',
+        url: 'https://github.com/HxprLee/ecilaes',
+      ));
+    }
+
+    return enabledButtons.isEmpty ? null : enabledButtons;
   }
 
   Future<void> clearPresence() async {

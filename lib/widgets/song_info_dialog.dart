@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
@@ -17,41 +33,43 @@ void showSongInfoDialog(BuildContext context, Song song) {
         ),
         title: 'Song info',
         maxWidth: 440,
-        maxHeight: 600,
-        trailing: IconButton(
-          icon: Icon(
-            Icons.edit_outlined,
-            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.6),
-            size: 20,
-          ),
-          tooltip: 'Edit info',
-          onPressed: () {
-            Navigator.pop(context);
-            showDialog(
-              context: context,
-              builder: (context) => EditMetadataDialog(song: song),
-            );
-          },
-        ),
+        trailing: song.path.startsWith('yt:')
+            ? null
+            : IconButton(
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.6),
+                    size: 20,
+                  ),
+                  tooltip: 'Edit info',
+                  onPressed: () {
+                    Navigator.pop(context);
+                    showDialog(
+                      context: context,
+                      builder: (context) => EditMetadataDialog(song: song),
+                    );
+                  },
+                ),
+        trailingWidth: 0,
         content: _SongInfoContent(song: song),
         actions: [
           OutlinedButton(
-            onPressed: () => Navigator.pop(context),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondary.withValues(alpha: 0.2),
+              onPressed: () => Navigator.pop(context),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.2),
+                ),
+                shape: const StadiumBorder(),
               ),
-              shape: const StadiumBorder(),
+              child: Text(
+                'Close',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
+              ),
             ),
-            child: Text(
-              'Close',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
-            ),
-          ),
         ],
       );
     },
@@ -138,8 +156,8 @@ class _SongInfoContent extends StatelessWidget {
         return ListView.separated(
           shrinkWrap: true,
           itemCount: info.length,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          separatorBuilder: (_, __) => Divider(
+          padding: const EdgeInsets.only(top: 0, bottom: 8),
+          separatorBuilder: (_, _) => Divider(
             color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
             height: 1,
           ),

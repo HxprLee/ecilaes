@@ -1,11 +1,27 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 import '../signals/audio_signal.dart';
-import 'header/desktop_header_bar.dart';
-import 'header/mobile_header_bar.dart';
+import 'header/desktop/desktop_header_bar.dart';
+import 'header/mobile/mobile_header_bar.dart';
 
 class WindowTitleBar extends StatefulWidget {
   final double leftOffset;
@@ -66,8 +82,14 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        const Color(0xFF0D1117).withOpacity(0.9),
-                        const Color(0xFF0D1117).withOpacity(0.0),
+                        Theme.of(context)
+                            .colorScheme
+                            .surface
+                            .withValues(alpha: 0.9),
+                        Theme.of(context)
+                            .colorScheme
+                            .surface
+                            .withValues(alpha: 0.0),
                       ],
                     )
                   : null,

@@ -1,3 +1,20 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:signals/signals_flutter.dart';
@@ -7,6 +24,8 @@ class SettingsSignal {
   static final SettingsSignal _instance = SettingsSignal._internal();
   factory SettingsSignal() => _instance;
   SettingsSignal._internal();
+
+  void Function()? onDiscordRpcChanged;
 
   final textScaleFactor = signal<double>(1.0);
   final useCustomWindowControls = signal<bool>(true);
@@ -72,13 +91,18 @@ class SettingsSignal {
   final excludedPaths = listSignal<String>([]);
 
   // Playback settings
-  final gaplessPlayback = signal<bool>(true);
   final audioNormalization = signal<bool>(false);
 
   // Stream caching
   final enableStreamCaching = signal<bool>(true);
   final enablePreCaching = signal<bool>(true);
   final normalizationTargetLufs = signal<double>(-14.0);
+
+  // Discord Rich Presence
+  final enableDiscordRpc = signal<bool>(true);
+  // Discord Rich Presence buttons
+  final enableDiscordListenButton = signal<bool>(true);
+  final enableDiscordProjectLink = signal<bool>(true);
 
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -158,15 +182,32 @@ class SettingsSignal {
 
     final excluded = prefs.getStringList('excludedPaths');
     if (excluded != null) {
-      excludedPaths.value = excluded;
+      // Migrate old paths (no prefix) to new format with 'f:'/'d:' prefix.
+      bool needsMigration = excluded.any((e) => !e.startsWith('f:') && !e.startsWith('d:'));
+      if (needsMigration) {
+        final migrated = <String>[];
+        for (final path in excluded) {
+          bool isFile = false;
+          try {
+            isFile = await FileSystemEntity.isFile(path);
+          } catch (_) {}
+          migrated.add(isFile ? 'f:$path' : 'd:$path');
+        }
+        excludedPaths.value = migrated;
+        await prefs.setStringList('excludedPaths', migrated);
+      } else {
+        excludedPaths.value = excluded;
+      }
     }
 
-    gaplessPlayback.value = prefs.getBool('gaplessPlayback') ?? true;
     audioNormalization.value = prefs.getBool('audioNormalization') ?? false;
     normalizationTargetLufs.value = prefs.getDouble('normalizationTargetLufs') ?? -14.0;
 
     enableStreamCaching.value = prefs.getBool('enableStreamCaching') ?? true;
     enablePreCaching.value = prefs.getBool('enablePreCaching') ?? true;
+    enableDiscordListenButton.value = prefs.getBool('enableDiscordListenButton') ?? true;
+    enableDiscordProjectLink.value = prefs.getBool('enableDiscordProjectLink') ?? true;
+    enableDiscordRpc.value = prefs.getBool('enableDiscordRpc') ?? true;
   }
 
   Future<void> updateMusicDirectory(String? value) async {
@@ -387,24 +428,24 @@ class SettingsSignal {
 
   Future<void> addExcludedPath(String path) async {
     final current = List<String>.from(excludedPaths.value);
-    if (!current.contains(path)) {
-      current.add(path);
+    // Detect actual file vs directory type at runtime using the filesystem.
+    bool isFile = false;
+    try {
+      isFile = await FileSystemEntity.isFile(path);
+    } catch (_) {}
+    final stored = isFile ? 'f:$path' : 'd:$path';
+    if (!current.contains(stored)) {
+      current.add(stored);
       await updateExcludedPaths(current);
     }
   }
 
-  Future<void> removeExcludedPath(String path) async {
+  Future<void> removeExcludedPath(String stored) async {
     final current = List<String>.from(excludedPaths.value);
-    if (current.contains(path)) {
-      current.remove(path);
+    if (current.contains(stored)) {
+      current.remove(stored);
       await updateExcludedPaths(current);
     }
-  }
-
-  Future<void> updateGaplessPlayback(bool value) async {
-    gaplessPlayback.value = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('gaplessPlayback', value);
   }
 
   Future<void> updateAudioNormalization(bool value) async {
@@ -429,6 +470,27 @@ class SettingsSignal {
     enablePreCaching.value = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('enablePreCaching', value);
+  }
+
+  Future<void> updateDiscordListenButton(bool value) async {
+    enableDiscordListenButton.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enableDiscordListenButton', value);
+    onDiscordRpcChanged?.call();
+  }
+
+  Future<void> updateDiscordProjectLink(bool value) async {
+    enableDiscordProjectLink.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enableDiscordProjectLink', value);
+    onDiscordRpcChanged?.call();
+  }
+
+  Future<void> updateDiscordRpc(bool value) async {
+    enableDiscordRpc.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enableDiscordRpc', value);
+    onDiscordRpcChanged?.call();
   }
 }
 

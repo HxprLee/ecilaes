@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'screens/home_shell.dart';
@@ -29,6 +45,7 @@ import 'screens/settings/actions_layout_section.dart';
 import 'screens/settings/player_bar_layout_section.dart';
 import 'screens/settings/lyrics_appearance_section.dart';
 import 'screens/settings/sidebar_layout_section.dart';
+import 'screens/settings/discord_presence_section.dart';
 import 'screens/settings/cache_management_screen.dart';
 
 /// Creates the GoRouter configuration.
@@ -238,6 +255,13 @@ final GoRouter router = GoRouter(
                     const SidebarLayoutSection(),
                   ),
                 ),
+                GoRoute(
+                  path: 'discord-presence',
+                  pageBuilder: (context, state) => _buildPageWithTransition(
+                    state,
+                    const DiscordPresenceSection(),
+                  ),
+                ),
               ],
             ),
             GoRoute(
@@ -249,11 +273,13 @@ final GoRouter router = GoRouter(
               path: 'library',
               pageBuilder: (context, state) =>
                   _buildPageWithTransition(state, const LibrarySection()),
-            ),
-            GoRoute(
-              path: 'cache',
-              pageBuilder: (context, state) =>
-                  _buildPageWithTransition(state, const CacheManagementScreen()),
+              routes: [
+                GoRoute(
+                  path: 'manage_cache',
+                  pageBuilder: (context, state) =>
+                      _buildPageWithTransition(state, const CacheManagementScreen()),
+                ),
+              ],
             ),
             GoRoute(
               path: 'about',
@@ -314,8 +340,16 @@ void initNavigationListener() {
     navigationSignal.onRouteChanged(initialLocation);
   }
 
+  // Use routeInformationProvider for the most up-to-date URI, since
+  // currentConfiguration.uri can incorrectly report the parent shell
+  // route for nested pages.
   router.routerDelegate.addListener(() {
-    final location = router.routerDelegate.currentConfiguration.uri.toString();
+    String location;
+    try {
+      location = router.routeInformationProvider.value.uri.toString();
+    } catch (_) {
+      location = router.routerDelegate.currentConfiguration.uri.toString();
+    }
     navigationSignal.onRouteChanged(location);
   });
 }

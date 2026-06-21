@@ -1,9 +1,26 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../services/YoutubeDatasource.dart';
+import '../theme/app_theme_tokens.dart';
 import '../widgets/sliver_page_header.dart';
 import '../widgets/song_actions_sheet.dart';
 
@@ -25,6 +42,18 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
     _loadHome();
   }
 
+  Color _placeholderIconColor(BuildContext context) {
+    if (context.isMaterial3) {
+      return context.colorScheme.onSurface.withValues(alpha: 0.2);
+    }
+    return Colors.white24;
+  }
+
+  Color _placeholderIconColorStatic() {
+    // Fallback for branches without context — use light eclipx color
+    return Colors.white24;
+  }
+
   Future<void> _loadHome() async {
     setState(() => _isLoading = true);
     
@@ -35,11 +64,11 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
     if (mounted) {
       setState(() {
         if (moodsData.isNotEmpty) {
-          moodsData.values.forEach((v) {
+          for (var v in moodsData.values) {
             if (v is List) {
               _moods.addAll(v.cast<Map<String, dynamic>>());
             }
-          });
+          }
         }
         
         // Add Explore sections to the top
@@ -83,7 +112,7 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     itemCount: _moods.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
                     itemBuilder: (context, index) {
                       final mood = _moods[index];
                       return ActionChip(
@@ -159,7 +188,7 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 24),
               itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 16),
+              separatorBuilder: (_, _) => const SizedBox(width: 16),
               itemBuilder: (context, index) {
                 final item = items[index];
                 final Map<String, dynamic> dItem = item is Map ? Map<String, dynamic>.from(item) : {};
@@ -226,7 +255,7 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 24),
               itemCount: chunks.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 16),
+              separatorBuilder: (_, _) => const SizedBox(width: 16),
               itemBuilder: (context, index) {
                 final chunk = chunks[index];
                 double width = MediaQuery.of(context).size.width * 0.85;
@@ -256,13 +285,13 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
                               width: 48,
                               height: 48,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
+                              errorBuilder: (context, _, _) => Container(
                                 width: 48, height: 48, color: Colors.grey[900],
-                                child: const Icon(Icons.music_note, color: Colors.white24, size: 24),
+                                child: Icon(Icons.music_note, color: _placeholderIconColor(context), size: 24),
                               ),
                             ) : Container(
                                 width: 48, height: 48, color: Colors.grey[900],
-                                child: const Icon(Icons.music_note, color: Colors.white24, size: 24),
+                                child: Icon(Icons.music_note, color: _placeholderIconColorStatic(), size: 24),
                             ),
                           ),
                           title: Text(
@@ -340,6 +369,13 @@ class _YtmCard extends StatelessWidget {
     required this.onTap,
   });
 
+  Color _placeholderIconColor(BuildContext context) {
+    if (context.isMaterial3) {
+      return context.colorScheme.onSurface.withValues(alpha: 0.2);
+    }
+    return Colors.white24;
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -359,7 +395,7 @@ class _YtmCard extends StatelessWidget {
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Container(
                           color: Colors.grey[900],
-                          child: const Icon(Icons.music_note, color: Colors.white24),
+                          child: Icon(Icons.music_note, color: _placeholderIconColor(context),),
                         ),
                       )
                     : Container(color: Colors.grey[900]),
@@ -381,7 +417,7 @@ class _YtmCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Theme.of(context).colorScheme.secondary.withOpacity(0.6),
+                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.6),
                 fontSize: 12,
               ),
             ),

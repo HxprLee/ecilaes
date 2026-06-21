@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:io';
 import 'dart:ui';
 import 'dart:async';
@@ -9,19 +25,27 @@ import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 import '../services/album_art_cache.dart';
 import '../signals/audio_signal.dart';
-import '../signals/queue_signal.dart' as q;
 import './playlist_dialogs.dart';
 import './song_info_dialog.dart';
 import '../signals/settings_signal.dart';
 import '../services/YoutubeDatasource.dart';
-import '../theme/app_theme_extensions.dart';
+import '../theme/app_theme_tokens.dart';
 import 'package:marquee/marquee.dart';
 import 'song_actions_sheet.dart';
 import 'player/queue_view.dart';
+import 'player/queue_list_core.dart';
 import 'player/lyrics_sheet.dart';
 import '../services/youtube_service.dart';
 import 'mobile_lyrics_view.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
+import 'morphing_player/player_layout_spec.dart';
+import 'morphing_player/player_layout_calculator.dart';
+
+  Color placeholderIconColor(BuildContext context) {
+    return context.tokens.placeholderIcon;
+  }
+
+
 
 class MorphingPlayer extends StatefulWidget {
   final double bottomOffset;
@@ -32,6 +56,11 @@ class MorphingPlayer extends StatefulWidget {
   @override
   State<MorphingPlayer> createState() => _MorphingPlayerState();
 }
+
+// Expanded-player layout constants now live in
+// `morphing_player/player_layout_spec.dart` (ExpandedLayoutConstants) and the
+// calculator in `morphing_player/player_layout_calculator.dart`. They are
+// referenced by `PlayerBarSpec` and `PlayerLayoutCalculator`.
 
 class _MorphingPlayerState extends State<MorphingPlayer>
     with TickerProviderStateMixin {
@@ -48,24 +77,31 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   double get _barHeight => 80.0;
   double get _miniArtSize => 50.0;
 
-  // Compact Layout Specs
-  double get _compactMargin => 18.0;
+  // Inner padding for the album art in the mini bar.
+  // Compact: 15 (mobile, was 16 on desktop — now collapsed to 15).
+  // Full: 16.
   double get _compactPadding => 15.0;
 
   // Full Layout Specs
-  double get _fullMargin => 24.0;
   double get _fullPadding => 16.0; // Reduced from 20.0
   double get _leftControlsWidth => 180.0; // Reduced slightly for tighter look
   double get _artSpacing => -10.0; // Comfortable spacing
 
   double get _startTop => 0.0; // Centered for full bar height (80px)
 
+  // Opens lyrics/queue as bottom sheets instead of inline flyout when screen is too small
+  bool _isCramped(double screenWidth, double screenHeight) =>
+      screenWidth < 500 || screenHeight < 400;
+
   double _dragStartValue = 0.0;
   double _dragDownOffset = 0.0;
   late AnimationController _dragResetController;
+  late AnimationController _bufferingSeekbarController;
+  late AnimationController _bufferingRingController;
 
   // Cached Layout
   dynamic _cachedLayout;
+  ExpandedPlayerSpec? _cachedRawExpandedSpec;
   Size? _lastLayoutSize;
   EdgeInsets? _lastPadding;
   bool? _lastIsCompact;
@@ -230,6 +266,30 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           });
         });
 
+    _bufferingSeekbarController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _bufferingRingController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _effectDisposals.add(
+      effect(() {
+        if (audioSignal.isBuffering.value) {
+          if (!_bufferingSeekbarController.isAnimating) {
+            _bufferingSeekbarController.repeat();
+          }
+          if (!_bufferingRingController.isAnimating) {
+            _bufferingRingController.repeat();
+          }
+        } else {
+          _bufferingSeekbarController.stop();
+          _bufferingRingController.stop();
+        }
+      }),
+    );
+
     // Initial state check
     if (audioSignal.currentSong.value != null) {
       _visibilityController.value = 1.0;
@@ -294,6 +354,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     _visibilityController.dispose();
     _dragResetController.dispose();
     _lyricsController.dispose();
+    _bufferingSeekbarController.dispose();
+    _bufferingRingController.dispose();
     _immersionTimer?.cancel();
     super.dispose();
   }
@@ -398,124 +460,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     if (hours > 0) {
       return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
     }
-    return '${minutes}:${twoDigits(seconds)}';
-  }
-
-  // Helper to calculate expanded layout efficiently
-  ({Rect art, Rect info, Rect seekbar, Rect controls, Rect actions})
-  _calculateExpandedLayout(
-    double screenWidth,
-    double screenHeight,
-    double topPadding,
-    double bottomPadding,
-    bool useFullWidth,
-  ) {
-    // 1. Define Element Heights
-    const infoHeight = 70.0;
-    const seekbarHeight = 70.0;
-    const controlsHeight = 80.0;
-    const actionsHeight = 100.0;
-
-    // 2. Calculate Actions Position (Bottom Anchored)
-    final bottomStart = screenHeight - bottomPadding - 24.0;
-    final actionsTop = bottomStart - actionsHeight;
-    final actionsRect = Rect.fromLTWH(
-      0,
-      actionsTop,
-      screenWidth,
-      actionsHeight,
-    );
-
-    // 3. Calculate Album Art Position (Top Anchored & Scaled)
-    const maxArtSize = 600.0;
-    const sidePadding = 32.0;
-    final availableWidth = screenWidth - (sidePadding * 2);
-
-    // Calculate max height available for art
-    // We need to reserve space for:
-    // - Top padding + margin (60)
-    // - Middle elements (info + seekbar + controls)
-    // - Actions (already calculated)
-    // - Minimum gaps (say 8.0 * 4)
-    // - Bottom padding + margin (24)
-
-    final middleElementsHeight = infoHeight + seekbarHeight + controlsHeight;
-    final minTotalGap =
-        8.0 *
-        4; // 4 gaps: Top-Art, Art-Info, Info-Seekbar, Seekbar-Controls, Controls-Actions
-
-    // Available space above actions
-    final spaceAboveActions = actionsTop;
-    final topReserved = 60.0 + topPadding;
-
-    final maxArtHeight =
-        spaceAboveActions - topReserved - middleElementsHeight - minTotalGap;
-
-    // Ensure maxArtHeight is at least 0 to avoid clamp errors
-    final effectiveMaxArtHeight = maxArtHeight < 0 ? 0.0 : maxArtHeight;
-
-    final artSize = availableWidth
-        .clamp(0.0, effectiveMaxArtHeight)
-        .clamp(0.0, maxArtSize);
-
-    // 4. Calculate Content Width (Locked to max possible art size on Desktop)
-    // This ensures seekbar/names don't shrink when art shrinks vertically
-    final maxPossibleArtSize = availableWidth.clamp(0.0, maxArtSize);
-    final contentWidth = useFullWidth ? availableWidth : maxPossibleArtSize;
-    final contentLeft = (screenWidth - contentWidth) / 2;
-
-    // Center Art in its allocated top area
-    final artTop = topReserved;
-    final artLeft = (screenWidth - artSize) / 2;
-    final artRect = Rect.fromLTWH(artLeft, artTop, artSize, artSize);
-
-    // 5. Distribute Middle Elements
-    // Distribute evenly: Art -> Info -> Seekbar -> Controls -> Actions
-    final middleStart = artRect.bottom;
-    final middleEnd = actionsRect.top;
-    final availableMiddleSpace = middleEnd - middleStart;
-
-    final totalGapSpace = availableMiddleSpace - middleElementsHeight;
-
-    // Distribute slack evenly across 4 gaps
-    // Remove upper and lower clamps to allow even spacing on all screens
-    final gap = (totalGapSpace / 4.0).clamp(0.0, double.infinity);
-
-    // If we clamped the gap (min 0), we might need to center the whole block again
-    final totalConsumedHeight = middleElementsHeight + (gap * 4);
-    final unusedSpace = availableMiddleSpace - totalConsumedHeight;
-    final topOffset = middleStart + (unusedSpace / 2);
-
-    final infoTop = topOffset + gap;
-    final seekbarTop = infoTop + infoHeight + gap;
-    final controlsTop = seekbarTop + seekbarHeight + gap;
-
-    final infoRect = Rect.fromLTWH(
-      contentLeft,
-      infoTop,
-      contentWidth,
-      infoHeight,
-    );
-    final seekbarRect = Rect.fromLTWH(
-      contentLeft,
-      seekbarTop,
-      contentWidth,
-      seekbarHeight,
-    );
-    final controlsRect = Rect.fromLTWH(
-      0,
-      controlsTop,
-      screenWidth,
-      controlsHeight,
-    );
-
-    return (
-      art: artRect,
-      info: infoRect,
-      seekbar: seekbarRect,
-      controls: controlsRect,
-      actions: actionsRect,
-    );
+    return '$minutes:${twoDigits(seconds)}';
   }
 
   @override
@@ -534,16 +479,14 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       final availableBarWidth = screenWidth - widget.leftOffset;
       // Switch to compact layout if space is < 800px or screen is < 600px
       final isCompact = availableBarWidth < 700 || screenWidth < 600;
+      final barSpec = isCompact ? PlayerBarSpec.compact : PlayerBarSpec.full;
 
-      // Calculate where the scrollable content should start
-      // final fullArtSize = isMobile ? screenWidth - 64.0 : 560.0;
-      // final contentTopStart = 100.0 + fullArtSize + 24.0 + 58.0;
-
-      // Dynamic Layout Values based on Config
-      final margin = isMobile ? _compactMargin : _fullMargin;
-      final startArtLeft = isCompact
-          ? (isMobile ? _compactPadding : _fullPadding)
-          : _fullPadding + _leftControlsWidth + _artSpacing;
+      // Layout-mode-dependent values are now derived from `barSpec`.
+      // Note: previously `startArtLeft` differed between compact-mobile (15)
+      // and compact-desktop (16). Spec collapses both to 15, so compact is
+      // visually identical across platforms (the explicit goal of this work).
+      final margin = barSpec.outerMargin;
+      final startArtLeft = barSpec.artLeft;
 
       return AnimatedBuilder(
         animation: Listenable.merge([
@@ -558,27 +501,22 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           final bottomPadding = MediaQuery.of(context).padding.bottom;
           final currentTopPadding = lerpDouble(0, topPadding, value)!;
 
-          final rawLyricsValue = const Cubic(
-            0.76,
-            0,
-            0.24,
-            1,
-          ).transform(_lyricsController.value);
+          final rawLyricsValue = Curves.easeOutCubic.transform(_lyricsController.value);
           // Layout mode: Desktop if width >= 900, otherwise Mobile
-          final isDesktopLayoutMode = screenWidth >= 900;
+          final isDesktopLayoutMode = screenWidth >= 900 && !_isCramped(screenWidth, screenHeight);
 
           // On desktop side-by-side, don't morph the art/text — keep them in place
           final lyricsValue = isDesktopLayoutMode ? 0.0 : rawLyricsValue;
 
           // --- Layout Interpolation ---
           // Clamping and Centering Logic for Desktop
-          const paneGap_Value = 48.0;
-          final maxPaneWidth_Value = ((screenWidth - paneGap_Value - 64.0) / 2)
+          const panegapValue = 48.0;
+          final maxpanewidthValue = ((screenWidth - panegapValue - 64.0) / 2)
               .clamp(0.0, 600.0);
 
           // Calculate the target width for the player part
           final playerWidth = isDesktopLayoutMode
-              ? lerpDouble(screenWidth, maxPaneWidth_Value, rawLyricsValue)!
+              ? lerpDouble(screenWidth, maxpanewidthValue, rawLyricsValue)!
               : screenWidth;
 
           // Memoize Layout Calculation
@@ -589,32 +527,33 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               _lastPadding != MediaQuery.of(context).padding ||
               _lastIsCompact != isCompactLayout ||
               _lastLyricsValue != rawLyricsValue) {
-            final rawLayout = _calculateExpandedLayout(
-              playerWidth,
-              screenHeight,
-              topPadding, // Use final values for expansion target
-              bottomPadding,
-              isCompactLayout,
+            final rawLayout = PlayerLayoutCalculator.calculateExpandedLayout(
+              playerWidth: playerWidth,
+              screenHeight: screenHeight,
+              topPadding: topPadding,
+              bottomPadding: bottomPadding,
+              useFullWidth: isCompactLayout,
             );
 
             // Calculate how much to shift the player to the left to center the group
-            final groupWidth = maxPaneWidth_Value * 2 + paneGap_Value;
+            final groupWidth = maxpanewidthValue * 2 + panegapValue;
             final groupLeft = (screenWidth - groupWidth) / 2;
-            final playerShift_Value = isDesktopLayoutMode
+            final playershiftValue = isDesktopLayoutMode
                 ? lerpDouble(0, groupLeft, rawLyricsValue)!
                 : 0.0;
 
             _cachedLayout = (
-              art: rawLayout.art.shift(Offset(playerShift_Value, 0)),
-              info: rawLayout.info.shift(Offset(playerShift_Value, 0)),
-              seekbar: rawLayout.seekbar.shift(Offset(playerShift_Value, 0)),
-              controls: rawLayout.controls.shift(Offset(playerShift_Value, 0)),
-              actions: rawLayout.actions.shift(Offset(playerShift_Value, 0)),
-              shift: playerShift_Value,
+              art: rawLayout.art.shift(Offset(playershiftValue, 0)),
+              info: rawLayout.info.shift(Offset(playershiftValue, 0)),
+              seekbar: rawLayout.seekbar.shift(Offset(playershiftValue, 0)),
+              controls: rawLayout.controls.shift(Offset(playershiftValue, 0)),
+              actions: rawLayout.actions.shift(Offset(playershiftValue, 0)),
+              shift: playershiftValue,
               groupLeft: groupLeft,
-              maxPaneWidth: maxPaneWidth_Value,
-              paneGap: paneGap_Value,
+              maxPaneWidth: maxpanewidthValue,
+              paneGap: panegapValue,
             );
+            _cachedRawExpandedSpec = rawLayout;
 
             _lastLayoutSize = Size(playerWidth, screenHeight);
             _lastPadding = MediaQuery.of(context).padding;
@@ -626,6 +565,11 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           final groupLeft = expandedLayout.groupLeft;
           final maxPaneWidth = expandedLayout.maxPaneWidth;
           final paneGap = expandedLayout.paneGap;
+          // The unshifted spec is needed by the calculator for the lyrics
+          // header target rect. The shift is on x only, and the lyrics rect
+          // depends only on art.top (y) and info.right - info.left (invariant
+          // under x-shift), so passing the unshifted spec is safe.
+          final rawExpandedSpec = _cachedRawExpandedSpec!;
 
           final currentHeight = lerpDouble(_barHeight, screenHeight, value)!;
           final currentBottom = lerpDouble(
@@ -634,15 +578,17 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             value,
           )!;
 
-          // Calculate collapsed state values
-          final availableWidth = screenWidth - widget.leftOffset;
-          final collapsedWidth = (availableWidth - (margin * 2)).clamp(
-            0.0,
-            900.0,
+          // Calculate collapsed state values via the layout calculator.
+          // `barSpec.outerMargin` is the single source of truth; before the
+          // refactor this was `isMobile ? _compactMargin : _fullMargin`.
+          final barLayout = PlayerLayoutCalculator.computeBarLayout(
+            screenWidth: screenWidth,
+            leftOffset: widget.leftOffset,
+            isCompact: isCompact,
+            spec: barSpec,
           );
-          final collapsedLeft = isCompact
-              ? widget.leftOffset + margin
-              : widget.leftOffset + (availableWidth - collapsedWidth) / 2;
+          final collapsedWidth = barLayout.collapsedWidth;
+          final collapsedLeft = barLayout.collapsedLeft;
 
           final currentWidth = lerpDouble(collapsedWidth, screenWidth, value)!;
 
@@ -689,14 +635,10 @@ class _MorphingPlayerState extends State<MorphingPlayer>
             lyricsValue,
           )!;
 
-          final targetLyricsInfoLeft =
-              targetLyricsArtLeft + targetLyricsArtSize + 16.0;
-          final targetLyricsInfoRect = Rect.fromLTWH(
-            targetLyricsInfoLeft,
-            targetLyricsArtTop,
-            expandedLayout.info.right - targetLyricsInfoLeft,
-            targetLyricsArtSize,
-          );
+          final targetLyricsInfoRect =
+              PlayerLayoutCalculator.computeLyricsLayout(
+                expandedSpec: rawExpandedSpec,
+              ).infoRect;
 
           // --- Visibility Interpolation ---
           final visibilityCurve = Curves.easeInOut;
@@ -741,15 +683,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                     child: Container(
                       decoration: BoxDecoration(
                         color: Color.lerp(
-                          Theme.of(context)
-                              .extension<AppThemeExtension>()!
-                              .playerBarBackground
-                              .withValues(
-                                alpha: settingsSignal.enableGlobalBlur.value
-                                    ? 0.92
-                                    : 1.0,
-                              ),
-                          Theme.of(context).colorScheme.surface,
+                          context.tokens.playerBarBackground.withValues(
+                            alpha: settingsSignal.enableGlobalBlur.value
+                                ? 0.67
+                                : 1.0,
+                          ),
+                          context.colorScheme.surface,
                           value,
                         ),
                         borderRadius: BorderRadius.circular(
@@ -793,8 +732,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 if (!isDesktopLayoutMode)
                                   Watch((context) {
                                     final _ = audioSignal.showQueueInPlayer.value;
-                                    if (rawLyricsValue <= 0)
+                                    if (rawLyricsValue <= 0) {
                                       return const SizedBox.shrink();
+                                    }
                                     return Opacity(
                                       opacity: rawLyricsValue.clamp(0.0, 1.0),
                                       child: IgnorePointer(
@@ -816,7 +756,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                           secondChild: KeyedSubtree(
                                             key: const ValueKey('queue'),
                                             child: _buildQueueBody(
-                                              currentSong,
                                               screenWidth,
                                               expandedLayout,
                                               isDesktopLayout: false,
@@ -829,8 +768,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 if (isDesktopLayoutMode)
                                   Watch((context) {
                                     final _ = audioSignal.showQueueInPlayer.value;
-                                    if (rawLyricsValue <= 0)
+                                    if (rawLyricsValue <= 0) {
                                       return const SizedBox.shrink();
+                                    }
                                     return Positioned(
                                       top: 0,
                                       bottom: 0,
@@ -861,7 +801,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                               secondChild: KeyedSubtree(
                                                 key: const ValueKey('queue'),
                                                 child: _buildQueueBody(
-                                                  currentSong,
                                                   maxPaneWidth,
                                                   expandedLayout,
                                                   isDesktopLayout: true,
@@ -909,6 +848,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 _buildMorphingControls(
                                   value,
                                   screenWidth,
+                                  screenHeight,
                                   collapsedWidth,
                                   isPlaying,
                                   isCompact,
@@ -939,6 +879,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                   expandedLayout.actions,
                                   collapsedWidth,
                                   isCompact,
+                                  screenWidth,
+                                  screenHeight,
                                 ),
                               ],
                             ),
@@ -1018,50 +960,74 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         child: Opacity(
           opacity: seekbarOpacity,
           child: Column(
-            spacing: 6,
+            spacing: 4,
             children: [
               TweenAnimationBuilder<double>(
                 duration: const Duration(milliseconds: 150),
                 curve: Curves.easeIn,
                 tween: Tween<double>(begin: 6.0, end: _isSeeking ? 14.0 : 6.0),
                 builder: (context, height, child) {
-                  return SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: height,
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 0,
+                  final secondary = Theme.of(context).colorScheme.secondary;
+                  return Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: height,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 0,
+                          ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 6,
+                          ),
+                          activeTrackColor: secondary,
+                          inactiveTrackColor: secondary.withValues(alpha: 0.3),
+                          thumbColor: secondary,
+                        ),
+                        child: Slider(
+                          value:
+                              (position.inMilliseconds /
+                                      (duration.inMilliseconds > 0
+                                          ? duration.inMilliseconds
+                                          : 1))
+                                  .clamp(0.0, 1.0),
+                          onChangeStart: (v) {
+                            setState(() {
+                              _isSeeking = true;
+                            });
+                          },
+                          onChangeEnd: (v) {
+                            setState(() {
+                              _isSeeking = false;
+                            });
+                          },
+                          onChanged: (v) {
+                            final pos = v * duration.inMilliseconds;
+                            audioSignal.seek(
+                                Duration(milliseconds: pos.round()));
+                          },
+                        ),
                       ),
-                      overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 6,
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Watch((_) {
+                            final isBuffering =
+                                audioSignal.isBuffering.value;
+                            return AnimatedOpacity(
+                              duration: const Duration(milliseconds: 200),
+                              opacity: isBuffering ? 1.0 : 0.0,
+                              child: isBuffering
+                                  ? _BufferingSeekbarSweep(
+                                      animation: _bufferingSeekbarController,
+                                      trackHeight: height,
+                                      color: secondary,
+                                    )
+                                  : const SizedBox.shrink(),
+                            );
+                          }),
+                        ),
                       ),
-                      activeTrackColor: Theme.of(context).colorScheme.secondary,
-                      inactiveTrackColor: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withOpacity(0.3),
-                      thumbColor: Theme.of(context).colorScheme.secondary,
-                    ),
-                    child: Slider(
-                      value:
-                          (position.inMilliseconds /
-                                  (duration.inMilliseconds > 0
-                                      ? duration.inMilliseconds
-                                      : 1))
-                              .clamp(0.0, 1.0),
-                      onChangeStart: (v) {
-                        setState(() {
-                          _isSeeking = true;
-                        });
-                      },
-                      onChangeEnd: (v) {
-                        setState(() {
-                          _isSeeking = false;
-                        });
-                      },
-                      onChanged: (v) {
-                        final pos = v * duration.inMilliseconds;
-                        audioSignal.seek(Duration(milliseconds: pos.round()));
-                      },
-                    ),
+                    ],
                   );
                 },
               ),
@@ -1373,31 +1339,40 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // Circular Progress (Mini only)
-            if (value == 0)
-              SizedBox(
-                width: 50,
-                height: 50,
-                child: CircularProgressIndicator(
-                  value: duration.inMilliseconds > 0
-                      ? position.inMilliseconds / duration.inMilliseconds
-                      : 0.0,
-                  strokeWidth: 3,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.secondary.withValues(alpha: 0.2),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Theme.of(
-                      context,
-                    ).colorScheme.secondary.withValues(alpha: 0.8),
+          // Circular Progress (mini bar only — fades out during morph)
+          Opacity(
+            opacity: (1.0 - value).clamp(0.0, 1.0),
+            child: SizedBox(
+              width: 50,
+              height: 50,
+              child: Watch((_) {
+                final isBuffering = audioSignal.isBuffering.value;
+                final progress = duration.inMilliseconds > 0
+                    ? position.inMilliseconds / duration.inMilliseconds
+                    : 0.0;
+                return CustomPaint(
+                  painter: _BufferingRingPainter(
+                    progress: progress,
+                    buffering: isBuffering,
+                    bufferValue: _bufferingRingController,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .secondary
+                        .withValues(alpha: 0.8),
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .secondary
+                        .withValues(alpha: 0.2),
                   ),
-                ),
-              ),
+                );
+              }),
+            ),
+          ),
 
             // Art / Play Button
             GestureDetector(
               onTap: () {
-                if (value == 0) {
+                if (value < 0.1) {
                   if (isPlaying) {
                     audioSignal.pause();
                   } else {
@@ -1408,21 +1383,20 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               child: Hero(
                 tag: 'player-artwork',
                 child: Container(
-                  width: value == 0 ? 42 : artSize,
-                  height: value == 0 ? 42 : artSize,
+                  width: lerpDouble(42, artSize, value),
+                  height: lerpDouble(42, artSize, value),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(value == 0 ? 50 : 8),
+                    borderRadius: BorderRadius.circular(lerpDouble(50, 8, value)!),
                     boxShadow: [
-                      if (value > 0.5)
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          blurRadius: 30,
-                          offset: const Offset(0, 10),
-                        ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5 * value.clamp(0.0, 1.0)),
+                        blurRadius: lerpDouble(0, 30, value)!,
+                        offset: Offset(0, lerpDouble(0, 10, value)!),
+                      ),
                     ],
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(value == 0 ? 50 : 8),
+                    borderRadius: BorderRadius.circular(lerpDouble(50, 8, value)!),
                     child: isYoutube
                         ? Image.network(
                             ytThumbnailUrl!,
@@ -1444,21 +1418,16 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                             cacheWidth: 400,
                             cacheHeight: 400,
                           )
-                        : (value == 0)
-                        ? Center(
-                            child: FaIcon(
-                              isPlaying
-                                  ? FontAwesomeIcons.pause
-                                  : FontAwesomeIcons.play,
-                              color: Theme.of(context).colorScheme.secondary,
-                              size: 14,
-                            ),
-                          )
-                        : Container(
-                            color: Colors.grey[800],
-                            child: Icon(
-                              Icons.music_note,
-                              color: Theme.of(context).colorScheme.onSurface,
+                        : Opacity(
+                            opacity: (1.0 - value).clamp(0.0, 1.0),
+                            child: Center(
+                              child: FaIcon(
+                                isPlaying
+                                    ? FontAwesomeIcons.pause
+                                    : FontAwesomeIcons.play,
+                                color: Theme.of(context).colorScheme.secondary,
+                                size: 14,
+                              ),
                             ),
                           ),
                   ),
@@ -1474,6 +1443,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   Widget _buildMorphingControls(
     double value,
     double screenWidth,
+    double screenHeight,
     double collapsedWidth,
     bool isPlaying,
     bool isCompact,
@@ -1521,7 +1491,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       // Button Spacing
       final buttonPadding = EdgeInsets.lerp(
         isMobile ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 8),
-        const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+        const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
         value,
       )!;
 
@@ -1593,6 +1563,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                               buttonPadding: buttonPadding,
                               isCompact: isCompact,
                               value: value,
+                              screenWidth: screenWidth,
+                              screenHeight: screenHeight,
                             ),
                           );
                         },
@@ -1617,6 +1589,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     required EdgeInsets buttonPadding,
     required bool isCompact,
     required double value,
+    required double screenWidth,
+    required double screenHeight,
   }) {
     final color = hasSong
         ? Theme.of(context).colorScheme.secondary
@@ -1687,6 +1661,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           context: context,
           id: id,
           iconSize: iconSize,
+          screenWidth: screenWidth,
+          screenHeight: screenHeight,
           currentSong: audioSignal.currentSong.value,
           isExpanded: false,
         );
@@ -1699,6 +1675,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     Rect targetRect,
     double collapsedWidth,
     bool isCompact,
+    double screenWidth,
+    double screenHeight,
   ) {
     return Watch((context) {
       // Start State (Desktop Bar)
@@ -1758,7 +1736,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   // Format Badge (Positioned above buttons)
                   if (currentSong != null)
                     Positioned(
-                      bottom: 60, // 48px (buttons) + 12px (gap)
+                      bottom: 56, // 48px (buttons) + 8px (gap)
                       child: Opacity(
                         opacity: badgeOpacity,
                         child: Container(
@@ -1802,6 +1780,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                             context: context,
                             id: settingsSignal.playerBarActions.value[i],
                             iconSize: iconSize,
+                            screenWidth: screenWidth,
+                            screenHeight: screenHeight,
                             currentSong: currentSong,
                             isExpanded: value >= 1.0,
                           ),
@@ -1889,86 +1869,42 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   }
 
   Widget _buildQueueBody(
-    Song? currentSong,
     double screenWidth,
     dynamic expandedLayout, {
     bool isDesktopLayout = false,
   }) {
-    if (currentSong == null) return const SizedBox.shrink();
-
     final topPadding = isDesktopLayout ? 80.0 : (expandedLayout.art.top + 46.0);
 
-    return Watch((context) {
-      final upNextPaths = q.queueSignal.upNext.value;
-      final historyPaths = q.queueSignal.history.value;
+    return Padding(
+      padding: EdgeInsets.only(top: topPadding),
+      child: Watch((context) {
+        final bottomEdge = isDesktopLayout
+            ? MediaQuery.of(context).size.height
+            : expandedLayout.controls.top;
 
-      final upNextSongs = upNextPaths
-          .map((p) => audioSignal.resolveSong(p))
-          .toList();
-      final historySongs = historyPaths.reversed
-          .map((p) => audioSignal.resolveSong(p))
-          .toList();
+        // If controls are hidden (immersion mode), fill the screen like lyrics does
+        final availableHeight = !_showControls
+            ? MediaQuery.of(context).size.height - 24.0 - topPadding
+            : bottomEdge - topPadding;
 
-      final isEmpty = upNextSongs.isEmpty && historySongs.isEmpty;
-
-      final bottomEdge = isDesktopLayout
-          ? MediaQuery.of(context).size.height
-          : expandedLayout.controls.top;
-
-      final availableHeight = bottomEdge - topPadding;
-
-      if (isEmpty) {
         return SizedBox(
           height: availableHeight,
-          child: Padding(
-            padding: EdgeInsets.only(top: topPadding),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  FaIcon(
-                    FontAwesomeIcons.music,
-                    size: 40,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.secondary.withValues(alpha: 0.2),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Queue is empty',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          child: QueueListCore(
+            showNowPlaying: false,
+            showBackToTop: true,
+            tileHorizontalPadding: 32,
           ),
         );
-      }
-
-      final content = _ExpandedPlayerQueueList(
-        upNextSongs: upNextSongs,
-        historySongs: historySongs,
-        currentSongPath: currentSong.path,
-      );
-
-      return SizedBox(
-        height: availableHeight,
-        child: Padding(
-          padding: EdgeInsets.only(top: topPadding),
-          child: content,
-        ),
-      );
-    });
+      }),
+    );
   }
 
   Widget _buildActionById({
     required BuildContext context,
     required String id,
     required double iconSize,
+    required double screenWidth,
+    required double screenHeight,
     Song? currentSong,
     bool isExpanded = true,
   }) {
@@ -2045,7 +1981,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               size: iconSize,
             ),
             onPressed: () {
-              if (!isExpanded) {
+              if (!isExpanded || _isCramped(screenWidth, screenHeight)) {
                 showLyricsSheet(context);
               } else if (showLyrics) {
                 audioSignal.showLyrics.value = false;
@@ -2071,7 +2007,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               size: iconSize,
             ),
             onPressed: () {
-              if (!isExpanded) {
+              if (!isExpanded || _isCramped(screenWidth, screenHeight)) {
                 showQueueSheet(context);
               } else if (showQueue) {
                 audioSignal.showQueueInPlayer.value = false;
@@ -2173,14 +2109,37 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           onPressed: () {},
         );
       case 'sleep_timer':
-        return IconButton(
-          icon: Icon(
-            Icons.timer_outlined,
-            color: Theme.of(context).colorScheme.secondary,
-            size: iconSize + 4,
-          ),
-          onPressed: () => showSleepTimerDialog(context),
-        );
+        return Watch((context) {
+          final remaining = audioSignal.sleepTimerRemaining.value;
+          final hasTimer = remaining != null;
+          final formatted = hasTimer ? _formatDuration(remaining) : '';
+          return IconButton(
+            icon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.timer_outlined,
+                  color: hasTimer
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.secondary,
+                  size: iconSize + 4,
+                ),
+                if (formatted.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    formatted,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            onPressed: () => showSleepTimerDialog(context),
+          );
+        });
       case 'remove_from_playlist':
         return IconButton(
           icon: Icon(
@@ -2200,629 +2159,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       default:
         return const SizedBox.shrink();
     }
-  }
-}
-
-// ─── Expanded Player Queue List ───────────────────────────────────────────────
-
-class _ExpandedPlayerQueueList extends StatefulWidget {
-  final List<Song> upNextSongs;
-  final List<Song> historySongs;
-  final String? currentSongPath;
-
-  const _ExpandedPlayerQueueList({
-    super.key,
-    required this.upNextSongs,
-    required this.historySongs,
-    this.currentSongPath,
-  });
-
-  @override
-  State<_ExpandedPlayerQueueList> createState() => _ExpandedPlayerQueueListState();
-}
-
-class _ExpandedPlayerQueueListState extends State<_ExpandedPlayerQueueList> {
-  bool _historyExpanded = true;
-  bool _upNextExpanded = true;
-
-  void _confirmClearHistory(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear History?'),
-        content: const Text('This will remove all songs from history.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              q.queueSignal.clearHistory();
-            },
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmClearUpNext(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear Up Next?'),
-        content: const Text('This will remove all songs from the queue.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              q.queueSignal.clearUpNext();
-            },
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isEmpty = widget.upNextSongs.isEmpty && widget.historySongs.isEmpty;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    if (isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FaIcon(
-              FontAwesomeIcons.music,
-              size: 40,
-              color: colorScheme.secondary.withValues(alpha: 0.2),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Queue is empty',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: colorScheme.secondary.withValues(alpha: 0.5),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return CustomScrollView(
-      slivers: [
-        if (widget.historySongs.isNotEmpty)
-          _buildHistorySliver(),
-        _buildUpNextSliver(),
-      ],
-    );
-  }
-
-  // ── History sliver ───────────────────────────────────────────────────────────
-
-  Widget _buildHistorySliver() {
-    return SliverMainAxisGroup(
-      slivers: [
-        SliverToBoxAdapter(
-          child: _CollapsibleSection(
-            title: 'Played',
-            count: widget.historySongs.length,
-            expanded: _historyExpanded,
-            onToggle: () => setState(() => _historyExpanded = !_historyExpanded),
-            trailing: _InlineActionTile(
-              icon: Icons.clear_all,
-              label: 'Clear',
-              onTap: () => _confirmClearHistory(context),
-            ),
-            children: [
-              for (int i = 0; i < widget.historySongs.length; i++)
-                _HistoryTile(
-                  song: widget.historySongs[i],
-                  onTap: () {
-                    q.queueSignal.playHistoryItem(widget.historySongs[i].path);
-                    audioSignal.playSong(widget.historySongs[i]);
-                  },
-                  onDismiss: () {
-                    q.queueSignal.history.value = [
-                      ...q.queueSignal.history.value
-                          .where((p) => p != widget.historySongs[i].path),
-                    ];
-                  },
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Up Next sliver ─────────────────────────────────────────────────────────
-
-  Widget _buildUpNextSliver() {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    final List<Widget> slivers = [
-      SliverToBoxAdapter(
-        child: _CollapsibleSection(
-          title: 'Up Next',
-          count: widget.upNextSongs.length,
-          expanded: _upNextExpanded,
-          onToggle: () => setState(() => _upNextExpanded = !_upNextExpanded),
-          trailing: widget.upNextSongs.isNotEmpty
-              ? _InlineActionTile(
-                  icon: Icons.clear_all,
-                  label: 'Clear',
-                  onTap: () => _confirmClearUpNext(context),
-                )
-              : null,
-          children: const [],
-        ),
-      ),
-    ];
-
-    if (widget.upNextSongs.isNotEmpty) {
-      slivers.add(
-        SliverReorderableList(
-          itemCount: widget.upNextSongs.length,
-          onReorder: (oldIndex, newIndex) {
-            q.queueSignal.reorderUpNext(oldIndex, newIndex);
-          },
-          proxyDecorator: (child, index, animation) {
-            return AnimatedBuilder(
-              animation: animation,
-              builder: (context, child) {
-                final elevation =
-                    Tween<double>(begin: 0, end: 8).animate(animation).value;
-                return Material(
-                  elevation: elevation,
-                  shadowColor: Colors.black54,
-                  borderRadius: BorderRadius.circular(8),
-                  color: Colors.transparent,
-                  child: child,
-                );
-              },
-              child: child,
-            );
-          },
-          itemBuilder: (context, index) {
-            final song = widget.upNextSongs[index];
-            return ReorderableDelayedDragStartListener(
-              key: ValueKey(song.path),
-              index: index,
-              child: _UpNextTile(
-                song: song,
-                index: index,
-                onTap: () => audioSignal.playSong(song),
-                onDismiss: () =>
-                    q.queueSignal.removeFromUpNext(song.path),
-                onMore: () => showSongMoreActionsSheet(
-                  context: context,
-                  song: song,
-                ),
-                dragHandle: Icon(
-                  Icons.drag_handle,
-                  color: colorScheme.secondary.withValues(alpha: 0.35),
-                  size: 20,
-                ),
-              ),
-            );
-          },
-        ),
-      );
-    } else {
-      slivers.add(
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: Text(
-                'Queue is empty — add songs to start listening',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.secondary.withValues(alpha: 0.4),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return SliverMainAxisGroup(slivers: slivers);
-  }
-}
-
-// ─── Collapsible Section (inline, shared look) ────────────────────────────────
-
-class _CollapsibleSection extends StatelessWidget {
-  final String title;
-  final int count;
-  final bool expanded;
-  final VoidCallback onToggle;
-  final Widget? trailing;
-  final List<Widget> children;
-
-  const _CollapsibleSection({
-    required this.title,
-    required this.count,
-    required this.expanded,
-    required this.onToggle,
-    required this.trailing,
-    required this.children,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  AnimatedRotation(
-                    turns: expanded ? 0.25 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: colorScheme.secondary.withValues(alpha: 0.45),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    title,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: colorScheme.secondary.withValues(alpha: 0.6),
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '($count)',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: colorScheme.secondary.withValues(alpha: 0.35),
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (trailing != null) trailing!,
-                ],
-              ),
-            ),
-          ),
-        ),
-        AnimatedCrossFade(
-          firstChild: Column(children: children),
-          secondChild: const SizedBox.shrink(),
-          crossFadeState:
-              expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-          duration: const Duration(milliseconds: 200),
-        ),
-      ],
-    );
-  }
-}
-
-// ─── Inline Action Tile (for compact queue actions) ───────────────────────────
-
-class _InlineActionTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _InlineActionTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: colorScheme.secondary, size: 16),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(color: colorScheme.secondary, fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Embedded History Tile (compact, no drag) ─────────────────────────────────
-
-// ─── History Tile (bigger, used in embedded queue) ─────────────────────────────
-
-class _HistoryTile extends StatelessWidget {
-  final Song song;
-  final VoidCallback onTap;
-  final VoidCallback onDismiss;
-
-  const _HistoryTile({
-    required this.song,
-    required this.onTap,
-    required this.onDismiss,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Dismissible(
-      key: ValueKey('hist_${song.path}'),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        color: colorScheme.error.withValues(alpha: 0.15),
-        child: Icon(
-          Icons.remove_circle_outline,
-          color: colorScheme.error,
-          size: 22,
-        ),
-      ),
-      onDismissed: (_) => onDismiss(),
-      child: Material(
-        color: Colors.transparent,
-        child: Ink(
-          color: Colors.transparent,
-          child: ListTile(
-            contentPadding: const EdgeInsets.only(left: 32, right: 32, top: 4, bottom: 4),
-            leading: SizedBox(
-              width: 48,
-              height: 48,
-              child: _buildArtwork(context, song),
-            ),
-            title: Text(
-              song.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colorScheme.secondary.withValues(alpha: 0.8),
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
-            subtitle: Text(
-              song.artist,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colorScheme.secondary.withValues(alpha: 0.65),
-                fontSize: 12,
-              ),
-            ),
-            onTap: onTap,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildArtwork(BuildContext context, Song song) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(6),
-        color: Colors.grey[800],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: _buildArtworkImage(context, song),
-      ),
-    );
-  }
-
-  Widget _buildArtworkImage(BuildContext context, Song song) {
-    if (!song.hasAlbumArt) {
-      return Center(child: Icon(Icons.music_note, color: Colors.white54, size: 18));
-    }
-    if (song.path.startsWith('yt:')) {
-      final url = youtubeDatasource.getSongArtworkUrl(song);
-      return Image.network(
-        url,
-        fit: BoxFit.cover,
-        cacheWidth: 72,
-        cacheHeight: 72,
-        errorBuilder: (_, __, ___) => Center(
-          child: Icon(Icons.music_note, color: Colors.white54, size: 18),
-        ),
-      );
-    }
-    return Watch((context) {
-      final artDir = audioSignal.albumArtDir.value;
-      if (artDir == null) {
-        return Center(child: Icon(Icons.music_note, color: Colors.white54, size: 18));
-      }
-      final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
-      final file = File(artPath);
-      if (file.existsSync()) {
-        return Image.file(
-          file,
-          fit: BoxFit.cover,
-          cacheWidth: 72,
-          cacheHeight: 72,
-          errorBuilder: (_, __, ___) => Center(
-            child: Icon(Icons.music_note, color: Colors.white54, size: 18),
-          ),
-        );
-      }
-      return Center(child: Icon(Icons.music_note, color: Colors.white54, size: 18));
-    });
-  }
-}
-
-// ─── Up Next Tile (for ReorderableListView in embedded queue) ─────────────────
-
-class _UpNextTile extends StatelessWidget {
-  final Song song;
-  final int index;
-  final VoidCallback onTap;
-  final VoidCallback onDismiss;
-  final VoidCallback onMore;
-  final Widget dragHandle;
-
-  const _UpNextTile({
-    super.key,
-    required this.song,
-    required this.index,
-    required this.onTap,
-    required this.onDismiss,
-    required this.onMore,
-    required this.dragHandle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Dismissible(
-      key: ValueKey('dismiss_${song.path}'),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        color: colorScheme.error.withValues(alpha: 0.15),
-        child: Icon(
-          Icons.remove_circle_outline,
-          color: colorScheme.error,
-          size: 22,
-        ),
-      ),
-      onDismissed: (_) => onDismiss(),
-      child: Material(
-        color: Colors.transparent,
-        child: Ink(
-          color: Colors.transparent,
-          child: ListTile(
-            contentPadding: const EdgeInsets.only(left: 32, right: 32, top: 4, bottom: 4),
-            leading: SizedBox(
-              width: 48,
-              height: 48,
-              child: _buildArtwork(context, song),
-            ),
-            title: Text(
-              song.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colorScheme.secondary.withValues(alpha: 0.85),
-                fontWeight: FontWeight.w500,
-                fontSize: 14,
-              ),
-            ),
-            subtitle: Text(
-              song.artist,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colorScheme.secondary.withValues(alpha: 0.55),
-                fontSize: 12,
-              ),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                dragHandle,
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onMore,
-                  icon: Icon(
-                    Icons.more_horiz,
-                    color: colorScheme.secondary.withValues(alpha: 0.45),
-                    size: 20,
-                  ),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
-            ),
-            onTap: onTap,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildArtwork(BuildContext context, Song song) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(6),
-        color: Colors.grey[800],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: _buildArtworkImage(context, song),
-      ),
-    );
-  }
-
-  Widget _buildArtworkImage(BuildContext context, Song song) {
-    if (!song.hasAlbumArt) {
-      return Center(child: Icon(Icons.music_note, color: Colors.white54, size: 18));
-    }
-    if (song.path.startsWith('yt:')) {
-      final url = youtubeDatasource.getSongArtworkUrl(song);
-      return Image.network(
-        url,
-        fit: BoxFit.cover,
-        cacheWidth: 72,
-        cacheHeight: 72,
-        errorBuilder: (_, __, ___) => Center(
-          child: Icon(Icons.music_note, color: Colors.white54, size: 18),
-        ),
-      );
-    }
-    return Watch((context) {
-      final artDir = audioSignal.albumArtDir.value;
-      if (artDir == null) {
-        return Center(child: Icon(Icons.music_note, color: Colors.white54, size: 18));
-      }
-      final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
-      final file = File(artPath);
-      if (file.existsSync()) {
-        return Image.file(
-          file,
-          fit: BoxFit.cover,
-          cacheWidth: 72,
-          cacheHeight: 72,
-          errorBuilder: (_, __, ___) => Center(
-            child: Icon(Icons.music_note, color: Colors.white54, size: 18),
-          ),
-        );
-      }
-      return Center(child: Icon(Icons.music_note, color: Colors.white54, size: 18));
-    });
   }
 }
 
@@ -2923,8 +2259,142 @@ class _PlayerBackground extends StatelessWidget {
       return [dominant.withValues(alpha: 0.8), muted.withValues(alpha: 0.95)];
     }
     return [
-      Theme.of(context).colorScheme.surface.withOpacity(0.5),
-      Theme.of(context).colorScheme.surface.withOpacity(0.9),
+      Theme.of(context).colorScheme.surface.withValues(alpha: 0.5),
+      Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
     ];
   }
+}
+
+/// Indeterminate gradient sweep that overlays the expanded seekbar track
+/// while the audio handler is buffering. The sweep loops left-to-right and
+/// fades with the SeekbarOpacity from the parent.
+class _BufferingSeekbarSweep extends StatelessWidget {
+  const _BufferingSeekbarSweep({
+    required this.animation,
+    required this.trackHeight,
+    required this.color,
+  });
+
+  final Animation<double> animation;
+  final double trackHeight;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          // Slide a soft highlight across the entire track width.
+          final t = animation.value;
+          return Align(
+            alignment: Alignment.center,
+            child: SizedBox(
+              height: trackHeight,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(trackHeight / 2),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final w = constraints.maxWidth;
+                    // Gradient band is ~40% of width; position -0.4 .. 1.0.
+                    final dx = -0.4 + 1.4 * t;
+                    return Stack(
+                      children: [
+                        Positioned(
+                          left: dx * w,
+                          top: 0,
+                          bottom: 0,
+                          width: w * 0.4,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  color.withValues(alpha: 0.0),
+                                  color.withValues(alpha: 0.55),
+                                  color.withValues(alpha: 0.0),
+                                ],
+                                stops: const [0.0, 0.5, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Renders the mini player-bar's circular progress with an optional
+/// indeterminate highlight arc that travels around the ring while buffering.
+class _BufferingRingPainter extends CustomPainter {
+  _BufferingRingPainter({
+    required this.progress,
+    required this.buffering,
+    required this.bufferValue,
+    required this.color,
+    required this.backgroundColor,
+  }) : super(
+          repaint: buffering ? bufferValue : null,
+        );
+
+  final double progress; // 0..1
+  final bool buffering;
+  final Animation<double> bufferValue; // 0..1
+  final Color color;
+  final Color backgroundColor;
+
+  static const double _strokeWidth = 3;
+  static const double _highlightSpan = 0.35; // fraction of full circle
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = (size.shortestSide - _strokeWidth) / 2;
+
+    final bg = Paint()
+      ..color = backgroundColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _strokeWidth
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(center, radius, bg);
+
+    if (radius <= 0) return;
+
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    final valuePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _strokeWidth
+      ..strokeCap = StrokeCap.round;
+    final sweep = (progress.clamp(0.0, 1.0)) * 6.2831853;
+    if (sweep > 0) {
+      canvas.drawArc(rect, -1.5707963, sweep, false, valuePaint);
+    }
+
+    if (buffering) {
+      final start = (bufferValue.value * 2.0 - 0.35).clamp(0.0, 1.0) * 6.2831853;
+      final span = _highlightSpan * 6.2831853;
+      final highlight = Paint()
+        ..color = color.withValues(alpha: 1.0)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _strokeWidth
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(rect, -1.5707963 + start, span, false, highlight);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BufferingRingPainter old) =>
+      old.progress != progress ||
+      old.buffering != buffering ||
+      old.color != color ||
+      old.backgroundColor != backgroundColor;
 }

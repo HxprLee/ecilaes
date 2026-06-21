@@ -1,7 +1,23 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../signals/settings_signal.dart';
-import '../theme/app_theme_extensions.dart';
+import '../theme/app_theme_tokens.dart';
 
 class AppDialog extends StatelessWidget {
   final Widget? titleIcon;
@@ -12,6 +28,7 @@ class AppDialog extends StatelessWidget {
   final double? maxHeight;
   final EdgeInsets padding;
   final Widget? trailing;
+  final double trailingWidth;
 
   const AppDialog({
     super.key,
@@ -23,6 +40,7 @@ class AppDialog extends StatelessWidget {
     this.maxHeight,
     this.padding = const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
     this.trailing,
+    this.trailingWidth = 8,
   });
 
   @override
@@ -43,18 +61,13 @@ class AppDialog extends StatelessWidget {
                   : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .extension<AppThemeExtension>()!
-                      .sidebarBackground
-                      .withValues(
-                        alpha:
-                            settingsSignal.enableGlobalBlur.value ? 0.85 : 1.0,
-                      ),
+                  color: context.tokens.sidebarBackground.withValues(
+                    alpha:
+                        settingsSignal.enableGlobalBlur.value ? 0.85 : 1.0,
+                  ),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.secondary.withValues(alpha: 0.1),
+                    color: context.accentBorder(0.1),
                   ),
                 ),
                 padding: padding,
@@ -62,7 +75,7 @@ class AppDialog extends StatelessWidget {
                   color: Colors.transparent,
                   child: DefaultTextStyle(
                     style: Theme.of(context).textTheme.bodyMedium!.copyWith(
-                          color: Theme.of(context).colorScheme.secondary,
+                          color: context.colorScheme.secondary,
                           fontSize: 14,
                         ),
                     child: Column(
@@ -83,9 +96,8 @@ class AppDialog extends StatelessWidget {
                                       .textTheme
                                       .titleLarge
                                       ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.secondary,
+                                        color:
+                                            context.colorScheme.secondary,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 20,
                                       ),
@@ -94,7 +106,7 @@ class AppDialog extends StatelessWidget {
                                 ),
                               ),
                             if (trailing != null) ...[
-                              const SizedBox(width: 8),
+                              SizedBox(width: trailingWidth),
                               trailing!,
                             ],
                             ],

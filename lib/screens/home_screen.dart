@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
@@ -6,6 +22,7 @@ import '../signals/audio_signal.dart';
 import '../services/song_cache.dart';
 import '../models/song.dart';
 import '../widgets/sliver_page_header.dart';
+import '../theme/app_theme_tokens.dart';
 import 'package:go_router/go_router.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -135,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   itemCount: recentAdded.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
                   itemBuilder: (context, index) {
                     final song = recentAdded[index];
                     return _LandscapeSongCard(
@@ -182,7 +199,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   itemCount: recentPlayed.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 16),
+                  separatorBuilder: (_, _) => const SizedBox(width: 16),
                   itemBuilder: (context, index) {
                     final song = recentPlayed[index];
                     return _PortraitSongCard(
@@ -226,13 +243,9 @@ class _QuickAccessCard extends StatelessWidget {
         height: 90,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color.fromRGBO(17, 23, 28, 0.7),
+          color: context.tokens.sidebarBackground,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Theme.of(
-              context,
-            ).colorScheme.secondary.withValues(alpha: 0.15),
-          ),
+          border: Border.all(color: context.accentBorder(0.15)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -240,13 +253,13 @@ class _QuickAccessCard extends StatelessWidget {
           children: [
             FaIcon(
               icon,
-              color: Theme.of(context).colorScheme.secondary,
+              color: context.colorScheme.secondary,
               size: 18,
             ),
             Text(
               title,
               style: TextStyle(
-                color: Theme.of(context).colorScheme.secondary,
+                color: context.colorScheme.secondary,
                 fontSize: 15,
                 fontWeight: FontWeight.w500,
               ),
@@ -272,18 +285,14 @@ class _AddCard extends StatelessWidget {
         width: 150,
         height: 90,
         decoration: BoxDecoration(
-          color: const Color.fromRGBO(17, 23, 28, 0.7),
+          color: context.tokens.sidebarBackground,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Theme.of(
-              context,
-            ).colorScheme.secondary.withValues(alpha: 0.15),
-          ),
+          border: Border.all(color: context.accentBorder(0.15)),
         ),
         child: Center(
           child: FaIcon(
             FontAwesomeIcons.plus,
-            color: Theme.of(context).colorScheme.secondary,
+            color: context.colorScheme.secondary,
             size: 24,
           ),
         ),
@@ -305,6 +314,9 @@ class _LandscapeSongCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final overlayColor = context.isMaterial3
+        ? context.colorScheme.onSurface.withValues(alpha: 0.3)
+        : Colors.black.withValues(alpha: 0.3);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -321,7 +333,7 @@ class _LandscapeSongCard extends StatelessWidget {
             image: FileImage(File(artPath)),
             fit: BoxFit.cover,
             colorFilter: ColorFilter.mode(
-              Colors.black.withOpacity(0.3),
+              overlayColor,
               BlendMode.darken,
             ),
           ),

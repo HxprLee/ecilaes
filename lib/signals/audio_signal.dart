@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:io';
 import 'dart:async';
 import 'dart:isolate';
@@ -10,6 +26,7 @@ import 'package:palette_generator_master/palette_generator_master.dart';
 import 'package:http/http.dart' as http;
 import 'settings_signal.dart';
 import '../theme/app_theme_style.dart';
+import '../utils/platform_utils.dart';
 import 'package:uuid/uuid.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 
@@ -48,6 +65,7 @@ class AudioSignal {
   final currentSong = signal<Song?>(null);
   final position = signal<Duration>(Duration.zero);
   final duration = signal<Duration>(Duration.zero);
+  final isBuffering = signal<bool>(false);
   final allSongs = listSignal<Song>([]);
   final playlists = listSignal<Playlist>([]);
   final historySongs = listSignal<HistoryEntry>([]);
@@ -73,6 +91,8 @@ class AudioSignal {
   final headerShowBlur = signal<bool>(false);
   final headerTitleProgress = signal<double>(0.0);
   final headerArtCover = signal<String?>(null);
+  final headerArtCoverIsNetwork = signal<bool>(false);
+  final headerPageTitle = signal<String?>(null);
   late final showPlayer = computed(
     () => currentSong.value != null || isDesktop,
   );
@@ -274,9 +294,6 @@ class AudioSignal {
     return q.indexWhere((item) => item.id == current.path);
   });
 
-  bool get isDesktop =>
-      !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
-
   Future<void> init(AudioHandler handler) async {
     // Cleanup any existing state if called again
     dispose();
@@ -294,11 +311,17 @@ class AudioSignal {
     // Initialize queue service
     unawaited(q.queueSignal.init());
 
+    // Refresh Discord presence when buttons/toggle change
+    settingsSignal.onDiscordRpcChanged = () {
+      if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+    };
+
     // Listen to streams
     _subscriptions.add(_audioHandler.playbackState.listen((state) {
       isPlaying.value = state.playing;
       isShuffleMode.value = state.shuffleMode == AudioServiceShuffleMode.all;
       repeatMode.value = state.repeatMode;
+      isBuffering.value = state.processingState == AudioProcessingState.buffering;
     }));
     _subscriptions.add(_audioHandler.mediaItem.listen((item) {
       if (item != null) {
@@ -325,6 +348,7 @@ class AudioSignal {
             currentSong.value = song;
             _updateDynamicTheme(song);
             _loadLyricsForSong(song);
+            if (isDesktop) unawaited(_updateDiscordPresence(force: true));
 
             // Lazy metadata fix for untagged local songs
             if (!song.path.startsWith('yt:') &&
@@ -554,8 +578,8 @@ class AudioSignal {
 
       // Update in all signals/maps
       batch(() {
-        if (this.currentSong.value?.path == song.path) {
-          this.currentSong.value = updatedSong;
+        if (currentSong.value?.path == song.path) {
+          currentSong.value = updatedSong;
         }
 
         final index = allSongs.value.indexWhere((s) => s.path == song.path);
@@ -620,39 +644,38 @@ class AudioSignal {
   String? _cachedArtworkUrl;
 
   Future<void> _updateDiscordPresence({bool force = false}) async {
+    if (!isDesktop) return;
+
     final song = currentSong.value;
     final playing = isPlaying.value;
 
-    if (song == null || !isDesktop) return;
+    if (song == null) return;
+
+    if (!settingsSignal.enableDiscordRpc.value) {
+      if (_lastDiscordSongPath != null) {
+        await PlatformService().clearPresence();
+        _lastDiscordSongPath = null;
+        _lastDiscordIsPlaying = null;
+      }
+      return;
+    }
 
     int? start;
     int? end;
     if (playing) {
       final posMs = audioHandler.playbackState.value.position.inMilliseconds;
       start = DateTime.now().millisecondsSinceEpoch - posMs;
-      
+
       final currentMediaItem = audioHandler.mediaItem.value;
-      final durationMs = currentMediaItem?.duration?.inMilliseconds ?? song.duration?.inMilliseconds;
+      final durationMs = currentMediaItem?.duration?.inMilliseconds ??
+          song.duration?.inMilliseconds;
       end = durationMs != null ? start + durationMs : null;
     }
 
     if (!force && _lastDiscordSongPath == song.path && _lastDiscordIsPlaying == playing) {
-      if (!playing) return; // If paused and already sent pause, no need to resend
-
-      // Resend periodically with updated exact timestamps
-      if (_cachedArtworkUrl != null) {
-        await PlatformService().updatePresence(
-          song,
-          artworkUrl: _cachedArtworkUrl,
-          isPlaying: true,
-          startTimeStamp: start,
-          endTimeStamp: end,
-        );
-      }
       return;
     }
 
-    // State changed
     _lastDiscordSongPath = song.path;
     _lastDiscordIsPlaying = playing;
 
@@ -732,7 +755,9 @@ class AudioSignal {
 
       final cachedPaths = allSongs.value.map((s) => s.path).toSet();
       final artDir = await SongCache.artDir;
-      final excludedPaths = settingsSignal.excludedPaths.value.toSet();
+      final excludedPaths = settingsSignal.excludedPaths.value
+          .map((e) => e.substring(2)) // strip 'f:' or 'd:' prefix
+          .toSet();
 
       print(
         'SCAN_DEBUG: Starting background scan. cachedCount=${cachedPaths.length}, artDir=$artDir, excludedCount=${excludedPaths.length}',
@@ -840,7 +865,10 @@ class AudioSignal {
   // Removed _scanDirectory in favor of _performFullScan in isolate
 
   // Playback Control
-  Future<void> play() => _audioHandler.play();
+  Future<void> play() async {
+    await _audioHandler.play();
+    if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+  }
   Future<void> pause() async {
     await _audioHandler.pause();
     if (isDesktop) unawaited(_updateDiscordPresence(force: true));
@@ -859,6 +887,12 @@ class AudioSignal {
     if (isDesktop) unawaited(_updateDiscordPresence(force: true));
   }
 
+  Future<void> disposePlayer() async {
+    if (_audioHandler is MyAudioHandler) {
+      await _audioHandler.player.dispose();
+    }
+  }
+
   Future<void> playSong(Song song, {List<Song>? fromList}) async {
     if (_audioHandler is MyAudioHandler) {
       // Auto-stop radio when a non-YouTube song starts playing.
@@ -868,7 +902,7 @@ class AudioSignal {
 
       // Auto-start radio when a YouTube song is played (if not already in radio mode)
       if (song.path.startsWith('yt:') && !isRadioMode.value) {
-        startRadio(song);
+        await startRadio(song);
       }
 
       final handler = _audioHandler;
@@ -1110,18 +1144,18 @@ class AudioSignal {
         return;
       }
 
-      // Optimize: Resize the image to a tiny size for palette generation
-      // 100x100 is more than enough for a seed color and it's much faster
+      // Optimize: Resize the image to a smaller size for palette generation
+      // 250x250 is enough for accurate hue extraction and still fast
       final resizedProvider = ResizeImage(
         imageProvider,
-        width: 100,
-        height: 100,
+        width: 250,
+        height: 250,
         policy: ResizeImagePolicy.fit,
       );
 
       final palette = await PaletteGeneratorMaster.fromImageProvider(
         resizedProvider,
-        maximumColorCount: 8, // Reduced from 16
+        maximumColorCount: 16,
       );
 
       final color = _selectBestSeedColor(palette);
@@ -1163,11 +1197,44 @@ class AudioSignal {
     }
   }
 
-  /// Picks the most dominant color from a palette to use as a theme seed.
+  /// Picks the best accent color from a palette using population-weighted scoring.
+  /// Filters out near-white, near-black, and low-saturation hues that are
+  /// likely background noise, then scores by: population * saturation * luminance_factor.
   Color? _selectBestSeedColor(PaletteGeneratorMaster palette) {
-    final dominant = palette.dominantColor?.color;
-    if (dominant == null) return null;
-    return _boostSaturation(dominant);
+    Color? bestColor;
+    double bestScore = 0;
+
+    for (final paletteColor in palette.paletteColors) {
+      final color = paletteColor.color;
+      final population = paletteColor.population;
+
+      final hsl = HSLColor.fromColor(color);
+      final luminance = hsl.lightness;
+      final saturation = hsl.saturation;
+
+      // Reject implausible accents: near-white, near-black, or very desaturated
+      if (saturation < 0.08) continue;
+      if (luminance < 0.10 || luminance > 0.85) continue;
+
+      // Clamp luminance factor so both very dark and very light colors score lower
+      final luminanceFactor = (luminance.clamp(0.15, 0.85) - 0.15) / 0.70;
+      final score = population * saturation * luminanceFactor;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestColor = color;
+      }
+    }
+
+    if (bestColor != null) return _boostSaturation(bestColor);
+
+    // Fallback chain: vibrant -> muted -> darkMuted
+    final fallback = palette.vibrantColor?.color ??
+        palette.mutedColor?.color ??
+        palette.darkMutedColor?.color;
+    if (fallback != null) return _boostSaturation(fallback);
+
+    return null;
   }
 
   Color _boostSaturation(Color color) {

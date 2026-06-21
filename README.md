@@ -1,5 +1,7 @@
 # ecilaes
 
-A music player written in Dart + Flutter. AI-assisted coding
+Cross-platform music player. Dart + Flutter.
 
-Design by me
+Local files, YouTube Music, streaming libraries. One UI.
+
+AI-assisted code. Design by author.

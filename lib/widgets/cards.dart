@@ -1,10 +1,27 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../services/album_art_cache.dart';
-import '../theme/app_theme_extensions.dart';
+import '../theme/app_theme_tokens.dart';
+import 'settings/settings_section.dart';
 
 class QuickActionCard extends StatefulWidget {
   final FaIconData icon;
@@ -17,56 +34,53 @@ class QuickActionCard extends StatefulWidget {
 }
 
 class _QuickActionCardState extends State<QuickActionCard> {
-  bool _isHovered = false;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 150,
+      height: 85,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.tokens.sidebarBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: context.accentBorder(0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          FaIcon(
+            widget.icon,
+            color: context.colorScheme.secondary,
+            size: 18,
+          ),
+          Text(
+            widget.label,
+            style: TextStyle(
+              color: context.accentOf(0.8),
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SettingsCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  const SettingsCard({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16),
+  });
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: Container(
-        width: 150,
-        height: 85,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: _isHovered
-              ? Theme.of(context)
-                    .extension<AppThemeExtension>()!
-                    .songCardBackground
-                    .withValues(alpha: 0.6)
-              : Theme.of(
-                  context,
-                ).extension<AppThemeExtension>()!.songCardBackground,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Theme.of(
-              context,
-            ).colorScheme.secondary.withValues(alpha: 0.15),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            FaIcon(
-              widget.icon,
-              color: Theme.of(context).colorScheme.secondary,
-              size: 18,
-            ),
-            Text(
-              widget.label,
-              style: TextStyle(
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondary.withValues(alpha: 0.8),
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    return SettingsSection(padding: padding, child: child);
   }
 }
 
@@ -164,7 +178,7 @@ class _SongCardState extends State<SongCard> {
                                 size: 36,
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.onSurface.withOpacity(0.5),
+                                ).colorScheme.onSurface.withValues(alpha: 0.3),
                               ),
                             )
                           : null,
@@ -179,7 +193,9 @@ class _SongCardState extends State<SongCard> {
 
                           return Container(
                             decoration: BoxDecoration(
-                              color: Colors.black45,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.3),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Stack(
@@ -271,19 +287,19 @@ class _SongCardState extends State<SongCard> {
       Offset.zero & overlay.size,
     );
 
-    final themeExt = Theme.of(context).extension<AppThemeExtension>()!;
+    final themeExt = context.tokens;
 
     showMenu(
       context: context,
       position: position,
-      color: themeExt.songCardBackground,
+      color: themeExt.cardBackground,
       items: [
         PopupMenuItem(
           value: 'add_to_playlist',
           child: ListTile(
             leading: Icon(
               Icons.playlist_add,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
             title: Text(
               'Add to Playlist',
@@ -296,7 +312,7 @@ class _SongCardState extends State<SongCard> {
           child: ListTile(
             leading: Icon(
               Icons.skip_next,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
             title: Text(
               'Play Next',

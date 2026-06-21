@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -5,7 +21,9 @@ import 'package:signals/signals_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../signals/settings_signal.dart';
 import '../../signals/audio_signal.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_dialog.dart';
+import '../../widgets/settings/settings_section.dart';
 import '../../widgets/sliver_page_header.dart';
 
 class LibrarySection extends StatelessWidget {
@@ -29,69 +47,27 @@ class LibrarySection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 24),
+
                     // Music Sources
-                  _sectionLabel('Music Sources', context),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Card(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surface.withValues(alpha: 0.8),
-                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.secondary.withValues(alpha: 0.1),
-                        ),
-                      ),
-                      clipBehavior: Clip.antiAlias,
+                    const SettingsSectionLabel('Music Sources'),
+                    SettingsSection(
                       child: Column(
                         children: [
                           // Current directory
                           Watch((context) {
                             final currentDir =
                                 settingsSignal.musicDirectory.value;
-                            return ListTile(
-                              leading: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.secondary
-                                      .withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(36),
-                                ),
-                                child: Center(
-                                  child: Icon(
-                                    Icons.folder,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.secondary,
-                                    size: 20,
-                                  ),
-                                ),
-                              ),
-                              title: Text(
-                                'Music Directory',
-                                style: TextStyle(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              subtitle: FutureBuilder<String>(
+                            return SettingsTile(
+                              icon: Icons.folder,
+                              title: 'Music Directory',
+                              subtitleWidget: FutureBuilder<String>(
                                 future: audioSignal.getMusicPath(),
                                 builder: (context, snapshot) {
                                   return Text(
                                     snapshot.data ?? 'Loading...',
                                     style: TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface.withValues(alpha: 0.54),
+                                      color: context.colorScheme.onSurface
+                                          .withValues(alpha: 0.54),
                                       fontSize: 12,
                                     ),
                                     maxLines: 1,
@@ -99,8 +75,11 @@ class LibrarySection extends StatelessWidget {
                                   );
                                 },
                               ),
-                              trailing: currentDir != null
-                                  ? IconButton(
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (currentDir != null)
+                                    IconButton(
                                       onPressed: () async {
                                         await settingsSignal
                                             .updateMusicDirectory(null);
@@ -108,19 +87,14 @@ class LibrarySection extends StatelessWidget {
                                       },
                                       icon: Icon(
                                         Icons.restore,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurface
+                                        color: context.colorScheme.onSurface
                                             .withValues(alpha: 0.54),
                                       ),
                                       tooltip: 'Reset to default',
-                                    )
-                                  : null,
-                              onTap: () => _pickDirectory(context),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 4,
+                                    ),
+                                ],
                               ),
+                              onTap: () => _pickDirectory(context),
                             );
                           }),
 
@@ -130,6 +104,7 @@ class LibrarySection extends StatelessWidget {
                               left: 16,
                               right: 16,
                               bottom: 16,
+                              top: 8,
                             ),
                             child: SizedBox(
                               width: double.infinity,
@@ -138,12 +113,10 @@ class LibrarySection extends StatelessWidget {
                                 icon: Icon(Icons.folder_open, size: 18),
                                 label: Text('Change Folder'),
                                 style: FilledButton.styleFrom(
-                                  backgroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
-                                  foregroundColor: Theme.of(
-                                    context,
-                                  ).colorScheme.surface,
+                                  backgroundColor:
+                                      context.colorScheme.secondary,
+                                  foregroundColor:
+                                      context.colorScheme.surface,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(36),
                                   ),
@@ -157,24 +130,12 @@ class LibrarySection extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 24),
 
-                  // Storage Management
-                  _sectionLabel('Storage Management', context),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Card(
-                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(
-                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-                        ),
-                      ),
+                    // Storage Management
+                    const SettingsSectionLabel('Storage Management'),
+                    SettingsSection(
                       child: Watch((context) {
                         final stats = audioSignal.storageStats.value;
                         final count = stats['count'] as int;
@@ -202,178 +163,106 @@ class LibrarySection extends StatelessWidget {
                         );
                       }),
                     ),
-                  ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 24),
 
-                  // Indexing
-                  _sectionLabel('Indexing', context),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Card(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surface.withValues(alpha: 0.8),
-                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.secondary.withValues(alpha: 0.1),
-                        ),
-                      ),
-                      clipBehavior: Clip.antiAlias,
+                    // Indexing
+                    const SettingsSectionLabel('Indexing'),
+                    SettingsSection(
                       child: Watch((context) {
                         final isScanning = audioSignal.isScanning.value;
-                        return ListTile(
-                          leading: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.secondary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(36),
-                            ),
-                            child: Center(
-                              child: isScanning
-                                  ? SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: Watch((context) {
-                                        final progress =
-                                            audioSignal.scanProgress.value;
-                                        return Stack(
-                                          alignment: Alignment.center,
-                                          children: [
-                                            CircularProgressIndicator(
-                                              value: progress,
-                                              strokeWidth: 2,
-                                              backgroundColor: Theme.of(context)
-                                                  .colorScheme
-                                                  .secondary
-                                                  .withValues(alpha: 0.2),
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.secondary,
-                                            ),
-                                            Text(
-                                              '${(progress * 100).round()}',
-                                              style: TextStyle(
-                                                fontSize: 7,
-                                                fontWeight: FontWeight.bold,
-                                                color: Theme.of(
-                                                  context,
-                                                ).colorScheme.secondary,
-                                              ),
-                                            ),
-                                          ],
-                                        );
-                                      }),
-                                    )
-                                  : Icon(
-                                      Icons.refresh,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.secondary,
-                                      size: 20,
-                                    ),
-                            ),
+                        return SettingsTile(
+                          leading: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: isScanning
+                                ? Watch((context) {
+                                    final progress =
+                                        audioSignal.scanProgress.value;
+                                    return Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        CircularProgressIndicator(
+                                          value: progress,
+                                          strokeWidth: 2,
+                                          backgroundColor: context
+                                              .colorScheme.secondary
+                                              .withValues(alpha: 0.2),
+                                          color:
+                                              context.colorScheme.secondary,
+                                        ),
+                                        Text(
+                                          '${(progress * 100).round()}',
+                                          style: TextStyle(
+                                            fontSize: 7,
+                                            fontWeight: FontWeight.bold,
+                                            color:
+                                                context.colorScheme.secondary,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  })
+                                : Icon(
+                                    Icons.refresh,
+                                    color: context.colorScheme.secondary,
+                                    size: 20,
+                                  ),
                           ),
-                          title: Text(
-                            isScanning ? 'Indexing...' : 'Re-index Songs',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          subtitle: Text(
-                            isScanning
-                                ? 'Scanning your music directory'
-                                : 'Scan for new or changed music files',
-                            style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withOpacity(0.54),
-                              fontSize: 12,
-                            ),
-                          ),
+                          title: isScanning ? 'Indexing...' : 'Re-index Songs',
+                          subtitle: isScanning
+                              ? 'Scanning your music directory'
+                              : 'Scan for new or changed music files',
                           onTap: isScanning
                               ? null
                               : () => audioSignal.reindexLibrary(),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 4,
-                          ),
                         );
                       }),
                     ),
-                  ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 24),
 
-                  // Maintenance
-                  _sectionLabel('Maintenance', context),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Card(
-                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(
-                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-                        ),
-                      ),
-                      clipBehavior: Clip.antiAlias,
+                    // Maintenance
+                    const SettingsSectionLabel('Maintenance'),
+                    SettingsSection(
                       child: Column(
                         children: [
-                          ListTile(
-                            leading: Icon(Icons.cleaning_services_outlined, size: 20, color: Theme.of(context).colorScheme.secondary),
-                            title: const Text('Clear Missing Files', style: TextStyle(fontSize: 14)),
-                            subtitle: const Text('Remove non-existent files from your library', style: TextStyle(fontSize: 12)),
+                          SettingsTile(
+                            icon: Icons.cleaning_services_outlined,
+                            title: 'Clear Missing Files',
+                            subtitle:
+                                'Remove non-existent files from your library',
                             onTap: () => _confirmClearMissing(context),
                           ),
-                          const Divider(height: 1, indent: 56),
-                          ListTile(
-                            leading: Icon(Icons.auto_fix_high_outlined, size: 20, color: Theme.of(context).colorScheme.secondary),
-                            title: const Text('Force Full Scan', style: TextStyle(fontSize: 14)),
-                            subtitle: const Text('Re-index everything and refresh all metadata', style: TextStyle(fontSize: 12)),
+                          const SettingsDivider(indent: 16),
+                          SettingsTile(
+                            icon: Icons.auto_fix_high_outlined,
+                            title: 'Force Full Scan',
+                            subtitle:
+                                'Re-index everything and refresh all metadata',
                             onTap: () => _confirmForceScan(context),
                           ),
-                          const Divider(height: 1, indent: 56),
-                          ListTile(
-                            leading: Icon(Icons.storage_outlined, size: 20, color: Theme.of(context).colorScheme.secondary),
-                            title: const Text('Manage Caches', style: TextStyle(fontSize: 14)),
-                            subtitle: const Text('Clear cached metadata, art, and lyrics', style: TextStyle(fontSize: 12)),
-                            onTap: () => context.push('/settings/cache'),
+                          const SettingsDivider(indent: 16),
+                          SettingsTile(
+                            icon: Icons.storage_outlined,
+                            title: 'Manage Caches',
+                            subtitle:
+                                'Clear cached metadata, art, and lyrics',
+                            onTap: () {
+                              debugPrint(
+                                  'MANAGE_CACHES: pushing /settings/library/manage_cache');
+                              context.push('/settings/library/manage_cache');
+                            },
                           ),
                         ],
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 24),
 
-                  // Exclusions
-                  _sectionLabel('Exclusions', context),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Card(
-                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                      surfaceTintColor: Theme.of(context).colorScheme.secondary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(
-                          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-                        ),
-                      ),
-                      clipBehavior: Clip.antiAlias,
+                    // Exclusions
+                    const SettingsSectionLabel('Exclusions'),
+                    SettingsSection(
                       child: Watch((context) {
                         final excluded = settingsSignal.excludedPaths.value;
                         return Column(
@@ -383,50 +272,83 @@ class LibrarySection extends StatelessWidget {
                               const Padding(
                                 padding: EdgeInsets.all(16.0),
                                 child: Text(
-                                  'No excluded folders or files.',
-                                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                                  'No excluded files or folders.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontStyle: FontStyle.italic),
                                 ),
                               )
                             else
                               ListView.separated(
                                 shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
+                                physics:
+                                    const NeverScrollableScrollPhysics(),
                                 itemCount: excluded.length,
-                                separatorBuilder: (context, index) => const Divider(height: 1, indent: 56),
+                                separatorBuilder: (context, index) =>
+                                    const SettingsDivider(indent: 16),
                                 itemBuilder: (context, index) {
-                                  final path = excluded[index];
-                                  return ListTile(
-                                    leading: Icon(
-                                      path.contains('.') ? Icons.description_outlined : Icons.folder_off_outlined,
-                                      size: 20,
-                                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                                  final stored = excluded[index];
+                                  final isFile = stored.startsWith('f:');
+                                  final path = stored.substring(2);
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          isFile
+                                              ? Icons.description_outlined
+                                              : Icons.folder_off_outlined,
+                                          size: 20,
+                                          color: context.colorScheme.onSurface
+                                              .withValues(alpha: 0.54),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                path.split('/').last,
+                                                style:
+                                                    const TextStyle(fontSize: 14),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              Text(
+                                                path,
+                                                style: const TextStyle(
+                                                    fontSize: 10,
+                                                    color: Colors.grey),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(
+                                              Icons.remove_circle_outline,
+                                              size: 20),
+                                          onPressed: () => settingsSignal
+                                              .removeExcludedPath(stored),
+                                        ),
+                                      ],
                                     ),
-                                    title: Text(
-                                      path.split('/').last,
-                                      style: const TextStyle(fontSize: 14),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    subtitle: Text(path, style: const TextStyle(fontSize: 10)),
-                                    trailing: IconButton(
-                                      icon: const Icon(Icons.remove_circle_outline, size: 20),
-                                      onPressed: () => settingsSignal.removeExcludedPath(path),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
                                   );
                                 },
                               ),
-                            const Divider(height: 1),
-                            ListTile(
-                              leading: Icon(Icons.add_circle_outline, size: 20, color: Theme.of(context).colorScheme.secondary),
-                              title: const Text('Add Exclusion', style: TextStyle(fontSize: 14)),
+                            const SettingsDivider(indent: 16),
+                            SettingsTile(
+                              icon: Icons.add_circle_outline,
+                              title: 'Add Exclusion',
                               onTap: () => _pickExclusion(context),
                             ),
                           ],
                         );
                       }),
                     ),
-                  ),
                     Watch(
                       (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
@@ -437,21 +359,6 @@ class LibrarySection extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _sectionLabel(String label, BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 20, bottom: 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
       ),
     );
   }
@@ -467,55 +374,17 @@ class LibrarySection extends StatelessWidget {
   }
 
   Future<void> _pickExclusion(BuildContext context) async {
-    // Show a dialog to choose between Folder or File
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (context) => AppDialog(
-        titleIcon: Icon(Icons.help_outline, color: Theme.of(context).colorScheme.secondary),
-        title: 'Add Exclusion',
-        content: const Text(
-          'Do you want to exclude a folder or a specific file?',
-          style: TextStyle(fontSize: 14),
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(context, 'file'),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
-              ),
-              shape: const StadiumBorder(),
-            ),
-            child: Text(
-              'File',
-              style: TextStyle(color: Theme.of(context).colorScheme.secondary),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, 'folder'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.secondary,
-              foregroundColor: Theme.of(context).colorScheme.surface,
-              shape: const StadiumBorder(),
-            ),
-            child: const Text('Folder'),
-          ),
-        ],
-      ),
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      dialogTitle: 'Select Files or Folders to Exclude',
     );
 
-    if (choice == null) return;
-
-    String? path;
-    if (choice == 'folder') {
-      path = await FilePicker.platform.getDirectoryPath(dialogTitle: 'Select Folder to Exclude');
-    } else {
-      final result = await FilePicker.platform.pickFiles(dialogTitle: 'Select File to Exclude');
-      path = result?.files.single.path;
-    }
-
-    if (path != null) {
-      await settingsSignal.addExcludedPath(path);
+    if (result != null) {
+      for (final file in result.files) {
+        if (file.path != null) {
+          await settingsSignal.addExcludedPath(file.path!);
+        }
+      }
     }
   }
 
@@ -523,7 +392,8 @@ class LibrarySection extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AppDialog(
-        titleIcon: Icon(Icons.cleaning_services_outlined, color: Theme.of(context).colorScheme.secondary),
+        titleIcon: Icon(Icons.cleaning_services_outlined,
+            color: context.colorScheme.secondary),
         title: 'Clear Missing Files',
         content: const Text(
           'This will remove all songs from your library that no longer exist on your disk. Continue?',
@@ -534,13 +404,13 @@ class LibrarySection extends StatelessWidget {
             onPressed: () => Navigator.pop(context),
             style: OutlinedButton.styleFrom(
               side: BorderSide(
-                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
+                color: context.colorScheme.secondary.withValues(alpha: 0.2),
               ),
               shape: const StadiumBorder(),
             ),
             child: Text(
               'Cancel',
-              style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+              style: TextStyle(color: context.colorScheme.secondary),
             ),
           ),
           FilledButton(
@@ -549,8 +419,8 @@ class LibrarySection extends StatelessWidget {
               audioSignal.clearMissingFiles();
             },
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.secondary,
-              foregroundColor: Theme.of(context).colorScheme.surface,
+              backgroundColor: context.colorScheme.secondary,
+              foregroundColor: context.colorScheme.surface,
               shape: const StadiumBorder(),
             ),
             child: const Text('Clear'),
@@ -564,7 +434,8 @@ class LibrarySection extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AppDialog(
-        titleIcon: Icon(Icons.refresh, color: Theme.of(context).colorScheme.secondary),
+        titleIcon: Icon(Icons.refresh,
+            color: context.colorScheme.secondary),
         title: 'Force Full Scan',
         content: const Text(
           'This will clear your library cache and perform a complete search of your music directory. This may take a while. Continue?',
@@ -575,13 +446,13 @@ class LibrarySection extends StatelessWidget {
             onPressed: () => Navigator.pop(context),
             style: OutlinedButton.styleFrom(
               side: BorderSide(
-                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
+                color: context.colorScheme.secondary.withValues(alpha: 0.2),
               ),
               shape: const StadiumBorder(),
             ),
             child: Text(
               'Cancel',
-              style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+              style: TextStyle(color: context.colorScheme.secondary),
             ),
           ),
           FilledButton(
@@ -590,8 +461,8 @@ class LibrarySection extends StatelessWidget {
               audioSignal.reindexLibrary();
             },
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.secondary,
-              foregroundColor: Theme.of(context).colorScheme.surface,
+              backgroundColor: context.colorScheme.secondary,
+              foregroundColor: context.colorScheme.surface,
               shape: const StadiumBorder(),
             ),
             child: const Text('Scan'),
@@ -601,19 +472,21 @@ class LibrarySection extends StatelessWidget {
     );
   }
 
-  Widget _storageStatItem(BuildContext context, IconData icon, String label, String value) {
+  Widget _storageStatItem(
+      BuildContext context, IconData icon, String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(icon, size: 14, color: Theme.of(context).colorScheme.secondary),
+            Icon(icon, size: 14, color: context.colorScheme.secondary),
             const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 10,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
+                color:
+                    context.colorScheme.onSurface.withValues(alpha: 0.54),
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.5,
               ),
@@ -626,7 +499,7 @@ class LibrarySection extends StatelessWidget {
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.onSurface,
+            color: context.colorScheme.onSurface,
           ),
         ),
       ],

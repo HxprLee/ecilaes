@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +24,7 @@ import '../services/YoutubeDatasource.dart';
 import '../widgets/sliver_page_header.dart';
 import '../widgets/song_list_view.dart';
 import '../widgets/song_actions_sheet.dart';
+import '../theme/app_theme_tokens.dart';
 
 class YtArtistScreen extends StatefulWidget {
   final String channelId;
@@ -32,12 +49,34 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
   @override
   void initState() {
     super.initState();
+    audioSignal.headerPageTitle.value = widget.name;
+    final thumb = widget.thumbnailUrl;
+    if (thumb.isNotEmpty) {
+      audioSignal.headerArtCover.value = thumb;
+      audioSignal.headerArtCoverIsNetwork.value = true;
+    }
     _load();
+  }
+
+  @override
+  void dispose() {
+    audioSignal.headerPageTitle.value = null;
+    audioSignal.headerArtCover.value = null;
+    audioSignal.headerArtCoverIsNetwork.value = false;
+    super.dispose();
   }
 
   Future<void> _load() async {
     final data = await youtubeDatasource.getArtistDetail(widget.channelId);
-    if (mounted) setState(() { _artistData = data; _loading = false; });
+    if (mounted) {
+      setState(() { _artistData = data; _loading = false; });
+      audioSignal.headerPageTitle.value = data['name'] ?? widget.name;
+      final thumb = data['thumbnailUrl'] ?? '';
+      if (thumb.isNotEmpty) {
+        audioSignal.headerArtCover.value = thumb;
+        audioSignal.headerArtCoverIsNetwork.value = true;
+      }
+    }
   }
 
   @override
@@ -166,7 +205,7 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     itemCount: albums.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 16),
+                    separatorBuilder: (_, _) => const SizedBox(width: 16),
                     itemBuilder: (context, index) {
                       final album = albums[index];
                       final thumbs = album['thumbnails'];
@@ -208,7 +247,7 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     itemCount: singles.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 16),
+                    separatorBuilder: (_, _) => const SizedBox(width: 16),
                     itemBuilder: (context, index) {
                       final single = singles[index];
                       final thumbs = single['thumbnails'];
@@ -256,6 +295,13 @@ class _AlbumCard extends StatelessWidget {
     required this.onTap,
   });
 
+  static Color _placeholderIconColor(BuildContext context) {
+    if (context.isMaterial3) {
+      return context.colorScheme.onSurface.withValues(alpha: 0.2);
+    }
+    return Colors.white24;
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -271,9 +317,9 @@ class _AlbumCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
                 child: thumbnailUrl.isNotEmpty
                     ? Image.network(thumbnailUrl, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
+                        errorBuilder: (context, _, _) => Container(
                           color: Colors.grey[900],
-                          child: const Icon(Icons.album, color: Colors.white24),
+                          child: Icon(Icons.album, color: _AlbumCard._placeholderIconColor(context),),
                         ))
                     : Container(color: Colors.grey[900]),
               ),

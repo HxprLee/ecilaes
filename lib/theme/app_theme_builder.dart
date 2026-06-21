@@ -1,21 +1,29 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'package:flutter/material.dart';
-import 'app_theme_extensions.dart';
+import 'app_theme_extension.dart';
+import 'app_theme_palette.dart';
 import 'app_theme_style.dart';
 
 /// Centralized builder that produces [ThemeData] for each [AppThemeStyle].
 class AppThemeBuilder {
   AppThemeBuilder._();
 
-  // ── Signature palette constants ──────────────────────────────────────
-  static const _sigForeground = Color(0xFFFFEFAF);
-  static const _sigBackground = Color(0xFF11171C);
-  static const _sigScaffoldTransparent = Color.fromARGB(178, 17, 23, 28);
-  static const _sigScaffoldOpaque = Color(0xFF11171C);
-
-  // ── Material 3 palette constant ──────────────────────────────────────
-  static const _m3Seed = Color(0xFF6750A4); // Material default purple
-
-  // ── Font Fallbacks ───────────────────────────────────────────────────
+  // ── Font fallbacks ───────────────────────────────────────────────────
   static const _cjkFallback = <String>[
     'Noto Sans CJK JP',
     'Noto Sans CJK SC',
@@ -25,205 +33,229 @@ class AppThemeBuilder {
   ];
 
   // ─────────────────────────────────────────────────────────────────────
-  // Light theme
+  // Public entry points
   // ─────────────────────────────────────────────────────────────────────
+
   static ThemeData buildLight(
     AppThemeStyle style, {
     String? fontFamily,
     Color? seedColor,
     bool isDesktop = false,
     bool desktopTransparency = false,
-  }) {
-    switch (style) {
-      case AppThemeStyle.signature:
-        return _signatureLight(fontFamily, isDesktop, desktopTransparency);
-      case AppThemeStyle.material3:
-        return _material3Light(
-          fontFamily,
-          seedColor,
-          isDesktop,
-          desktopTransparency,
-        );
-    }
-  }
+  }) =>
+      _build(
+        style,
+        Brightness.light,
+        fontFamily: fontFamily,
+        seedColor: seedColor,
+        isDesktop: isDesktop,
+        desktopTransparency: desktopTransparency,
+      );
 
-  // ─────────────────────────────────────────────────────────────────────
-  // Dark theme
-  // ─────────────────────────────────────────────────────────────────────
   static ThemeData buildDark(
     AppThemeStyle style, {
     String? fontFamily,
     Color? seedColor,
     bool isDesktop = false,
     bool desktopTransparency = false,
+  }) =>
+      _build(
+        style,
+        Brightness.dark,
+        fontFamily: fontFamily,
+        seedColor: seedColor,
+        isDesktop: isDesktop,
+        desktopTransparency: desktopTransparency,
+      );
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Internal
+  // ─────────────────────────────────────────────────────────────────────
+
+  static ThemeData _build(
+    AppThemeStyle style,
+    Brightness brightness, {
+    String? fontFamily,
+    Color? seedColor,
+    required bool isDesktop,
+    required bool desktopTransparency,
   }) {
     switch (style) {
       case AppThemeStyle.signature:
-        return _signatureDark(fontFamily, isDesktop, desktopTransparency);
+        return _buildSignature(
+          brightness,
+          fontFamily: fontFamily,
+          isDesktop: isDesktop,
+          desktopTransparency: desktopTransparency,
+        );
       case AppThemeStyle.material3:
-        return _material3Dark(
-          fontFamily,
-          seedColor,
-          isDesktop,
-          desktopTransparency,
+        return _buildMaterial3(
+          brightness,
+          fontFamily: fontFamily,
+          seedColor: seedColor,
+          isDesktop: isDesktop,
+          desktopTransparency: desktopTransparency,
         );
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  //  Signature
-  // ═══════════════════════════════════════════════════════════════════════
-
-  static ThemeData _signatureLight(
+  static ThemeData _buildSignature(
+    Brightness brightness, {
     String? fontFamily,
-    bool isDesktop,
-    bool desktopTransparency,
-  ) {
+    required bool isDesktop,
+    required bool desktopTransparency,
+  }) {
+    final palette = brightness == Brightness.dark
+        ? AppPalettes.signature.dark
+        : AppPalettes.signature.light;
+
+    final ColorScheme scheme = brightness == Brightness.dark
+        ? _signatureDarkScheme(palette)
+        : _signatureLightScheme(palette);
+
+    final scaffoldBg = _signatureScaffoldBackground(
+      palette: palette,
+      scheme: scheme,
+      isDesktop: isDesktop,
+      desktopTransparency: desktopTransparency,
+    );
+
+    return ThemeData(
+      brightness: brightness,
+      scaffoldBackgroundColor: scaffoldBg,
+      colorScheme: scheme,
+      useMaterial3: true,
+      fontFamily: fontFamily,
+      fontFamilyFallback: _cjkFallback,
+      extensions: [_signatureExtension(palette, scheme)],
+    );
+  }
+
+  static ThemeData _buildMaterial3(
+    Brightness brightness, {
+    String? fontFamily,
+    Color? seedColor,
+    required bool isDesktop,
+    required bool desktopTransparency,
+  }) {
+    final seed = seedColor ?? AppPalettes.defaultSeed;
     final scheme = ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: brightness,
+    );
+
+    final scaffoldBg = _material3ScaffoldBackground(
+      scheme: scheme,
+      isDesktop: isDesktop,
+      desktopTransparency: desktopTransparency,
+    );
+
+    return ThemeData(
+      brightness: brightness,
+      scaffoldBackgroundColor: scaffoldBg,
+      colorScheme: scheme,
+      useMaterial3: true,
+      fontFamily: fontFamily,
+      fontFamilyFallback: _cjkFallback,
+      extensions: [_material3Extension(scheme)],
+    );
+  }
+
+  // ── Shared helpers ───────────────────────────────────────────────────
+
+  static Color? _signatureScaffoldBackground({
+    required AppPalette palette,
+    required ColorScheme scheme,
+    required bool isDesktop,
+    required bool desktopTransparency,
+  }) {
+    if (!isDesktop) return null;
+    if (scheme.brightness == Brightness.dark) {
+      return desktopTransparency
+          ? palette.surface.withValues(alpha: 0.7)
+          : palette.surface;
+    }
+    return desktopTransparency
+        ? Colors.white.withValues(alpha: 0.7)
+        : Colors.white;
+  }
+
+  static Color? _material3ScaffoldBackground({
+    required ColorScheme scheme,
+    required bool isDesktop,
+    required bool desktopTransparency,
+  }) {
+    if (!isDesktop) return null;
+    return desktopTransparency
+        ? scheme.surface.withValues(alpha: 0.7)
+        : scheme.surface;
+  }
+
+  // ── Signature ColorSchemes ───────────────────────────────────────────
+
+  static ColorScheme _signatureLightScheme(AppPalette p) {
+    return ColorScheme.fromSeed(
       seedColor: const Color(0xFFFCE7AC),
       brightness: Brightness.light,
-      secondary: const Color(0xFFFCE7AC),
-    );
-
-    Color? scaffoldBg;
-    if (isDesktop) {
-      scaffoldBg = desktopTransparency
-          ? Colors.white.withValues(alpha: 0.7)
-          : Colors.white;
-    }
-
-    return ThemeData(
-      brightness: Brightness.light,
-      scaffoldBackgroundColor: scaffoldBg,
-      colorScheme: scheme,
-      useMaterial3: true,
-      fontFamily: fontFamily,
-      fontFamilyFallback: _cjkFallback,
-      extensions: const [AppThemeExtension.lightExtension],
+      secondary: p.foreground,
     );
   }
 
-  static ThemeData _signatureDark(
-    String? fontFamily,
-    bool isDesktop,
-    bool desktopTransparency,
-  ) {
-    Color? scaffoldBg;
-    if (isDesktop) {
-      scaffoldBg = desktopTransparency
-          ? _sigScaffoldTransparent
-          : _sigScaffoldOpaque;
-    }
-
-    return ThemeData(
+  static ColorScheme _signatureDarkScheme(AppPalette p) {
+    return ColorScheme(
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: scaffoldBg,
-      colorScheme: ColorScheme(
-        brightness: Brightness.dark,
-        primary: _sigForeground,
-        onPrimary: _sigBackground,
-        secondary: _sigForeground,
-        onSecondary: _sigBackground,
-        tertiary: _sigForeground,
-        onTertiary: _sigBackground,
-        error: const Color(0xFFFF6B6B),
-        onError: _sigBackground,
-        surface: _sigBackground,
-        onSurface: _sigForeground,
-        surfaceContainerHighest: _sigBackground,
-        surfaceContainerHigh: _sigBackground,
-        surfaceContainer: _sigBackground,
-        surfaceContainerLow: _sigBackground,
-        surfaceContainerLowest: _sigBackground,
-        outline: _sigForeground.withValues(alpha: 0.3),
-        outlineVariant: _sigForeground.withValues(alpha: 0.1),
-        shadow: Colors.black,
-        scrim: Colors.black,
-        inverseSurface: _sigForeground,
-        onInverseSurface: _sigBackground,
-        inversePrimary: _sigBackground,
-        surfaceTint: _sigForeground,
-      ),
-      useMaterial3: true,
-      fontFamily: fontFamily,
-      fontFamilyFallback: _cjkFallback,
-      extensions: const [AppThemeExtension.darkExtension],
+      primary: p.foreground,
+      onPrimary: p.surface,
+      secondary: p.foreground,
+      onSecondary: p.surface,
+      tertiary: p.foreground,
+      onTertiary: p.surface,
+      error: const Color(0xFFFF6B6B),
+      onError: p.surface,
+      surface: p.surface,
+      onSurface: p.foreground,
+      surfaceContainerHighest: p.surface,
+      surfaceContainerHigh: p.surface,
+      surfaceContainer: p.surface,
+      surfaceContainerLow: p.surface,
+      surfaceContainerLowest: p.surface,
+      outline: p.foreground.withValues(alpha: 0.3),
+      outlineVariant: p.foreground.withValues(alpha: 0.1),
+      shadow: Colors.black,
+      scrim: Colors.black,
+      inverseSurface: p.foreground,
+      onInverseSurface: p.surface,
+      inversePrimary: p.surface,
+      surfaceTint: p.foreground,
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  //  Material 3 / Monet
-  // ═══════════════════════════════════════════════════════════════════════
+  // ── AppThemeExtension builders ───────────────────────────────────────
 
-  static ThemeData _material3Light(
-    String? fontFamily,
-    Color? seedColor,
-    bool isDesktop,
-    bool desktopTransparency,
+  static AppThemeExtension _signatureExtension(
+    AppPalette p,
+    ColorScheme scheme,
   ) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: seedColor ?? _m3Seed,
-      brightness: Brightness.light,
-    );
-
-    Color? scaffoldBg;
-    if (isDesktop) {
-      scaffoldBg = desktopTransparency
-          ? scheme.surface.withValues(alpha: 0.7)
-          : scheme.surface;
-    }
-
-    return ThemeData(
-      brightness: Brightness.light,
-      scaffoldBackgroundColor: scaffoldBg,
-      colorScheme: scheme,
-      useMaterial3: true,
-      fontFamily: fontFamily,
-      fontFamilyFallback: _cjkFallback,
-      extensions: [
-        AppThemeExtension(
-          songCardBackground: scheme.surfaceContainerHighest,
-          playerBarBackground: scheme.surfaceContainer,
-          sidebarBackground: scheme.surfaceContainerLow,
-          headerBarBackground: scheme.surface,
-        ),
-      ],
+    return AppThemeExtension(
+      scheme: AppColorScheme.signature,
+      cardBackground: p.surfaceElevated,
+      playerBarBackground: p.surface,
+      sidebarBackground: p.surfaceSunken,
+      headerBarBackground: p.surfaceOverlay,
+      placeholderIcon: Colors.white54,
+      circleIconBackground: Colors.black.withValues(alpha: 0.3),
     );
   }
 
-  static ThemeData _material3Dark(
-    String? fontFamily,
-    Color? seedColor,
-    bool isDesktop,
-    bool desktopTransparency,
-  ) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: seedColor ?? _m3Seed,
-      brightness: Brightness.dark,
-    );
-
-    Color? scaffoldBg;
-    if (isDesktop) {
-      scaffoldBg = desktopTransparency
-          ? scheme.surface.withValues(alpha: 0.7)
-          : scheme.surface;
-    }
-
-    return ThemeData(
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: scaffoldBg,
-      colorScheme: scheme,
-      useMaterial3: true,
-      fontFamily: fontFamily,
-      fontFamilyFallback: _cjkFallback,
-      extensions: [
-        AppThemeExtension(
-          songCardBackground: scheme.surfaceContainerHighest,
-          playerBarBackground: scheme.surfaceContainer,
-          sidebarBackground: scheme.surfaceContainerLow,
-          headerBarBackground: scheme.surface,
-        ),
-      ],
+  static AppThemeExtension _material3Extension(ColorScheme scheme) {
+    return AppThemeExtension(
+      scheme: AppColorScheme.material3,
+      cardBackground: scheme.surfaceContainerHighest,
+      playerBarBackground: scheme.surfaceContainer,
+      sidebarBackground: scheme.surfaceContainerLow,
+      headerBarBackground: scheme.surface,
+      placeholderIcon: scheme.onSurface.withValues(alpha: 0.3),
+      circleIconBackground: scheme.surfaceContainerHighest,
     );
   }
 }

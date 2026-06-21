@@ -1,7 +1,23 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../signals/settings_signal.dart';
-import '../../theme/app_theme_extensions.dart';
+import '../../theme/app_theme_tokens.dart';
 
 class FlyoutSheet extends StatelessWidget {
   final Widget child;
@@ -48,35 +64,17 @@ class FlyoutSheet extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(
                 color: backgroundColor ??
-                    Theme.of(context)
-                        .extension<AppThemeExtension>()!
-                        .sidebarBackground
-                        .withValues(
-                          alpha: settingsSignal.enableGlobalBlur.value
-                              ? 0.67
-                              : 1.0,
-                        ),
+                    context.tokens.sidebarBackground.withValues(
+                      alpha: settingsSignal.enableGlobalBlur.value
+                          ? 0.67
+                          : 1.0,
+                    ),
                 borderRadius: borderRadius,
                 border: showBorder
                     ? Border(
-                        top: BorderSide(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondary
-                              .withValues(alpha: 0.15),
-                        ),
-                        left: BorderSide(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondary
-                              .withValues(alpha: 0.15),
-                        ),
-                        right: BorderSide(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondary
-                              .withValues(alpha: 0.15),
-                        ),
+                        top: BorderSide(color: context.accentBorder(0.15)),
+                        left: BorderSide(color: context.accentBorder(0.15)),
+                        right: BorderSide(color: context.accentBorder(0.15)),
                       )
                     : null,
               ),
@@ -92,10 +90,7 @@ class FlyoutSheet extends StatelessWidget {
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondary
-                              .withValues(alpha: 0.2),
+                          color: context.accentOf(0.2),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),

@@ -1,9 +1,27 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../services/cache_service.dart';
 import '../../services/lyrics_service.dart';
 import '../../signals/audio_signal.dart';
+import '../../theme/app_theme_tokens.dart';
 import '../../widgets/app_dialog.dart';
+import '../../widgets/settings/settings_section.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../widgets/sliver_page_header.dart';
 
@@ -30,7 +48,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
 
   Future<void> _loadStats() async {
     setState(() => _isLoading = true);
-    
+
     final meta = await cacheService.getMetadataStats();
     final album = await cacheService.getAlbumArtStats();
     final artist = await cacheService.getArtistArtStats();
@@ -64,60 +82,28 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
     required CacheStats? stats,
     required VoidCallback onClear,
   }) {
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(36),
-        ),
-        child: Center(
-          child: icon is FaIconData
-              ? FaIcon(
-                  icon,
-                  color: Theme.of(context).colorScheme.secondary,
-                  size: 20,
-                )
-              : Icon(
-                  icon as IconData,
-                  color: Theme.of(context).colorScheme.secondary,
-                  size: 20,
-                ),
-        ),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface,
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      subtitle: Text(
-        stats != null
-            ? '${stats.fileCount} files • ${_formatSize(stats.sizeBytes)}'
-            : 'Calculating...',
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.54),
-          fontSize: 12,
-        ),
-      ),
+    final hasFiles = stats != null && stats.fileCount > 0;
+    return SettingsTile(
+      icon: icon,
+      title: title,
+      subtitle: stats != null
+          ? '${stats.fileCount} files • ${_formatSize(stats.sizeBytes)}'
+          : 'Calculating...',
       trailing: IconButton(
         icon: Icon(
           Icons.delete_outline,
           size: 20,
-          color: stats != null && stats.fileCount > 0
-              ? Theme.of(context).colorScheme.error
-              : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+          color: hasFiles
+              ? context.colorScheme.error
+              : context.colorScheme.onSurface.withValues(alpha: 0.1),
         ),
-        onPressed: stats != null && stats.fileCount > 0
+        onPressed: hasFiles
             ? () async {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (c) => AppDialog(
                     titleIcon: Icon(Icons.warning_amber_rounded,
-                        color: Theme.of(context).colorScheme.error),
+                        color: context.colorScheme.error),
                     title: 'Clear $title?',
                     content: const Text(
                       'This action cannot be undone.',
@@ -128,9 +114,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                         onPressed: () => Navigator.pop(c, false),
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .secondary
+                            color: context.colorScheme.secondary
                                 .withValues(alpha: 0.2),
                           ),
                           shape: const StadiumBorder(),
@@ -138,14 +122,14 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                         child: Text(
                           'Cancel',
                           style: TextStyle(
-                              color: Theme.of(context).colorScheme.secondary),
+                              color: context.colorScheme.secondary),
                         ),
                       ),
                       FilledButton(
                         onPressed: () => Navigator.pop(c, true),
                         style: FilledButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.error,
-                          foregroundColor: Theme.of(context).colorScheme.onError,
+                          backgroundColor: context.colorScheme.error,
+                          foregroundColor: context.colorScheme.onError,
                           shape: const StadiumBorder(),
                         ),
                         child: const Text('Clear'),
@@ -160,9 +144,10 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
               }
             : null,
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
-  }  @override
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -183,133 +168,90 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                     if (_isLoading)
                       const Center(child: CircularProgressIndicator())
                     else ...[
-                      _sectionLabel('Cache Categories', context),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Card(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surface
-                              .withValues(alpha: 0.8),
-                          surfaceTintColor:
-                              Theme.of(context).colorScheme.secondary,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .secondary
-                                  .withValues(alpha: 0.1),
+                      const SettingsSectionLabel('Cache Categories'),
+                      SettingsSection(
+                        child: Column(
+                          children: [
+                            _buildCacheItem(
+                              title: 'Metadata Cache',
+                              description: 'Cached song tags and library data',
+                              icon: Icons.data_usage,
+                              stats: _metadataStats,
+                              onClear: () async {
+                                await cacheService.clearMetadata();
+                                await _loadStats();
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Cleared Metadata cache. Full scan needed.')));
+                                }
+                              },
                             ),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            children: [
-                              _buildCacheItem(
-                                title: 'Metadata Cache',
-                                description: 'Cached song tags and library data',
-                                icon: Icons.data_usage,
-                                stats: _metadataStats,
-                                onClear: () async {
-                                  await cacheService.clearMetadata();
-                                  await _loadStats();
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                            content: Text(
-                                                'Cleared Metadata cache. Full scan needed.')));
-                                  }
-                                },
-                              ),
-                              const Divider(height: 1, indent: 64),
-                              _buildCacheItem(
-                                title: 'Album Art',
-                                description:
-                                    'Downloaded and extracted album covers',
-                                icon: Icons.album,
-                                stats: _albumArtStats,
-                                onClear: () async {
-                                  await cacheService.clearAlbumArt();
-                                  await _loadStats();
-                                },
-                              ),
-                              const Divider(height: 1, indent: 64),
-                              _buildCacheItem(
-                                title: 'Artist Pictures',
-                                description: 'Artist profiles fetched from Deezer',
-                                icon: FontAwesomeIcons.users,
-                                stats: _artistArtStats,
-                                onClear: () async {
-                                  await cacheService.clearArtistArt();
-                                  audioSignal.artistPictures.value.clear();
-                                  await _loadStats();
-                                },
-                              ),
-                              const Divider(height: 1, indent: 64),
-                              _buildCacheItem(
-                                title: 'Lyrics',
-                                description: 'Locally cached lyrics files',
-                                icon: Icons.lyrics,
-                                stats: _lyricsStats,
-                                onClear: () async {
-                                  await cacheService.clearLyrics();
-                                  LyricsService().clearCache();
-                                  await _loadStats();
-                                },
-                              ),
-                              const Divider(height: 1, indent: 64),
-                              _buildCacheItem(
-                                title: 'Song Cache',
-                                description: 'Cached YouTube audio streams',
-                                icon: Icons.cloud_download,
-                                stats: _audioStats,
-                                onClear: () async {
-                                  await cacheService.clearAudioCache();
-                                  await _loadStats();
-                                },
-                              ),
-                            ],
-                          ),
+                            const SettingsDivider(indent: 16),
+                            _buildCacheItem(
+                              title: 'Album Art',
+                              description:
+                                  'Downloaded and extracted album covers',
+                              icon: Icons.album,
+                              stats: _albumArtStats,
+                              onClear: () async {
+                                await cacheService.clearAlbumArt();
+                                await _loadStats();
+                              },
+                            ),
+                            const SettingsDivider(indent: 16),
+                            _buildCacheItem(
+                              title: 'Artist Pictures',
+                              description: 'Artist profiles fetched from Deezer',
+                              icon: FontAwesomeIcons.users,
+                              stats: _artistArtStats,
+                              onClear: () async {
+                                await cacheService.clearArtistArt();
+                                audioSignal.artistPictures.value.clear();
+                                await _loadStats();
+                              },
+                            ),
+                            const SettingsDivider(indent: 16),
+                            _buildCacheItem(
+                              title: 'Lyrics',
+                              description: 'Locally cached lyrics files',
+                              icon: Icons.lyrics,
+                              stats: _lyricsStats,
+                              onClear: () async {
+                                await cacheService.clearLyrics();
+                                LyricsService().clearCache();
+                                await _loadStats();
+                              },
+                            ),
+                            const SettingsDivider(indent: 16),
+                            _buildCacheItem(
+                              title: 'Song Cache',
+                              description: 'Cached YouTube audio streams',
+                              icon: Icons.cloud_download,
+                              stats: _audioStats,
+                              onClear: () async {
+                                await cacheService.clearAudioCache();
+                                await _loadStats();
+                              },
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 24),
-                      _sectionLabel('Maintenance', context),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Card(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surface
-                              .withValues(alpha: 0.8),
-                          surfaceTintColor:
-                              Theme.of(context).colorScheme.secondary,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .secondary
-                                  .withValues(alpha: 0.1),
+                      const SettingsSectionLabel('Maintenance'),
+                      SettingsSection(
+                        child: Column(
+                          children: [
+                            SettingsTile(
+                              icon: Icons.delete_forever,
+                              iconColor: context.colorScheme.error,
+                              title: 'Clear All Cache',
+                              subtitle:
+                                  'Delete all metadata, art, and lyrics',
+                              onTap: () => _confirmClearAll(),
                             ),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            children: [
-                              ListTile(
-                                leading: Icon(Icons.delete_forever,
-                                    size: 20,
-                                    color: Theme.of(context).colorScheme.error),
-                                title: const Text('Clear All Cache',
-                                    style: TextStyle(fontSize: 14)),
-                                subtitle: const Text(
-                                    'Delete all metadata, art, and lyrics',
-                                    style: TextStyle(fontSize: 12)),
-                                onTap: () => _confirmClearAll(),
-                              ),
-                            ],
-                          ),
+                          ],
                         ),
                       ),
                     ],
@@ -326,27 +268,12 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
     );
   }
 
-  Widget _sectionLabel(String label, BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 20, bottom: 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-
   Future<void> _confirmClearAll() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (c) => AppDialog(
         titleIcon: Icon(Icons.delete_forever,
-            color: Theme.of(context).colorScheme.error),
+            color: context.colorScheme.error),
         title: 'Clear All Cache?',
         content: const Text(
           'This will delete all cached data. You may need to perform a full re-scan of your library afterward.',
@@ -357,23 +284,20 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
             onPressed: () => Navigator.pop(c, false),
             style: OutlinedButton.styleFrom(
               side: BorderSide(
-                color: Theme.of(context)
-                    .colorScheme
-                    .secondary
-                    .withValues(alpha: 0.2),
+                color: context.colorScheme.secondary.withValues(alpha: 0.2),
               ),
               shape: const StadiumBorder(),
             ),
             child: Text(
               'Cancel',
-              style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+              style: TextStyle(color: context.colorScheme.secondary),
             ),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(c, true),
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
+              backgroundColor: context.colorScheme.error,
+              foregroundColor: context.colorScheme.onError,
               shape: const StadiumBorder(),
             ),
             child: const Text('Clear All'),

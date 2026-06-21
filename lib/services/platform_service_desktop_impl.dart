@@ -1,3 +1,20 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,16 +24,27 @@ import 'package:just_audio_platform_interface/just_audio_platform_interface.dart
 import 'package:nativeapi/nativeapi.dart' as native;
 import 'package:window_manager/window_manager.dart';
 import 'package:signals/signals_flutter.dart';
+import 'package:dart_discord_presence/dart_discord_presence.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
 import 'platform_service.dart';
 import 'discord_rpc_service.dart';
+
+class _AppWindowListener extends WindowListener {
+  @override
+  Future<void> onWindowClose() async {
+    audioSignal.stop();
+    await audioSignal.disposePlayer();
+    exit(0);
+  }
+}
 
 class PlatformServiceDesktopImpl implements PlatformService {
   native.TrayIcon? _trayIcon;
   native.Menu? _trayMenu;
   native.MenuItem? _playPauseItem;
   void Function()? _trayEffectCleanup;
+  final _AppWindowListener _windowListener = _AppWindowListener();
 
   @override
   Future<void> init() async {
@@ -42,6 +70,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
       }
 
       await windowManager.ensureInitialized();
+      windowManager.addListener(_windowListener);
 
       // Initialize Discord RPC
       await DiscordRpcService().init();
@@ -138,7 +167,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
       });
 
       quitItem.addCallbackListener<native.MenuItemClickedEvent>((e) {
-        exit(0);
+        windowManager.close();
       });
 
       // Sync Play/Pause Label
@@ -160,6 +189,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
     bool isPlaying = true,
     int? startTimeStamp,
     int? endTimeStamp,
+    List<DiscordButton>? buttons,
   }) async {
     await DiscordRpcService().updatePresence(
       song,
@@ -167,6 +197,7 @@ class PlatformServiceDesktopImpl implements PlatformService {
       isPlaying: isPlaying,
       startTimeStamp: startTimeStamp,
       endTimeStamp: endTimeStamp,
+      buttons: buttons,
     );
   }
 
@@ -180,5 +211,6 @@ class PlatformServiceDesktopImpl implements PlatformService {
     await DiscordRpcService().dispose();
     _trayEffectCleanup?.call();
     _trayIcon?.removeAllListeners();
+    windowManager.removeListener(_windowListener);
   }
 }

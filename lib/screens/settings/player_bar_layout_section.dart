@@ -1,7 +1,25 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
+import '../../theme/app_theme_tokens.dart';
+import '../../widgets/settings/settings_section.dart';
 import '../../widgets/sliver_page_header.dart';
 
 class PlayerBarLayoutSection extends StatelessWidget {
@@ -30,10 +48,7 @@ class PlayerBarLayoutSection extends StatelessWidget {
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
-          const SliverPageHeader(
-            title: 'Player Bar Layout',
-            maxWidth: 600,
-          ),
+          const SliverPageHeader(title: 'Player Bar Layout', maxWidth: 600),
           SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
@@ -43,18 +58,21 @@ class PlayerBarLayoutSection extends StatelessWidget {
                   children: [
                     const SizedBox(height: 24),
 
-                  _sectionLabel('Player Bar Actions', context),
-                  _buildActionsList(
-                    context: context,
-                    actionsSignal: settingsSignal.playerBarActions,
-                    collectionId: 'player',
-                  ),
+                    const SettingsSectionLabel('Player Bar Actions'),
+                    _buildActionsList(
+                      context: context,
+                      actionsSignal: settingsSignal.playerBarActions,
+                      collectionId: 'player',
+                    ),
 
-                  const SizedBox(height: 32),
-                  _buildHiddenActions(context),
+                    const SizedBox(height: 32),
+                    _buildHiddenActions(context),
 
-                  const SizedBox(height: 32),
-                    Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+                    const SizedBox(height: 32),
+                    Watch(
+                      (context) =>
+                          SizedBox(height: audioSignal.reservedHeight.value),
+                    ),
                   ],
                 ),
               ),
@@ -83,12 +101,12 @@ class PlayerBarLayoutSection extends StatelessWidget {
           builder: (context, candidateData, rejectedData) {
             return Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                color: context.tokens.sidebarBackground,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: candidateData.isNotEmpty
-                      ? Theme.of(context).colorScheme.secondary
-                      : Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                      ? context.colorScheme.secondary
+                      : context.accentBorder(0.1),
                 ),
               ),
               child: Column(
@@ -106,7 +124,10 @@ class PlayerBarLayoutSection extends StatelessWidget {
                   if (actions.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(16.0),
-                      child: Text('Empty - Drag actions here', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      child: Text(
+                        'Empty - Drag actions here',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
                     )
                   else
                     _buildDropZone(collectionId, actions.length),
@@ -152,10 +173,18 @@ class PlayerBarLayoutSection extends StatelessWidget {
   }) {
     final icon = _getSimplifiedActionIcon(actionId);
     final label = _getSimplifiedActionLabel(actionId);
-    final dragData = _ActionDragData(id: actionId, sourceCollection: collectionId, index: index);
+    final dragData = _ActionDragData(
+      id: actionId,
+      sourceCollection: collectionId,
+      index: index,
+    );
 
     final tile = ListTile(
-      leading: Icon(icon, color: Theme.of(context).colorScheme.secondary, size: 20),
+      leading: Icon(
+        icon,
+        color: Theme.of(context).colorScheme.secondary,
+        size: 20,
+      ),
       title: Text(label, style: const TextStyle(fontSize: 14)),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -189,16 +218,18 @@ class PlayerBarLayoutSection extends StatelessWidget {
           child: tile,
         ),
       ),
-      childWhenDragging: Opacity(
-        opacity: 0.3,
-        child: tile,
-      ),
+      childWhenDragging: Opacity(opacity: 0.3, child: tile),
       child: tile,
     );
   }
 
-  void _handleDrop(_ActionDragData data, String targetCollection, int targetIndex) {
-    if (data.sourceCollection == targetCollection && data.index == targetIndex) return;
+  void _handleDrop(
+    _ActionDragData data,
+    String targetCollection,
+    int targetIndex,
+  ) {
+    if (data.sourceCollection == targetCollection && data.index == targetIndex)
+      return;
 
     final player = List<String>.from(settingsSignal.playerBarActions.value);
 
@@ -235,16 +266,14 @@ class PlayerBarLayoutSection extends StatelessWidget {
   Widget _buildHiddenActions(BuildContext context) {
     return Watch((context) {
       final player = settingsSignal.playerBarActions.value;
-      final hidden = _allActionIds
-          .where((id) => !player.contains(id))
-          .toList();
+      final hidden = _allActionIds.where((id) => !player.contains(id)).toList();
 
       if (hidden.isEmpty) return const SizedBox.shrink();
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionLabel('Hidden Actions', context),
+          const SettingsSectionLabel('Hidden Actions'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: DragTarget<_ActionDragData>(
@@ -256,21 +285,12 @@ class PlayerBarLayoutSection extends StatelessWidget {
               builder: (context, candidateData, rejectedData) {
                 return Container(
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surface
-                        .withValues(alpha: 0.8),
+                    color: context.tokens.sidebarBackground,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: candidateData.isNotEmpty
-                          ? Theme.of(context)
-                              .colorScheme
-                              .error
-                              .withValues(alpha: 0.5)
-                          : Theme.of(context)
-                              .colorScheme
-                              .secondary
-                              .withValues(alpha: 0.1),
+                          ? context.colorScheme.error.withValues(alpha: 0.5)
+                          : context.accentBorder(0.1),
                     ),
                   ),
                   child: Column(
@@ -288,20 +308,18 @@ class PlayerBarLayoutSection extends StatelessWidget {
                       final tile = ListTile(
                         leading: Icon(
                           icon,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.5),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.5),
                           size: 20,
                         ),
                         title: Text(
                           label,
                           style: TextStyle(
                             fontSize: 14,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.5),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.5),
                           ),
                         ),
                         trailing: IconButton(
@@ -331,10 +349,7 @@ class PlayerBarLayoutSection extends StatelessWidget {
                             child: tile,
                           ),
                         ),
-                        childWhenDragging: Opacity(
-                          opacity: 0.3,
-                          child: tile,
-                        ),
+                        childWhenDragging: Opacity(opacity: 0.3, child: tile),
                         child: tile,
                       );
                     }).toList(),
@@ -354,58 +369,73 @@ class PlayerBarLayoutSection extends StatelessWidget {
     settingsSignal.updatePlayerBarActions(player);
   }
 
-  Widget _sectionLabel(String label, BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 20, bottom: 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-
   IconData _getSimplifiedActionIcon(String id) {
     switch (id) {
-      case 'add_to_playlist': return Icons.playlist_add;
-      case 'play_next': return Icons.playlist_play;
-      case 'add_to_queue': return Icons.queue_music;
-      case 'remove_from_playlist': return Icons.playlist_remove;
-      case 'go_to_album': return Icons.album_outlined;
-      case 'go_to_artist': return Icons.person_outline;
-      case 'sleep_timer': return Icons.timer_outlined;
-      case 'info': return Icons.info_outline;
-      case 'share': return Icons.share_outlined;
-      case 'shuffle': return Icons.shuffle;
-      case 'repeat': return Icons.repeat;
-      case 'lyrics': return Icons.music_note;
-      case 'queue': return Icons.format_list_bulleted;
-      case 'more': return Icons.more_horiz;
-      default: return Icons.help_outline;
+      case 'add_to_playlist':
+        return Icons.playlist_add;
+      case 'play_next':
+        return Icons.playlist_play;
+      case 'add_to_queue':
+        return Icons.queue_music;
+      case 'remove_from_playlist':
+        return Icons.playlist_remove;
+      case 'go_to_album':
+        return Icons.album_outlined;
+      case 'go_to_artist':
+        return Icons.person_outline;
+      case 'sleep_timer':
+        return Icons.timer_outlined;
+      case 'info':
+        return Icons.info_outline;
+      case 'share':
+        return Icons.share_outlined;
+      case 'shuffle':
+        return Icons.shuffle;
+      case 'repeat':
+        return Icons.repeat;
+      case 'lyrics':
+        return Icons.music_note;
+      case 'queue':
+        return Icons.format_list_bulleted;
+      case 'more':
+        return Icons.more_horiz;
+      default:
+        return Icons.help_outline;
     }
   }
 
   String _getSimplifiedActionLabel(String id) {
     switch (id) {
-      case 'add_to_playlist': return 'Add to playlist';
-      case 'play_next': return 'Play next';
-      case 'add_to_queue': return 'Add to queue';
-      case 'remove_from_playlist': return 'Remove from playlist';
-      case 'go_to_album': return 'Go to album';
-      case 'go_to_artist': return 'Go to artist';
-      case 'sleep_timer': return 'Sleep timer';
-      case 'info': return 'Song info';
-      case 'share': return 'Share';
-      case 'shuffle': return 'Shuffle mode';
-      case 'repeat': return 'Repeat mode';
-      case 'lyrics': return 'Lyrics';
-      case 'queue': return 'Queue';
-      case 'more': return 'More options';
-      default: return 'Unknown';
+      case 'add_to_playlist':
+        return 'Add to playlist';
+      case 'play_next':
+        return 'Play next';
+      case 'add_to_queue':
+        return 'Add to queue';
+      case 'remove_from_playlist':
+        return 'Remove from playlist';
+      case 'go_to_album':
+        return 'Go to album';
+      case 'go_to_artist':
+        return 'Go to artist';
+      case 'sleep_timer':
+        return 'Sleep timer';
+      case 'info':
+        return 'Song info';
+      case 'share':
+        return 'Share';
+      case 'shuffle':
+        return 'Shuffle mode';
+      case 'repeat':
+        return 'Repeat mode';
+      case 'lyrics':
+        return 'Lyrics';
+      case 'queue':
+        return 'Queue';
+      case 'more':
+        return 'More options';
+      default:
+        return 'Unknown';
     }
   }
 }

@@ -1,3 +1,19 @@
+// Ecilaes - Cross-platform music player
+// Copyright (C) 2024  Anton Borri
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import 'dart:collection';
 import 'dart:io';
 import 'dart:isolate';
@@ -23,7 +39,9 @@ class _LruCache<K, V> {
   void put(K key, V value) {
     _map.remove(key);
     _map[key] = value;
-    while (_map.length > maxSize) _map.remove(_map.keys.first);
+    while (_map.length > maxSize) {
+      _map.remove(_map.keys.first);
+    }
   }
 
   void remove(K key) => _map.remove(key);
