@@ -72,14 +72,14 @@ done
 if $skip_android; then
   echo "=== Skipping Android builds ==="
 else
-  echo "=== Building Android (ABI splits) ==="
-  flutter build apk --release --split-per-abi "${FLUTTER_ARGS[@]}"
-  mkdir -p "$OUTPUT_DIR/android"
-  cp "$PROJECT_ROOT/build/app/outputs/flutter-apk/"*.apk "$OUTPUT_DIR/android/"
-
   echo "=== Building Android (universal) ==="
   flutter build apk --release "${FLUTTER_ARGS[@]}"
+  mkdir -p "$OUTPUT_DIR/android"
   cp "$PROJECT_ROOT/build/app/outputs/flutter-apk/app-universal-release.apk" "$OUTPUT_DIR/android/"
+
+  echo "=== Building Android (ABI splits) ==="
+  flutter build apk --release --split-per-abi "${FLUTTER_ARGS[@]}"
+  cp "$PROJECT_ROOT/build/app/outputs/flutter-apk/"*.apk "$OUTPUT_DIR/android/"
 fi
 
 # ---------------------------------------------------------------
