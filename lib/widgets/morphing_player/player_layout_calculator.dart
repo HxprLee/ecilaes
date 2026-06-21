@@ -41,7 +41,7 @@ class PlayerLayoutCalculator {
     final actionsHeight = ExpandedLayoutConstants.actionsHeight;
     const gapCount = ExpandedLayoutConstants.gapCount;
 
-    final bottomStart = screenHeight - bottomPadding - 24.0;
+    final bottomStart = screenHeight - bottomPadding;
     final actionsTop = bottomStart - actionsHeight;
     final actionsRect = Rect.fromLTWH(0, actionsTop, playerWidth, actionsHeight);
 

@@ -1981,7 +1981,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               size: iconSize,
             ),
             onPressed: () {
-              if (!isExpanded || _isCramped(screenWidth, screenHeight)) {
+              if (!isExpanded) {
                 showLyricsSheet(context);
               } else if (showLyrics) {
                 audioSignal.showLyrics.value = false;
@@ -2007,7 +2007,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               size: iconSize,
             ),
             onPressed: () {
-              if (!isExpanded || _isCramped(screenWidth, screenHeight)) {
+              if (!isExpanded) {
                 showQueueSheet(context);
               } else if (showQueue) {
                 audioSignal.showQueueInPlayer.value = false;
