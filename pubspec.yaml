@@ -3,7 +3,7 @@ description: "A local/streaming, cross-platform music player. Licensed under GPL
 publish_to: 'none'
 copyright: "Copyright (C) 2024 Anton Borri"
 
-version: 0.5.1
+version: 0.5.2
 
 environment:
   sdk: ^3.10.1
