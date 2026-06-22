@@ -74,11 +74,10 @@ class MyAudioHandler extends BaseAudioHandler {
 
   final AlbumArtCache _artCache = AlbumArtCache();
 
-  // History tracking
+  // History tracking (long-term analytics, not queue history).
   Timer? _historyTimer;
   bool _hasRecordedCurrent = false;
   String? _lastTrackId;
-  final List<String> _sessionPlayedOrder = [];
 
   // Radio queue auto-fill guard
   bool _isFillingRadio = false;
@@ -193,8 +192,6 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> setPlaylist(List<Song> songs) async {
     await _artCache.init();
 
-    _sessionPlayedOrder.clear();
-
     _gainMap
       ..clear()
       ..addEntries(songs
@@ -206,7 +203,6 @@ class MyAudioHandler extends BaseAudioHandler {
     queue.add(mediaItems);
     _currentIndex = 0;
     _shuffledIndices = const [];
-    _syncQueueSignal();
 
     if (_shuffleMode == AudioServiceShuffleMode.all) {
       _generateShuffledIndices();
@@ -276,6 +272,7 @@ class MyAudioHandler extends BaseAudioHandler {
       _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
     }
     queue.add(current);
+    _syncQueueSignal();
   }
 
   @override
@@ -321,7 +318,6 @@ class MyAudioHandler extends BaseAudioHandler {
       _shuffleIndicesController.add(const []);
     }
     playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
-    _syncQueueSignal();
   }
 
   @override
@@ -416,7 +412,6 @@ class MyAudioHandler extends BaseAudioHandler {
       _currentIndex = _getNextIndex();
     }
     await _playCurrent();
-    _syncQueueSignal();
   }
 
   @override
@@ -424,7 +419,6 @@ class MyAudioHandler extends BaseAudioHandler {
     if (queue.value.isEmpty) return;
     _currentIndex = _getPreviousIndex();
     await _playCurrent();
-    _syncQueueSignal();
   }
 
   @override
@@ -433,7 +427,6 @@ class MyAudioHandler extends BaseAudioHandler {
     if (index == -1) return;
     _currentIndex = index;
     await _playCurrent();
-    _syncQueueSignal();
   }
 
   /// Play a specific song. If [song.path] is already in the queue, jumps to
@@ -444,7 +437,6 @@ class MyAudioHandler extends BaseAudioHandler {
     if (index == -1) return;
     _currentIndex = index;
     await _playCurrent();
-    _syncQueueSignal();
   }
 
   /// Update the tracked queue index without triggering playback.
@@ -499,37 +491,30 @@ class MyAudioHandler extends BaseAudioHandler {
   // Queue signal bridge
   // ---------------------------------------------------------------------------
 
+  /// Notify [QueueSignal] that the underlying [queue] / [currentIndex] /
+  /// shuffle order have changed. The signal mirrors the handler's
+  /// canonical state (path list + current index) and persists to disk.
   void _syncQueueSignal() {
     if (_currentIndex < 0 || queue.value.isEmpty) {
-      queueSignal.updateFromQueueAndHistory(
-        upNext: const [],
-        history: _sessionPlayedOrder.toList(growable: false),
+      queueSignal.syncFromHandler(
+        playbackOrder: const [],
+        currentIndex: -1,
       );
       return;
     }
 
-    final List<String> upNextPaths;
+    final List<String> orderPaths;
     if (_shuffledIndices.isNotEmpty) {
-      if (_currentIndex < _shuffledIndices.length - 1) {
-        upNextPaths = _shuffledIndices
-            .sublist(_currentIndex + 1)
-            .map((idx) => queue.value[idx].id)
-            .toList();
-      } else {
-        upNextPaths = const [];
-      }
+      orderPaths = _shuffledIndices
+          .map((idx) => queue.value[idx].id)
+          .toList(growable: false);
     } else {
-      upNextPaths = _currentIndex < queue.value.length - 1
-          ? queue.value
-              .sublist(_currentIndex + 1)
-              .map((i) => i.id)
-              .toList()
-          : const [];
+      orderPaths = queue.value.map((i) => i.id).toList(growable: false);
     }
 
-    queueSignal.updateFromQueueAndHistory(
-      upNext: upNextPaths,
-      history: _sessionPlayedOrder.toList(growable: false),
+    queueSignal.syncFromHandler(
+      playbackOrder: orderPaths,
+      currentIndex: _currentIndex,
     );
 
     _scheduleRadioFill();
@@ -594,15 +579,11 @@ class MyAudioHandler extends BaseAudioHandler {
     final token = _LoadToken(++_loadGeneration);
     _activeToken = token;
 
-    var item = queue.value[_currentIndex];
-
-    // History bookkeeping for the new track.
-    _sessionPlayedOrder
-      ..remove(item.id)
-      ..insert(0, item.id);
+    final baseItem = queue.value[_currentIndex];
+    _syncQueueSignal();
 
     try {
-      item = await _resolveArt(item, token);
+      var item = await _resolveArt(baseItem, token);
       _throwIfCancelled(token);
 
       // Publish metadata early so the UI updates with the new selection.
@@ -629,6 +610,11 @@ class MyAudioHandler extends BaseAudioHandler {
         playbackState.add(playbackState.value.copyWith(
           processingState: AudioProcessingState.error,
         ));
+        // Don't strand the user on a broken track — advance the queue
+        // so the next song has a chance to play.
+        if (queue.value.length > 1) {
+          unawaited(skipToNext());
+        }
       }
     } finally {
       // Pre-cache the next track only if this load is still the active one.

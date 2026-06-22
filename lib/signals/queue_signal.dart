@@ -15,13 +15,18 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import 'dart:async';
-import 'package:audio_service/audio_service.dart';
-import 'package:signals/signals.dart';
+import 'package:signals/signals_flutter.dart';
 import '../models/queue_model.dart';
 import '../models/song.dart';
 import '../services/queue_service.dart';
 import 'audio_signal.dart';
 
+/// Single source of truth for the playback queue.
+///
+/// Owns the path-based queue (local + YouTube mixed), the current song
+/// index, the shuffle order, and the history. Persists to disk via
+/// [QueueService]. [MyAudioHandler] remains the only place that knows
+/// about `MediaItem`s — this signal speaks paths.
 class QueueSignal {
   static final QueueSignal _instance = QueueSignal._internal();
   factory QueueSignal() => _instance;
@@ -29,7 +34,14 @@ class QueueSignal {
 
   final QueueService _service = QueueService();
 
-  final upNext = listSignal<String>([]);
+  /// Full ordered playback list, current song at [currentIndex].
+  final playbackOrder = listSignal<String>([]);
+
+  /// Index of the currently playing song within [playbackOrder]. -1 when
+  /// the queue is empty.
+  final currentIndex = signal<int>(-1);
+
+  /// Played songs, newest first. Capped on insert.
   final history = listSignal<String>([]);
 
   StreamSubscription? _subscription;
@@ -44,117 +56,241 @@ class QueueSignal {
   }
 
   void _syncFromModel(QueueModel model) {
-    upNext.value = model.upNext;
-    history.value = model.history;
+    playbackOrder.value = List<String>.from(model.playbackOrder);
+    currentIndex.value = model.currentIndex;
+    history.value = List<String>.from(model.history);
   }
 
-  int get upNextCount => upNext.value.length;
-  int get historyCount => history.value.length;
-  bool get isEmpty => upNext.value.isEmpty;
-
-  Future<void> playNext(Song song) async {
-    await _service.playNext(song.path);
-    upNext.value = [song.path, ...upNext.value];
-  }
-
-  Future<void> addToQueue(Song song) async {
-    await _service.addToQueue(song.path);
-    upNext.value = [...upNext.value, song.path];
-  }
-
-  Future<void> reorderUpNext(int oldIndex, int newIndex) async {
-    if (oldIndex == newIndex) return;
-    final paths = List<String>.from(upNext.value);
-    if (oldIndex < 0 || oldIndex >= paths.length) return;
-    if (newIndex < 0 || newIndex > paths.length) return;
-
-    final item = paths.removeAt(oldIndex);
-    final adjustedNew = newIndex > oldIndex ? newIndex - 1 : newIndex;
-    paths.insert(adjustedNew, item);
-
-    // Build the full queue path list: items before current song + current song + reordered upNext
-    final currentPath = audioSignal.currentSong.value?.path;
-    final handlerQueue = audioSignal.queue.value;
-    final currentQueueIndex = currentPath != null
-        ? handlerQueue.indexWhere((item) => item.id == currentPath)
-        : -1;
-
-    List<String> fullOrderedPaths;
-    if (currentQueueIndex >= 0) {
-      fullOrderedPaths = [
-        ...handlerQueue.sublist(0, currentQueueIndex).map((i) => i.id),
-        currentPath!,
-        ...paths,
-      ];
-    } else {
-      fullOrderedPaths = [...paths];
-    }
-
-    await _service.reorderUpNext(oldIndex, newIndex);
-    upNext.value = paths;
-    audioSignal.reorderQueueFromPaths(
-      fullOrderedPaths,
-      currentQueueIndex >= 0 ? currentQueueIndex : 0,
+  void _commit({List<String>? order, int? index, List<String>? hist}) {
+    final model = _service.model.copyWith(
+      playbackOrder: order,
+      currentIndex: index,
+      history: hist,
     );
+    _service.replace(model);
   }
 
-  Future<void> moveToTop(String songPath) async {
-    await _service.moveToTop(songPath);
-    final paths = List<String>.from(upNext.value);
-    paths.remove(songPath);
-    paths.insert(0, songPath);
-    upNext.value = paths;
+  int get upNextCount {
+    final i = currentIndex.value;
+    final n = playbackOrder.value.length;
+    if (i < 0 || i >= n - 1) return 0;
+    return n - i - 1;
   }
 
-  Future<void> removeFromUpNext(String songPath) async {
-    await _service.removeFromUpNext(songPath);
-    upNext.value = upNext.value.where((p) => p != songPath).toList();
+  int get historyCount => history.value.length;
+  bool get isEmpty => playbackOrder.value.isEmpty;
+  String? get currentPath {
+    final i = currentIndex.value;
+    if (i < 0 || i >= playbackOrder.value.length) return null;
+    return playbackOrder.value[i];
   }
 
-  Future<void> clearUpNext() async {
-    await _service.clearUpNext();
-    upNext.value = [];
+  /// The list of songs that will play after the current one.
+  List<String> get upNextPaths {
+    final i = currentIndex.value;
+    final order = playbackOrder.value;
+    if (i < 0 || i >= order.length - 1) return const [];
+    return order.sublist(i + 1);
   }
 
-  Future<void> clearHistory() async {
-    await _service.clearHistory();
-    history.value = [];
+  /// Replace the entire queue. If [playPath] is non-null, playback jumps
+  /// to that song; otherwise it starts at index 0.
+  ///
+  /// Resets shuffle order when not in shuffle mode.
+  void setPlaylist(List<String> paths, {String? playPath}) {
+    final order = List<String>.from(paths);
+    int index = -1;
+    if (playPath != null) {
+      index = order.indexOf(playPath);
+    }
+    if (index < 0 && order.isNotEmpty) index = 0;
+    final newHistory = <String>[];
+    if (index >= 0 && index < order.length) {
+      newHistory.add(order[index]);
+    }
+    _commit(order: order, index: index, hist: newHistory);
   }
 
-  Future<void> clearAll() async {
-    await _service.clearAll();
-    upNext.value = [];
-    history.value = [];
+  /// Play a single song. Replaces the queue with [fromList] (or just the
+  /// song if no list is provided) and jumps to [song.path].
+  void playNow(Song song, {List<Song>? fromList}) {
+    final paths = (fromList ?? [song]).map((s) => s.path).toList();
+    setPlaylist(paths, playPath: song.path);
   }
 
-  Future<void> requeueFromHistory(String songPath) async {
-    await _service.requeueFromHistory(songPath);
-    history.value = history.value.where((p) => p != songPath).toList();
-    upNext.value = [songPath, ...upNext.value];
+  /// Insert [song] right after the current song (or at the top if the
+  /// queue is empty).
+  void playNext(Song song) {
+    final path = song.path;
+    final order = List<String>.from(playbackOrder.value);
+    order.remove(path);
+    final i = currentIndex.value;
+    if (i < 0) {
+      order.add(path);
+      _commit(order: order, index: 0, hist: [path]);
+    } else {
+      order.insert(i + 1, path);
+      _commit(order: order);
+    }
   }
 
-  Future<void> playHistoryItem(String songPath) async {
-    await _service.playHistoryItem(songPath);
-    history.value = history.value.where((p) => p != songPath).toList();
-    upNext.value = [songPath, ...upNext.value];
+  /// Append [song] to the end of the queue.
+  void addToQueue(Song song) {
+    final path = song.path;
+    final order = List<String>.from(playbackOrder.value);
+    if (!order.contains(path)) {
+      order.add(path);
+      _commit(order: order);
+    }
   }
 
-  void updateFromPlayback({
-    required List<MediaItem> playbackQueue,
+  /// Remove the song at [index] in [playbackOrder]. Adjusts [currentIndex]
+  /// so it still points to the same song (or to the previous one when the
+  /// current song itself was removed).
+  void removeAt(int index) {
+    if (index < 0 || index >= playbackOrder.value.length) return;
+    final order = List<String>.from(playbackOrder.value);
+    order.removeAt(index);
+    int newCurrent = currentIndex.value;
+    if (index < newCurrent) {
+      newCurrent--;
+    } else if (index == newCurrent) {
+      newCurrent = order.isEmpty ? -1 : (newCurrent >= order.length ? order.length - 1 : newCurrent);
+    }
+    _commit(order: order, index: newCurrent);
+  }
+
+  /// Reorder a song within the upNext section. [oldIndex] and [newIndex]
+  /// are positions in [upNextPaths], not in [playbackOrder].
+  void reorderUpNext(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
+    final upNext = List<String>.from(upNextPaths);
+    if (oldIndex < 0 || oldIndex >= upNext.length) return;
+    if (newIndex < 0 || newIndex > upNext.length) return;
+
+    final item = upNext.removeAt(oldIndex);
+    final adjusted = newIndex > oldIndex ? newIndex - 1 : newIndex;
+    upNext.insert(adjusted, item);
+
+    final i = currentIndex.value;
+    final prefix = i >= 0 && i < playbackOrder.value.length
+        ? playbackOrder.value.sublist(0, i + 1)
+        : <String>[];
+    _commit(order: [...prefix, ...upNext]);
+  }
+
+  /// Move [songPath] to the very top of upNext. No-op if it's not in
+  /// upNext already.
+  void moveToTop(String songPath) {
+    final upNext = List<String>.from(upNextPaths);
+    if (!upNext.remove(songPath)) return;
+    upNext.insert(0, songPath);
+
+    final i = currentIndex.value;
+    final prefix = i >= 0 && i < playbackOrder.value.length
+        ? playbackOrder.value.sublist(0, i + 1)
+        : <String>[];
+    _commit(order: [...prefix, ...upNext]);
+  }
+
+  /// Remove a song from upNext by path.
+  void removeFromUpNext(String songPath) {
+    final upNext = upNextPaths.where((p) => p != songPath).toList();
+    final i = currentIndex.value;
+    final prefix = i >= 0 && i < playbackOrder.value.length
+        ? playbackOrder.value.sublist(0, i + 1)
+        : <String>[];
+    _commit(order: [...prefix, ...upNext]);
+  }
+
+  /// Remove a song from history by path.
+  void removeFromHistory(String songPath) {
+    final hist = history.value.where((p) => p != songPath).toList();
+    _commit(hist: hist);
+  }
+
+  /// Move [songPath] from history back into upNext. Returns the song so
+  /// the caller can start playback.
+  Song? playFromHistory(String songPath) {
+    final song = resolveSong(songPath);
+    playNext(song);
+    removeFromHistory(songPath);
+    return song;
+  }
+
+  /// Skip the player to [index] in [playbackOrder]. Updates the current
+  /// index and prepends the song to history.
+  void skipTo(int index) {
+    final order = playbackOrder.value;
+    if (index < 0 || index >= order.length) return;
+    final newHist = <String>[order[index]];
+    _commit(index: index, hist: newHist);
+  }
+
+  /// Skip forward by one (wraps via repeat mode in the handler). No-op
+  /// at the end of the queue unless repeat-all is set.
+  void skipNext() {
+    final order = playbackOrder.value;
+    final i = currentIndex.value;
+    if (i < 0 || order.isEmpty) return;
+    if (i >= order.length - 1) return;
+    skipTo(i + 1);
+  }
+
+  /// Skip backward by one. No-op at the start of the queue.
+  void skipPrevious() {
+    final i = currentIndex.value;
+    if (i <= 0) return;
+    skipTo(i - 1);
+  }
+
+  void clearUpNext() {
+    final i = currentIndex.value;
+    final order = playbackOrder.value;
+    final prefix = i >= 0 && i < order.length ? order.sublist(0, i + 1) : <String>[];
+    _commit(order: prefix);
+  }
+
+  void clearHistory() {
+    _commit(hist: const []);
+  }
+
+  void clearAll() {
+    _commit(order: const [], index: -1, hist: const []);
+  }
+
+  /// Mirror the handler's canonical state (full ordered path list + the
+  /// index of the currently playing song) into the signal. History is
+  /// updated to contain exactly the current song.
+  ///
+  /// This is called by [MyAudioHandler] after every queue mutation so
+  /// that the signal stays a faithful projection of the handler's state
+  /// without the signal having to know about `MediaItem`s.
+  void syncFromHandler({
+    required List<String> playbackOrder,
     required int currentIndex,
   }) {
-    _service.updateFromPlayback(
-      playbackQueue: playbackQueue,
-      currentIndex: currentIndex,
-    );
+    this.playbackOrder.value = List<String>.from(playbackOrder);
+    this.currentIndex.value = currentIndex;
+    if (currentIndex >= 0 && currentIndex < playbackOrder.length) {
+      final currentPath = playbackOrder[currentIndex];
+      final newHist = <String>[currentPath];
+      // Preserve any history entries that come before this song in the
+      // handler's view (i.e. songs already played in this session).
+      final existing = history.value;
+      if (existing.isNotEmpty && existing.first != currentPath) {
+        newHist.addAll(existing.where((p) => p != currentPath));
+      }
+      history.value = newHist;
+    } else {
+      history.value = <String>[];
+    }
   }
 
-  void updateFromQueueAndHistory({
-    required List<String> upNext,
-    required List<String> history,
-  }) {
-    _service.updateFromQueueAndHistory(upNext: upNext, history: history);
-  }
+  /// Resolve a path to a [Song] using the in-memory caches owned by
+  /// [AudioSignal]. This is a thin convenience wrapper so the queue UI
+  /// does not have to import [AudioSignal] directly.
+  Song resolveSong(String path) => audioSignal.resolveSong(path);
 
   void dispose() {
     _subscription?.cancel();

@@ -108,11 +108,11 @@ class PlayerBarSpec {
     miniArtSize: 50.0,
     miniArtTop: 13.0, // (80 - 50) / 2
     outerMargin: 18.0, // was _compactMargin
-    artLeft: 15.0,     // was _compactPadding (mobile default)
-    artSpacing: 16.0,  // gap to text in mini bar
+    artLeft: 15.0, // was _compactPadding (mobile default)
+    artSpacing: 16.0, // gap to text in mini bar
     leftControlsWidth: 0.0, // unused in compact
     rightControlsBuffer: 130.0,
-    controlsTop: 0.0,        // was _startTop - 1 on mobile; collapsed to 0 for compact
+    controlsTop: 0.0, // was _startTop - 1 on mobile; collapsed to 0 for compact
     actionsRight: 16.0,
     actionsTop: 15.0,
     actionsHeight: 48.0,
@@ -131,11 +131,7 @@ class PlayerBarSpec {
       fontWeight: FontWeight.w600,
       height: 1.4,
     ),
-    artistMini: TextStyle(
-      color: Color(0xFF000000),
-      fontSize: 12,
-      height: 1.2,
-    ),
+    artistMini: TextStyle(color: Color(0xFF000000), fontSize: 12, height: 1.2),
     artistExpanded: TextStyle(
       color: Color(0xFF000000),
       fontWeight: FontWeight.w500,
@@ -162,7 +158,8 @@ class PlayerBarSpec {
     miniArtSize: 50.0,
     miniArtTop: 13.0,
     outerMargin: 24.0, // was _fullMargin
-    artLeft: 186.0,    // was _fullPadding + _leftControlsWidth + _artSpacing = 16 + 180 + (-10)
+    artLeft:
+        186.0, // was _fullPadding + _leftControlsWidth + _artSpacing = 16 + 180 + (-10)
     artSpacing: -10.0, // was _artSpacing
     leftControlsWidth: 180.0,
     rightControlsBuffer: 300.0,
@@ -185,11 +182,7 @@ class PlayerBarSpec {
       fontWeight: FontWeight.w600,
       height: 1.4,
     ),
-    artistMini: TextStyle(
-      color: Color(0xFF000000),
-      fontSize: 12,
-      height: 1.2,
-    ),
+    artistMini: TextStyle(color: Color(0xFF000000), fontSize: 12, height: 1.2),
     artistExpanded: TextStyle(
       color: Color(0xFF000000),
       fontWeight: FontWeight.w500,
@@ -239,8 +232,8 @@ class BarLayout {
   final double collapsedLeft;
 
   final double artLeft;
-  final double artTop;     // == PlayerBarSpec.miniArtTop
-  final double artSize;    // == PlayerBarSpec.miniArtSize
+  final double artTop; // == PlayerBarSpec.miniArtTop
+  final double artSize; // == PlayerBarSpec.miniArtSize
 
   final double textLeft;
   final double textTop;

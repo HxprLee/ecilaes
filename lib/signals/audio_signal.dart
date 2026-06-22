@@ -630,6 +630,9 @@ class AudioSignal {
   }
 
   Future<void> _loadHistory() async {
+    // History is now owned by QueueSignal and persisted to queue.json.
+    // The legacy `historySongs` analytics list still powers play counts
+    // and "Recently Played" until callers migrate.
     final history = await PlaybackHistoryService.loadHistory();
     historySongs.value = [...history];
   }
@@ -894,41 +897,44 @@ class AudioSignal {
   }
 
   Future<void> playSong(Song song, {List<Song>? fromList}) async {
-    if (_audioHandler is MyAudioHandler) {
-      // Auto-stop radio when a non-YouTube song starts playing.
-      if (!song.path.startsWith('yt:') && isRadioMode.value) {
-        stopRadio();
-      }
+    if (_audioHandler is! MyAudioHandler) return;
+    final handler = _audioHandler;
 
-      // Auto-start radio when a YouTube song is played (if not already in radio mode)
-      if (song.path.startsWith('yt:') && !isRadioMode.value) {
-        await startRadio(song);
-      }
-
-      final handler = _audioHandler;
-
-      if (fromList != null) {
-        // Use the provided list as the new queue context
-        await handler.setPlaylist(fromList);
-      } else {
-        final queue = handler.queue.value;
-        final isInQueue = queue.any((item) => item.id == song.path);
-
-        if (!isInQueue) {
-          // Song not in current queue, fallback to library or single song
-          final isInLibrary = allSongs.value.any((s) => s.path == song.path);
-          if (isInLibrary) {
-            await handler.setPlaylist(allSongs.value);
-          } else {
-            await handler.setPlaylist([song]);
-          }
-        }
-      }
-
-      await handler.playSong(song);
-      _updateDynamicTheme(song);
-      if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+    // Auto-stop radio when a non-YouTube song starts playing.
+    if (!song.path.startsWith('yt:') && isRadioMode.value) {
+      stopRadio();
     }
+
+    // Auto-start radio when a YouTube song is played (if not already in radio mode)
+    if (song.path.startsWith('yt:') && !isRadioMode.value) {
+      await startRadio(song);
+    }
+
+    // Decide the queue contents: explicit fromList > current queue
+    // containing the song > full library > single song.
+    List<String> paths;
+    if (fromList != null) {
+      paths = fromList.map((s) => s.path).toList();
+    } else if (handler.queue.value.any((item) => item.id == song.path)) {
+      paths = handler.queue.value.map((item) => item.id).toList();
+    } else if (allSongs.value.any((s) => s.path == song.path)) {
+      paths = allSongs.value.map((s) => s.path).toList();
+    } else {
+      paths = [song.path];
+    }
+
+    // Materialize a Song list in the right order so the handler can build
+    // MediaItems. resolveSong() handles library lookups, YT caches, and
+    // the Song.fromPath fallback.
+    final songs = paths.map(resolveSong).toList();
+
+    // Push to the queue signal (single source of truth) and jump the
+    // handler to the requested song.
+    q.queueSignal.setPlaylist(paths, playPath: song.path);
+    await handler.setPlaylist(songs);
+    await handler.playSong(song);
+    _updateDynamicTheme(song);
+    if (isDesktop) unawaited(_updateDiscordPresence(force: true));
   }
 
   /// Reorder the playback queue to match the given path order.
@@ -964,68 +970,67 @@ class AudioSignal {
     }
   }
 
+  // ─── Playback control ────────────────────────────────────────────────────
+
   Future<void> playNext(Song song) async {
-    if (_audioHandler is MyAudioHandler) {
-      final handler = _audioHandler;
-      final artCache = AlbumArtCache();
+    if (_audioHandler is! MyAudioHandler) return;
+    final handler = _audioHandler;
 
-      Uri? initialArtUri;
-      final cachedPath = artCache.getArtPathSync(song.path);
-      if (cachedPath != null) {
-        initialArtUri = Uri.file(cachedPath);
-      } else if (song.path.startsWith('yt:')) {
-        final videoId = song.path.substring(3);
-        initialArtUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
-      }
+    q.queueSignal.playNext(song);
 
-      final mediaItem = MediaItem(
-        id: song.path,
-        album: song.album ?? "Unknown Album",
-        title: song.title,
-        artist: song.artist,
-        duration: song.duration,
-        artUri: initialArtUri,
-        extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
-      );
-
-      // Remove existing instances of this song first
-      await handler.removeQueueItem(mediaItem);
-
-      final currentIndex = handler.playbackState.value.queueIndex ?? 0;
-      await handler.insertQueueItem(currentIndex + 1, mediaItem);
-
-      // Also update queue signal
-      await q.queueSignal.playNext(song);
-      // _syncQueueSignal is called by handler.addQueueItem already
+    // Keep the handler's MediaItem list in sync so actual playback sees
+    // the inserted track.
+    final artCache = AlbumArtCache();
+    Uri? initialArtUri;
+    final cachedPath = artCache.getArtPathSync(song.path);
+    if (cachedPath != null) {
+      initialArtUri = Uri.file(cachedPath);
+    } else if (song.path.startsWith('yt:')) {
+      final videoId = song.path.substring(3);
+      initialArtUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
     }
+
+    final mediaItem = MediaItem(
+      id: song.path,
+      album: song.album ?? "Unknown Album",
+      title: song.title,
+      artist: song.artist,
+      duration: song.duration,
+      artUri: initialArtUri,
+      extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
+    );
+
+    await handler.removeQueueItem(mediaItem);
+    final currentIndex = handler.playbackState.value.queueIndex ?? 0;
+    await handler.insertQueueItem(currentIndex + 1, mediaItem);
   }
 
   Future<void> addToQueue(Song song) async {
-    if (_audioHandler is MyAudioHandler) {
-      final handler = _audioHandler;
+    if (_audioHandler is! MyAudioHandler) return;
+    final handler = _audioHandler;
 
-      Uri? initialArtUri;
-      final cachedPath = albumArtCache.getArtPathSync(song.path);
-      if (cachedPath != null) {
-        initialArtUri = Uri.file(cachedPath);
-      } else if (song.path.startsWith('yt:')) {
-        final videoId = song.path.substring(3);
-        initialArtUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
-      }
+    q.queueSignal.addToQueue(song);
 
-      final mediaItem = MediaItem(
-        id: song.path,
-        album: song.album ?? "Unknown Album",
-        title: song.title,
-        artist: song.artist,
-        duration: song.duration,
-        artUri: initialArtUri,
-        extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
-      );
-
-      await handler.addQueueItem(mediaItem);
-      // _syncQueueSignal is called by handler.addQueueItem already
+    Uri? initialArtUri;
+    final cachedPath = albumArtCache.getArtPathSync(song.path);
+    if (cachedPath != null) {
+      initialArtUri = Uri.file(cachedPath);
+    } else if (song.path.startsWith('yt:')) {
+      final videoId = song.path.substring(3);
+      initialArtUri = Uri.parse(youtubeDatasource.getArtworkUrl(videoId));
     }
+
+    final mediaItem = MediaItem(
+      id: song.path,
+      album: song.album ?? "Unknown Album",
+      title: song.title,
+      artist: song.artist,
+      duration: song.duration,
+      artUri: initialArtUri,
+      extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
+    );
+
+    await handler.addQueueItem(mediaItem);
   }
 
   /// Start radio mode for the given song, fetching a batch of similar songs

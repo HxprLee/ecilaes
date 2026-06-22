@@ -46,24 +46,30 @@ class DiscordPresenceSection extends StatelessWidget {
                     SettingsSection(
                       child: Column(
                         children: [
-                          Watch((context) => SwitchListTile(
-                            title: const Text('Listen on YouTube Button', style: TextStyle(fontSize: 14)),
-                            subtitle: const Text('Show "Listen on YouTube" button in Discord status', style: TextStyle(fontSize: 12)),
-                            value: settingsSignal.enableDiscordListenButton.value,
-                            onChanged: settingsSignal.enableDiscordRpc.value
-                                ? (value) => settingsSignal.updateDiscordListenButton(value)
-                                : null,
-                            activeThumbColor: context.colorScheme.secondary,
+                          Watch((context) => SettingsTile(
+                            title: 'Listen on YouTube Button',
+                            subtitle: 'Show "Listen on YouTube" button in Discord status',
+                            showLeading: false,
+                            trailing: Switch(
+                              value: settingsSignal.enableDiscordListenButton.value,
+                              onChanged: settingsSignal.enableDiscordRpc.value
+                                  ? (value) => settingsSignal.updateDiscordListenButton(value)
+                                  : null,
+                              activeThumbColor: context.colorScheme.secondary,
+                            ),
                           )),
                           const SettingsDivider(indent: 16),
-                          Watch((context) => SwitchListTile(
-                            title: const Text('Open Project Button', style: TextStyle(fontSize: 14)),
-                            subtitle: const Text('Show "Open Project" button in Discord status', style: TextStyle(fontSize: 12)),
-                            value: settingsSignal.enableDiscordProjectLink.value,
-                            onChanged: settingsSignal.enableDiscordRpc.value
-                                ? (value) => settingsSignal.updateDiscordProjectLink(value)
-                                : null,
-                            activeThumbColor: context.colorScheme.secondary,
+                          Watch((context) => SettingsTile(
+                            title: 'Open Project Button',
+                            subtitle: 'Show "Open Project" button in Discord status',
+                            showLeading: false,
+                            trailing: Switch(
+                              value: settingsSignal.enableDiscordProjectLink.value,
+                              onChanged: settingsSignal.enableDiscordRpc.value
+                                  ? (value) => settingsSignal.updateDiscordProjectLink(value)
+                                  : null,
+                              activeThumbColor: context.colorScheme.secondary,
+                            ),
                           )),
                         ],
                       ),

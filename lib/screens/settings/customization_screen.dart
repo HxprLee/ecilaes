@@ -63,14 +63,18 @@ class CustomizationScreen extends StatelessWidget {
                               title: 'Theme Style',
                               subtitle: 'Choose color palette',
                               showLeading: false,
-                              trailing: _buildThemeStyleButton(context),
+                              trailing: Watch(
+                                (context) => _buildThemeStyleButton(context),
+                              ),
                             ),
                             const SettingsDivider(indent: 16),
                             SettingsTile(
                               title: 'Theme',
                               subtitle: 'Choose app appearance',
                               showLeading: false,
-                              trailing: _buildThemeModeButton(context),
+                              trailing: Watch(
+                                (context) => _buildThemeModeButton(context),
+                              ),
                             ),
                             const SettingsDivider(indent: 16),
                           ],
@@ -82,7 +86,7 @@ class CustomizationScreen extends StatelessWidget {
                               subtitleColor: context.colorScheme.secondary
                                   .withValues(alpha: 0.8),
                               showLeading: false,
-                              bottom: _buildTextScaleSlider(context, scale),
+                              trailing: _buildTextScaleSpinner(context, scale),
                             );
                           }),
                         ],
@@ -105,8 +109,7 @@ class CustomizationScreen extends StatelessWidget {
                                 value: settingsSignal.useCustomFont.value,
                                 onChanged: (value) =>
                                     settingsSignal.updateCustomFont(value),
-                                activeThumbColor:
-                                    context.colorScheme.secondary,
+                                activeThumbColor: context.colorScheme.secondary,
                               ),
                             ),
                           ),
@@ -139,8 +142,7 @@ class CustomizationScreen extends StatelessWidget {
                                 value: settingsSignal.enableGlobalBlur.value,
                                 onChanged: (value) =>
                                     settingsSignal.updateGlobalBlur(value),
-                                activeThumbColor:
-                                    context.colorScheme.secondary,
+                                activeThumbColor: context.colorScheme.secondary,
                               ),
                             ),
                           ),
@@ -311,31 +313,57 @@ class CustomizationScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTextScaleSlider(BuildContext context, double scale) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 0, right: 20, bottom: 16),
+  Widget _buildTextScaleSpinner(BuildContext context, double scale) {
+    final accentColor = context.colorScheme.secondary;
+    final onSurface = context.colorScheme.onSurface;
+    return Container(
+      decoration: BoxDecoration(
+        color: context.tokens.sidebarBackground,
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: onSurface.withValues(alpha: 0.12)),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('A', style: TextStyle(fontSize: 12, color: Colors.grey)),
-          Expanded(
-            child: SliderTheme(
-              data: SliderThemeData(
-                activeTrackColor: context.colorScheme.secondary,
-                inactiveTrackColor: context.colorScheme.secondary.withValues(
-                  alpha: 0.2,
-                ),
-                thumbColor: context.colorScheme.secondary,
-              ),
-              child: Slider(
-                value: scale,
-                min: 0.5,
-                max: 2.0,
-                divisions: 15,
-                onChanged: (value) => settingsSignal.updateTextScale(value),
-              ),
-            ),
+          _AdwSpinnerButton(
+            icon: Icons.remove,
+            onTap: scale > 0.5
+                ? () => settingsSignal.updateTextScale(
+                    (scale - 0.05).clamp(0.5, 2.0),
+                  )
+                : null,
+            accentColor: accentColor,
+            isLeft: true,
           ),
-          const Text('A', style: TextStyle(fontSize: 20, color: Colors.grey)),
+          Container(
+            width: 1,
+            height: 32,
+            color: onSurface.withValues(alpha: 0.12),
+          ),
+          _TextScaleTextField(
+            scale: scale,
+            accentColor: accentColor,
+            onChanged: (value) {
+              final parsed = double.tryParse(value);
+              if (parsed != null) {
+                settingsSignal.updateTextScale((parsed / 100).clamp(0.5, 2.0));
+              }
+            },
+          ),
+          Container(
+            width: 1,
+            height: 32,
+            color: onSurface.withValues(alpha: 0.12),
+          ),
+          _AdwSpinnerButton(
+            icon: Icons.add,
+            onTap: scale < 2.0
+                ? () => settingsSignal.updateTextScale(
+                    (scale + 0.05).clamp(0.5, 2.0),
+                  )
+                : null,
+            accentColor: accentColor,
+          ),
         ],
       ),
     );
@@ -385,6 +413,152 @@ class CustomizationScreen extends StatelessWidget {
       onSelectionChanged: (set) => settingsSignal.updateThemeMode(set.first),
       style: const ButtonStyle(visualDensity: VisualDensity.compact),
       showSelectedIcon: false,
+    );
+  }
+}
+
+class _AdwSpinnerButton extends StatefulWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+  final Color accentColor;
+  final bool isLeft;
+
+  const _AdwSpinnerButton({
+    required this.icon,
+    required this.onTap,
+    required this.accentColor,
+    this.isLeft = false,
+  });
+
+  @override
+  State<_AdwSpinnerButton> createState() => _AdwSpinnerButtonState();
+}
+
+class _AdwSpinnerButtonState extends State<_AdwSpinnerButton> {
+  bool _isHovered = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+
+    Color bgColor = Colors.transparent;
+    if (enabled) {
+      if (_isPressed) {
+        bgColor = widget.accentColor.withValues(alpha: 0.18);
+      } else if (_isHovered) {
+        bgColor = widget.accentColor.withValues(alpha: 0.10);
+      }
+    }
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _isPressed = true),
+        onTapUp: (_) => setState(() => _isPressed = false),
+        onTapCancel: () => setState(() => _isPressed = false),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          width: 38,
+          height: 32,
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(widget.isLeft ? 32 : 0),
+              bottomLeft: Radius.circular(widget.isLeft ? 32 : 0),
+              topRight: Radius.circular(widget.isLeft ? 0 : 32),
+              bottomRight: Radius.circular(widget.isLeft ? 0 : 32),
+            ),
+          ),
+          child: Center(
+            child: Icon(
+              widget.icon,
+              size: 16,
+              color: enabled
+                  ? widget.accentColor
+                  : widget.accentColor.withValues(alpha: 0.3),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TextScaleTextField extends StatefulWidget {
+  final double scale;
+  final Color accentColor;
+  final ValueChanged<String> onChanged;
+
+  const _TextScaleTextField({
+    required this.scale,
+    required this.accentColor,
+    required this.onChanged,
+  });
+
+  @override
+  State<_TextScaleTextField> createState() => _TextScaleTextFieldState();
+}
+
+class _TextScaleTextFieldState extends State<_TextScaleTextField> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: '${(widget.scale * 100).round()}',
+    );
+  }
+
+  @override
+  void didUpdateWidget(_TextScaleTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final newValue = '${(widget.scale * 100).round()}';
+    if (_controller.text != newValue &&
+        int.tryParse(_controller.text) != (widget.scale * 100).round()) {
+      _controller.text = newValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 48,
+      height: 32,
+      child: Center(
+        child: TextField(
+          controller: _controller,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: context.colorScheme.onSurface,
+          ),
+          decoration: const InputDecoration(
+            isDense: true,
+            contentPadding: EdgeInsets.zero,
+            border: InputBorder.none,
+          ),
+          keyboardType: TextInputType.number,
+          onSubmitted: widget.onChanged,
+          onChanged: (value) {
+            final parsed = int.tryParse(value);
+            if (parsed != null) {
+              widget.onChanged(value);
+            }
+          },
+        ),
+      ),
     );
   }
 }

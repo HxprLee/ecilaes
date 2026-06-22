@@ -106,15 +106,15 @@ class _QueueSheetBodyState extends State<QueueSheetBody> {
             LogicalKeyboardKey.arrowUp,
             control: true,
           ): () {
-            final first = q.queueSignal.upNext.value;
-            if (first.isNotEmpty) q.queueSignal.moveToTop(first.first);
+            final upNext = q.queueSignal.upNextPaths;
+            if (upNext.isNotEmpty) q.queueSignal.moveToTop(upNext.first);
           },
           const SingleActivator(
             LogicalKeyboardKey.arrowUp,
             meta: true,
           ): () {
-            final first = q.queueSignal.upNext.value;
-            if (first.isNotEmpty) q.queueSignal.moveToTop(first.first);
+            final upNext = q.queueSignal.upNextPaths;
+            if (upNext.isNotEmpty) q.queueSignal.moveToTop(upNext.first);
           },
         },
         child: Column(

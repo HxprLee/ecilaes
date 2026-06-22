@@ -16,63 +16,81 @@
 
 import 'dart:convert';
 
-/// Represents the two-section model for the playback queue.
+/// Represents the playback queue as a single ordered list of song paths,
+/// along with the index of the currently playing song and a separate
+/// history list for played songs (newest first).
 ///
-/// - **Up Next** is the ordered list of track paths that will play after the current one.
-/// - **History** is the list of track paths that have already been played, newest first.
+/// This is the single source of truth for queue state. Local files and
+/// YouTube-sourced songs (using the `yt:<videoId>` path convention) coexist
+/// in the same list.
 class QueueModel {
-  final List<String> upNext;
+  /// Ordered list of every song in the playback queue, current song at
+  /// [currentIndex]. Local file paths and `yt:<videoId>` paths mix freely.
+  final List<String> playbackOrder;
+
+  /// The index of the currently playing song within [playbackOrder].
+  /// -1 means the queue is empty / nothing is playing.
+  final int currentIndex;
+
+  /// Songs that have been played, newest first. Capped on insert to keep
+  /// the file small.
   final List<String> history;
-  final String? sourceId;
-  final bool sourceIsPlaylist;
 
   const QueueModel({
-    this.upNext = const [],
+    this.playbackOrder = const [],
+    this.currentIndex = -1,
     this.history = const [],
-    this.sourceId,
-    this.sourceIsPlaylist = false,
   });
 
-  bool get isEmpty => upNext.isEmpty;
-  bool get isNotEmpty => upNext.isNotEmpty;
-  int get upNextCount => upNext.length;
-  int get historyCount => history.length;
+  bool get isEmpty => playbackOrder.isEmpty;
+  bool get isNotEmpty => playbackOrder.isNotEmpty;
+  int get length => playbackOrder.length;
+
+  /// Songs that will play after the current one, in play order.
+  List<String> get upNextPaths {
+    if (currentIndex < 0 || currentIndex >= playbackOrder.length - 1) {
+      return const [];
+    }
+    return playbackOrder.sublist(currentIndex + 1);
+  }
+
+  /// The song that is currently playing, or null when the queue is empty.
+  String? get currentPath {
+    if (currentIndex < 0 || currentIndex >= playbackOrder.length) return null;
+    return playbackOrder[currentIndex];
+  }
 
   QueueModel copyWith({
-    List<String>? upNext,
+    List<String>? playbackOrder,
+    int? currentIndex,
     List<String>? history,
-    String? sourceId,
-    bool? sourceIsPlaylist,
   }) {
     return QueueModel(
-      upNext: upNext ?? this.upNext,
+      playbackOrder: playbackOrder ?? this.playbackOrder,
+      currentIndex: currentIndex ?? this.currentIndex,
       history: history ?? this.history,
-      sourceId: sourceId ?? this.sourceId,
-      sourceIsPlaylist: sourceIsPlaylist ?? this.sourceIsPlaylist,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'upNext': upNext,
+      'playbackOrder': playbackOrder,
+      'currentIndex': currentIndex,
       'history': history,
-      'sourceId': sourceId,
-      'sourceIsPlaylist': sourceIsPlaylist,
     };
   }
 
   factory QueueModel.fromJson(Map<String, dynamic> json) {
     return QueueModel(
-      upNext: (json['upNext'] as List<dynamic>?)
+      playbackOrder: (json['playbackOrder'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
-          [],
+          const [],
+      currentIndex: json['currentIndex'] as int? ?? -1,
       history: (json['history'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
-          [],
-      sourceId: json['sourceId'] as String?,
-      sourceIsPlaylist: json['sourceIsPlaylist'] as bool? ?? false,
+          const [],
     );
   }
 

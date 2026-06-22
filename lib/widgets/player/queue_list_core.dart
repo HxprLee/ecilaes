@@ -121,7 +121,7 @@ class _QueueListCoreState extends State<QueueListCore> {
   @override
   Widget build(BuildContext context) {
     return Watch((context) {
-      final upNextPaths = q.queueSignal.upNext.value;
+      final upNextPaths = q.queueSignal.upNextPaths;
       final historyPaths = q.queueSignal.history.value;
       final currentSong = audioSignal.currentSong.value;
       // While a song is playing, it is the "now playing" anchor rendered by
@@ -131,7 +131,7 @@ class _QueueListCoreState extends State<QueueListCore> {
       final upNextSongs = upNextPaths
           .map((p) => audioSignal.resolveSong(p))
           .toList();
-      final historySongs = historyPaths.reversed
+      final historySongs = historyPaths
           .where((p) => p != currentPath)
           .map((p) => audioSignal.resolveSong(p))
           .toList();
@@ -178,14 +178,13 @@ class _QueueListCoreState extends State<QueueListCore> {
                             songs: historySongs,
                             horizontalPadding: widget.tileHorizontalPadding,
                             onPlay: (path) {
-                              q.queueSignal.playHistoryItem(path);
+                              final song = q.queueSignal.playFromHistory(path);
+                              if (song != null) {
+                                audioSignal.playSong(song);
+                              }
                             },
                             onDismiss: (path) {
-                              q.queueSignal.history.value = [
-                                ...q.queueSignal.history.value.where(
-                                  (p) => p != path,
-                                ),
-                              ];
+                              q.queueSignal.removeFromHistory(path);
                             },
                           ),
                         ],

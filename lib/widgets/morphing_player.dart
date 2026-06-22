@@ -41,11 +41,9 @@ import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 import 'morphing_player/player_layout_spec.dart';
 import 'morphing_player/player_layout_calculator.dart';
 
-  Color placeholderIconColor(BuildContext context) {
-    return context.tokens.placeholderIcon;
-  }
-
-
+Color placeholderIconColor(BuildContext context) {
+  return context.tokens.placeholderIcon;
+}
 
 class MorphingPlayer extends StatefulWidget {
   final double bottomOffset;
@@ -220,8 +218,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
           // Automatically disable lyrics / queue view when minimized
           if (_controller.value < 1.0) {
-            if (audioSignal.showLyrics.value) audioSignal.showLyrics.value = false;
-            if (audioSignal.showQueueInPlayer.value) audioSignal.showQueueInPlayer.value = false;
+            if (audioSignal.showLyrics.value) {
+              audioSignal.showLyrics.value = false;
+            }
+            if (audioSignal.showQueueInPlayer.value) {
+              audioSignal.showQueueInPlayer.value = false;
+            }
           }
         });
 
@@ -501,9 +503,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
           final bottomPadding = MediaQuery.of(context).padding.bottom;
           final currentTopPadding = lerpDouble(0, topPadding, value)!;
 
-          final rawLyricsValue = Curves.easeOutCubic.transform(_lyricsController.value);
+          final rawLyricsValue = Curves.easeOutCubic.transform(
+            _lyricsController.value,
+          );
           // Layout mode: Desktop if width >= 900, otherwise Mobile
-          final isDesktopLayoutMode = screenWidth >= 900 && !_isCramped(screenWidth, screenHeight);
+          final isDesktopLayoutMode =
+              screenWidth >= 900 && !_isCramped(screenWidth, screenHeight);
 
           // On desktop side-by-side, don't morph the art/text — keep them in place
           final lyricsValue = isDesktopLayoutMode ? 0.0 : rawLyricsValue;
@@ -731,7 +736,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 // Desktop Layout: side-by-side panel on the right half of the group
                                 if (!isDesktopLayoutMode)
                                   Watch((context) {
-                                    final _ = audioSignal.showQueueInPlayer.value;
+                                    final _ =
+                                        audioSignal.showQueueInPlayer.value;
                                     if (rawLyricsValue <= 0) {
                                       return const SizedBox.shrink();
                                     }
@@ -740,10 +746,15 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                       child: IgnorePointer(
                                         ignoring: rawLyricsValue < 0.8,
                                         child: AnimatedCrossFade(
-                                          crossFadeState: audioSignal.showQueueInPlayer.value
+                                          crossFadeState:
+                                              audioSignal
+                                                  .showQueueInPlayer
+                                                  .value
                                               ? CrossFadeState.showSecond
                                               : CrossFadeState.showFirst,
-                                          duration: const Duration(milliseconds: 300),
+                                          duration: const Duration(
+                                            milliseconds: 300,
+                                          ),
                                           firstChild: KeyedSubtree(
                                             key: const ValueKey('lyrics'),
                                             child: _buildLyricsBody(
@@ -767,7 +778,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                   }),
                                 if (isDesktopLayoutMode)
                                   Watch((context) {
-                                    final _ = audioSignal.showQueueInPlayer.value;
+                                    final _ =
+                                        audioSignal.showQueueInPlayer.value;
                                     if (rawLyricsValue <= 0) {
                                       return const SizedBox.shrink();
                                     }
@@ -782,32 +794,37 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                       width: maxPaneWidth,
                                       child: Opacity(
                                         opacity: rawLyricsValue.clamp(0.0, 1.0),
-                                          child: IgnorePointer(
-                                            ignoring: rawLyricsValue < 0.8,
-                                            child: AnimatedCrossFade(
-                                              crossFadeState: audioSignal.showQueueInPlayer.value
-                                                  ? CrossFadeState.showSecond
-                                                  : CrossFadeState.showFirst,
-                                              duration: const Duration(milliseconds: 300),
-                                              firstChild: KeyedSubtree(
-                                                key: const ValueKey('lyrics'),
-                                                child: _buildLyricsBody(
-                                                  currentSong,
-                                                  maxPaneWidth,
-                                                  expandedLayout,
-                                                  isDesktopLayout: true,
-                                                ),
+                                        child: IgnorePointer(
+                                          ignoring: rawLyricsValue < 0.8,
+                                          child: AnimatedCrossFade(
+                                            crossFadeState:
+                                                audioSignal
+                                                    .showQueueInPlayer
+                                                    .value
+                                                ? CrossFadeState.showSecond
+                                                : CrossFadeState.showFirst,
+                                            duration: const Duration(
+                                              milliseconds: 300,
+                                            ),
+                                            firstChild: KeyedSubtree(
+                                              key: const ValueKey('lyrics'),
+                                              child: _buildLyricsBody(
+                                                currentSong,
+                                                maxPaneWidth,
+                                                expandedLayout,
+                                                isDesktopLayout: true,
                                               ),
-                                              secondChild: KeyedSubtree(
-                                                key: const ValueKey('queue'),
-                                                child: _buildQueueBody(
-                                                  maxPaneWidth,
-                                                  expandedLayout,
-                                                  isDesktopLayout: true,
-                                                ),
+                                            ),
+                                            secondChild: KeyedSubtree(
+                                              key: const ValueKey('queue'),
+                                              child: _buildQueueBody(
+                                                maxPaneWidth,
+                                                expandedLayout,
+                                                isDesktopLayout: true,
                                               ),
                                             ),
                                           ),
+                                        ),
                                       ),
                                     );
                                   }),
@@ -860,11 +877,14 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                   final position = audioSignal.position.value;
                                   final hasLyrics =
                                       audioSignal.currentLyrics.value != null;
+                                  final showQueue =
+                                      audioSignal.showQueueInPlayer.value;
                                   return _buildMorphingSeekbar(
                                     isMobile,
                                     value,
                                     lyricsValue,
                                     hasLyrics,
+                                    showQueue,
                                     position,
                                     duration,
                                     screenWidth,
@@ -928,6 +948,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     double value,
     double lyricsValue,
     bool hasLyrics,
+    bool showQueue,
     Duration position,
     Duration duration,
     double screenWidth,
@@ -935,10 +956,13 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   ) {
     if (value < 0.9) return const SizedBox.shrink();
 
-    // Fade out seekbar if lyrics are showing (keep visible for queue view)
+    // Fade out seekbar if lyrics or queue is showing
     final effectLyricsOpacity = hasLyrics ? lyricsValue : 0.0;
+    final effectQueueOpacity = showQueue ? 1.0 : 0.0;
     final seekbarOpacity =
-        ((value - 0.9) * 10).clamp(0.0, 1.0) * (1.0 - effectLyricsOpacity);
+        ((value - 0.9) * 10).clamp(0.0, 1.0) *
+        (1.0 - effectLyricsOpacity) *
+        (1.0 - effectQueueOpacity);
 
     if (seekbarOpacity <= 0) return const SizedBox.shrink();
 
@@ -960,7 +984,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         child: Opacity(
           opacity: seekbarOpacity,
           child: Column(
-            spacing: 4,
+            spacing: 8,
             children: [
               TweenAnimationBuilder<double>(
                 duration: const Duration(milliseconds: 150),
@@ -1004,15 +1028,15 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                           onChanged: (v) {
                             final pos = v * duration.inMilliseconds;
                             audioSignal.seek(
-                                Duration(milliseconds: pos.round()));
+                              Duration(milliseconds: pos.round()),
+                            );
                           },
                         ),
                       ),
                       Positioned.fill(
                         child: IgnorePointer(
                           child: Watch((_) {
-                            final isBuffering =
-                                audioSignal.isBuffering.value;
+                            final isBuffering = audioSignal.isBuffering.value;
                             return AnimatedOpacity(
                               duration: const Duration(milliseconds: 200),
                               opacity: isBuffering ? 1.0 : 0.0,
@@ -1033,6 +1057,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
                     _formatDuration(position),
@@ -1044,6 +1069,31 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (_codecBitrate != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.secondary,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .secondary
+                              .withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Text(
+                        _codecBitrate!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSecondary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
                   Text(
                     _formatDuration(duration),
                     style: TextStyle(
@@ -1339,35 +1389,33 @@ class _MorphingPlayerState extends State<MorphingPlayer>
         child: Stack(
           alignment: Alignment.center,
           children: [
-          // Circular Progress (mini bar only — fades out during morph)
-          Opacity(
-            opacity: (1.0 - value).clamp(0.0, 1.0),
-            child: SizedBox(
-              width: 50,
-              height: 50,
-              child: Watch((_) {
-                final isBuffering = audioSignal.isBuffering.value;
-                final progress = duration.inMilliseconds > 0
-                    ? position.inMilliseconds / duration.inMilliseconds
-                    : 0.0;
-                return CustomPaint(
-                  painter: _BufferingRingPainter(
-                    progress: progress,
-                    buffering: isBuffering,
-                    bufferValue: _bufferingRingController,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .secondary
-                        .withValues(alpha: 0.8),
-                    backgroundColor: Theme.of(context)
-                        .colorScheme
-                        .secondary
-                        .withValues(alpha: 0.2),
-                  ),
-                );
-              }),
+            // Circular Progress (mini bar only — fades out during morph)
+            Opacity(
+              opacity: (1.0 - value).clamp(0.0, 1.0),
+              child: SizedBox(
+                width: 50,
+                height: 50,
+                child: Watch((_) {
+                  final isBuffering = audioSignal.isBuffering.value;
+                  final progress = duration.inMilliseconds > 0
+                      ? position.inMilliseconds / duration.inMilliseconds
+                      : 0.0;
+                  return CustomPaint(
+                    painter: _BufferingRingPainter(
+                      progress: progress,
+                      buffering: isBuffering,
+                      bufferValue: _bufferingRingController,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.8),
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.2),
+                    ),
+                  );
+                }),
+              ),
             ),
-          ),
 
             // Art / Play Button
             GestureDetector(
@@ -1386,17 +1434,23 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   width: lerpDouble(42, artSize, value),
                   height: lerpDouble(42, artSize, value),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(lerpDouble(50, 8, value)!),
+                    borderRadius: BorderRadius.circular(
+                      lerpDouble(50, 8, value)!,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5 * value.clamp(0.0, 1.0)),
+                        color: Colors.black.withValues(
+                          alpha: 0.5 * value.clamp(0.0, 1.0),
+                        ),
                         blurRadius: lerpDouble(0, 30, value)!,
                         offset: Offset(0, lerpDouble(0, 10, value)!),
                       ),
                     ],
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(lerpDouble(50, 8, value)!),
+                    borderRadius: BorderRadius.circular(
+                      lerpDouble(50, 8, value)!,
+                    ),
                     child: isYoutube
                         ? Image.network(
                             ytThumbnailUrl!,
@@ -1683,10 +1737,10 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       // Right aligned: Shuffle, Repeat, List, More
       // Total width approx: 4 * 40 (icon + padding) + 3 * 12 (gap) = 160 + 36 = 196
       // Start Right = 20
-      // Start Top = (80 - 48) / 2 = 16 - 1 = 15
+      // Start Top = (80 - 48) / 2 = 16
 
       final startRight = 16.0;
-      final startTop = 15.0; // Moved up by 1px
+      final startTop = 16.0; // (80 - 48) / 2
 
       // IconButton is usually 48x48, spacing is 12
       final actionsCount = settingsSignal.playerBarActions.value.length;
@@ -1703,9 +1757,6 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       final currentTop = lerpDouble(startTop, targetRect.top, value)!;
       final currentWidth = lerpDouble(startWidth, targetRect.width, value)!;
       final currentHeight = lerpDouble(48, targetRect.height, value)!;
-
-      // Opacity for Format Badge (Only visible in expanded)
-      final badgeOpacity = ((value - 0.5) * 2).clamp(0.0, 1.0);
 
       // Opacity for Actions (Always visible on large Desktop bar, fade in on Compact/Mobile)
       final actionsOpacity = isCompact ? value : 1.0;
@@ -1733,41 +1784,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               child: Stack(
                 alignment: Alignment.bottomCenter, // Align to bottom
                 children: [
-                  // Format Badge (Positioned above buttons)
-                  if (currentSong != null)
-                    Positioned(
-                      bottom: 56, // 48px (buttons) + 8px (gap)
-                      child: Opacity(
-                        opacity: badgeOpacity,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.secondary,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.secondary.withValues(alpha: 0.2),
-                            ),
-                          ),
-                          child: Text(
-                            _codecBitrate ?? '...',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSecondary,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
                   // Action Buttons (Pinned to bottom)
                   Positioned(
-                    bottom: 0,
+                    bottom: lerpDouble(0, 8, value)!,
                     left: 0,
                     right: 0,
                     height: 48,
@@ -2340,9 +2359,7 @@ class _BufferingRingPainter extends CustomPainter {
     required this.bufferValue,
     required this.color,
     required this.backgroundColor,
-  }) : super(
-          repaint: buffering ? bufferValue : null,
-        );
+  }) : super(repaint: buffering ? bufferValue : null);
 
   final double progress; // 0..1
   final bool buffering;
@@ -2380,7 +2397,8 @@ class _BufferingRingPainter extends CustomPainter {
     }
 
     if (buffering) {
-      final start = (bufferValue.value * 2.0 - 0.35).clamp(0.0, 1.0) * 6.2831853;
+      final start =
+          (bufferValue.value * 2.0 - 0.35).clamp(0.0, 1.0) * 6.2831853;
       final span = _highlightSpan * 6.2831853;
       final highlight = Paint()
         ..color = color.withValues(alpha: 1.0)

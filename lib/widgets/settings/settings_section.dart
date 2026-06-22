@@ -40,7 +40,7 @@ class SettingsSection extends StatelessWidget {
     return Padding(
       padding: padding,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         child: BackdropFilter(
           filter: blur
               ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
@@ -50,7 +50,7 @@ class SettingsSection extends StatelessWidget {
               color: context.tokens.sidebarBackground.withValues(
                 alpha: blur ? 0.67 : 1.0,
               ),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
               border: Border.all(color: context.accentBorder(0.15)),
             ),
             clipBehavior: Clip.antiAlias,
