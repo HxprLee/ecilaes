@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -23,11 +23,12 @@ import 'package:window_manager/window_manager.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../../router.dart' as app_router;
 import '../../../signals/audio_signal.dart';
+import '../../../signals/search_signal.dart';
 import '../../../signals/settings_signal.dart';
 import '../../../signals/navigation_signal.dart';
 import '../../../models/playlist.dart';
 import '../../../theme/app_theme_tokens.dart';
-import '../../playlist_cover.dart';
+import '../../components/playlist_cover.dart';
 
 class DesktopHeaderBar extends StatefulWidget {
   final double leftOffset;
@@ -148,17 +149,18 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
     widget.searchController.selection = TextSelection.fromPosition(
       TextPosition(offset: suggestion.length),
     );
-    audioSignal.searchQuery.value = suggestion;
-    audioSignal.searchSuggestions.value = [];
+    searchSignal.searchQuery.value = suggestion;
+    searchSignal.addRecentSearch(suggestion);
+    searchSignal.searchSuggestions.value = [];
     _removeOverlay();
     _searchFocusNode.unfocus();
-    app_router.router.go('/search');
+    app_router.router.go('/search-result');
   }
 
   Widget _buildOverlay(BuildContext context) {
     return Watch((context) {
-      final suggestions = audioSignal.searchSuggestions.value;
-      final query = audioSignal.searchQuery.value;
+      final suggestions = searchSignal.searchSuggestions.value;
+      final query = searchSignal.searchQuery.value;
 
       if (suggestions.isEmpty || query.trim().isEmpty || !_isFocused) {
         return const SizedBox.shrink();
@@ -215,8 +217,8 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
     // Trigger overlay rebuild when suggestions change
     Watch.builder(
       builder: (context) {
-        audioSignal.searchSuggestions.value;
-        audioSignal.searchQuery.value;
+        searchSignal.searchSuggestions.value;
+        searchSignal.searchQuery.value;
         _updateOverlay();
         return const SizedBox.shrink();
       },
@@ -397,13 +399,22 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
               controller: widget.searchController,
               focusNode: _searchFocusNode,
               textAlignVertical: TextAlignVertical.center,
-              onChanged: (value) => audioSignal.searchQuery.value = value,
+              onTap: () {
+                if (widget.searchController.text.trim().isEmpty) {
+                  final currentRoute = navigationSignal.currentRoute.value;
+                  if (currentRoute != '/search') {
+                    context.go('/search');
+                  }
+                }
+              },
+              onChanged: (value) => searchSignal.searchQuery.value = value,
               onSubmitted: (value) {
-                audioSignal.searchSuggestions.value = [];
+                searchSignal.searchSuggestions.value = [];
+                searchSignal.addRecentSearch(value);
                 _removeOverlay();
                 final currentRoute = navigationSignal.currentRoute.value;
-                if (currentRoute != '/search') {
-                  context.go('/search');
+                if (currentRoute != '/search-result') {
+                  context.go('/search-result');
                 }
               },
               decoration: InputDecoration(

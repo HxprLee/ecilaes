@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -278,9 +278,7 @@ class QueueSignal {
       // Preserve any history entries that come before this song in the
       // handler's view (i.e. songs already played in this session).
       final existing = history.value;
-      if (existing.isNotEmpty && existing.first != currentPath) {
-        newHist.addAll(existing.where((p) => p != currentPath));
-      }
+      newHist.addAll(existing.where((p) => p != currentPath));
       history.value = newHist;
     } else {
       history.value = <String>[];

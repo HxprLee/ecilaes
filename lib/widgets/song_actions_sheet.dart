@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,11 +21,11 @@ import '../signals/settings_signal.dart';
 import '../signals/audio_signal.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'playlist_dialogs.dart';
-import 'common/flyout_sheet.dart';
+import 'components/flyout_sheet.dart';
 import 'song_info_dialog.dart';
 import 'edit_metadata_dialog.dart';
 import 'player/queue_view.dart';
-import 'app_dialog.dart';
+import 'components/app_dialog.dart';
 import '../services/YoutubeDatasource.dart';
 
 void showSongMoreActionsSheet({

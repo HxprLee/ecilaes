@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,7 +19,8 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
-import '../widgets/sliver_page_header.dart';
+import '../signals/settings_signal.dart';
+import '../widgets/components/sliver_page_header.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -49,6 +50,16 @@ class LibraryScreen extends StatelessWidget {
                     title: 'Favorites',
                     icon: FontAwesomeIcons.solidHeart,
                     onTap: () => context.go('/playlist/favorites'),
+                  ),
+                  _CategoryCard(
+                    title: 'Most Played',
+                    icon: FontAwesomeIcons.fireFlameCurved,
+                    onTap: () => context.go('/most-played'),
+                  ),
+                  _CategoryCard(
+                    title: 'Recently Played',
+                    icon: FontAwesomeIcons.clockRotateLeft,
+                    onTap: () => context.go('/recently-played'),
                   ),
                   _CategoryCard(
                     title: 'Albums',
@@ -83,6 +94,80 @@ class LibraryScreen extends StatelessWidget {
                 ]),
               ),
             ),
+
+            // Bottom spacing for player
+            SliverToBoxAdapter(
+              child: SizedBox(height: 32),
+            ),
+
+            const SliverPageHeader(title: 'YouTube Music', subtitle: 'Saved from YouTube'),
+
+            // YouTube Grid
+            Watch((context) {
+              final hasCookie = settingsSignal.ytAuthCookie.value != null && settingsSignal.ytAuthCookie.value!.isNotEmpty;
+              
+              if (!hasCookie) {
+                return SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          FaIcon(FontAwesomeIcons.youtube, size: 48, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Connect your account in Settings to access your YouTube Music library.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            onPressed: () => context.go('/settings/library'),
+                            child: const Text('Go to Settings'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              return SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 200,
+                    mainAxisSpacing: 24,
+                    crossAxisSpacing: 24,
+                    childAspectRatio: 0.85,
+                  ),
+                  delegate: SliverChildListDelegate([
+                    _CategoryCard(
+                      title: 'Liked Songs',
+                      icon: FontAwesomeIcons.solidThumbsUp,
+                      onTap: () => context.go('/youtube/playlist/LM'),
+                    ),
+                    _CategoryCard(
+                      title: 'Playlists',
+                      icon: FontAwesomeIcons.list,
+                      onTap: () => context.go('/yt-library/playlists'),
+                    ),
+                    _CategoryCard(
+                      title: 'Albums',
+                      icon: FontAwesomeIcons.compactDisc,
+                      onTap: () => context.go('/yt-library/albums'),
+                    ),
+                    _CategoryCard(
+                      title: 'Artists',
+                      icon: FontAwesomeIcons.user,
+                      onTap: () => context.go('/yt-library/artists'),
+                    ),
+                  ]),
+                ),
+              );
+            }),
 
             // Bottom spacing for player
             SliverToBoxAdapter(

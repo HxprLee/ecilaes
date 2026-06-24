@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,9 +19,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:window_manager/window_manager.dart';
-import '../signals/audio_signal.dart';
-import 'header/desktop/desktop_header_bar.dart';
-import 'header/mobile/mobile_header_bar.dart';
+import '../../signals/audio_signal.dart';
+import '../../signals/search_signal.dart';
+import '../../widgets/header/desktop/desktop_header_bar.dart';
+import '../../widgets/header/mobile/mobile_header_bar.dart';
 
 class WindowTitleBar extends StatefulWidget {
   final double leftOffset;
@@ -38,12 +39,12 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
   void initState() {
     super.initState();
     _searchController = TextEditingController(
-      text: audioSignal.searchQuery.value,
+      text: searchSignal.searchQuery.value,
     );
 
     // Sync controller with signal
     effect(() {
-      final query = audioSignal.searchQuery.value;
+      final query = searchSignal.searchQuery.value;
       if (_searchController.text != query) {
         _searchController.text = query;
       }

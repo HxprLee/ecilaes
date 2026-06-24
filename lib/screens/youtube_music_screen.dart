@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../services/YoutubeDatasource.dart';
 import '../theme/app_theme_tokens.dart';
-import '../widgets/sliver_page_header.dart';
+import '../widgets/components/sliver_page_header.dart';
 import '../widgets/song_actions_sheet.dart';
 
 class YoutubeMusicScreen extends StatefulWidget {
@@ -54,44 +54,72 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
     return Colors.white24;
   }
 
-  Future<void> _loadHome() async {
-    setState(() => _isLoading = true);
+  void _updateStateWithData(Map<String, dynamic> moodsData, Map<String, dynamic> exploreData, List<Map<String, dynamic>> sections) {
+    if (!mounted) return;
     
-    final moodsData = await youtubeDatasource.getMoodCategories();
-    final exploreData = await youtubeDatasource.getExplore();
-    final sections = await youtubeDatasource.getHomeSections();
-    
-    if (mounted) {
-      setState(() {
-        if (moodsData.isNotEmpty) {
-          for (var v in moodsData.values) {
-            if (v is List) {
-              _moods.addAll(v.cast<Map<String, dynamic>>());
-            }
-          }
+    final newMoods = <Map<String, dynamic>>[];
+    if (moodsData.isNotEmpty) {
+      for (var v in moodsData.values) {
+        if (v is List) {
+          newMoods.addAll(v.cast<Map<String, dynamic>>());
         }
-        
-        // Add Explore sections to the top
-        if (exploreData.containsKey('new_releases') && exploreData['new_releases'] is List) {
-           _sections.add({
-             'title': 'New Releases',
-             'items': exploreData['new_releases'],
+      }
+    }
+    
+    final newSections = <Map<String, dynamic>>[];
+    // Add Explore sections to the top
+    if (exploreData.containsKey('new_releases') && exploreData['new_releases'] is List) {
+       newSections.add({
+         'title': 'New Releases',
+         'items': exploreData['new_releases'],
+       });
+    }
+    
+    if (exploreData.containsKey('trending') && exploreData['trending'] is Map) {
+       final trending = exploreData['trending'];
+       if (trending['items'] is List) {
+           newSections.add({
+             'title': 'Trending',
+             'items': trending['items'],
            });
-        }
-        
-        if (exploreData.containsKey('trending') && exploreData['trending'] is Map) {
-           final trending = exploreData['trending'];
-           if (trending['items'] is List) {
-               _sections.add({
-                 'title': 'Trending',
-                 'items': trending['items'],
-               });
-           }
-        }
-        
-        _sections.addAll(sections);
-        _isLoading = false;
-      });
+       }
+    }
+    
+    newSections.addAll(sections);
+    
+    setState(() {
+      _moods.clear();
+      _moods.addAll(newMoods);
+      _sections.clear();
+      _sections.addAll(newSections);
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _loadHome() async {
+    // 1. Try to load from cache first for instant UI
+    final cachedMoods = await youtubeDatasource.getCachedMoodCategories();
+    final cachedExplore = await youtubeDatasource.getCachedExplore();
+    final cachedSections = await youtubeDatasource.getCachedHomeSections();
+    
+    if (cachedMoods != null && cachedExplore != null && cachedSections != null && cachedSections.isNotEmpty) {
+      _updateStateWithData(cachedMoods, cachedExplore, cachedSections);
+    } else {
+      setState(() => _isLoading = true);
+    }
+    
+    // 2. Fetch fresh data in background
+    try {
+      final moodsData = await youtubeDatasource.getMoodCategories();
+      final exploreData = await youtubeDatasource.getExplore();
+      final sections = await youtubeDatasource.getHomeSections();
+      
+      _updateStateWithData(moodsData, exploreData, sections);
+    } catch (e) {
+      debugPrint('Error refreshing YTM home: $e');
+      if (_sections.isEmpty && mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 

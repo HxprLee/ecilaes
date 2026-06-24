@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,8 +19,9 @@ import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
 import '../../theme/app_theme_tokens.dart';
-import '../../widgets/settings/settings_section.dart';
-import '../../widgets/sliver_page_header.dart';
+import '../../widgets/components/settings_section.dart';
+import '../../widgets/components/spinner_widget.dart';
+import '../../widgets/components/sliver_page_header.dart';
 
 class LyricsAppearanceSection extends StatelessWidget {
   const LyricsAppearanceSection({super.key});
@@ -86,23 +87,56 @@ class LyricsAppearanceSection extends StatelessWidget {
                     SettingsSection(
                       child: Column(
                         children: [
-                          _buildSliderSetting(
-                            context: context,
-                            title: 'Active Text Size',
-                            valueType: 'active',
-                          ),
+                          Watch((context) {
+                            return SettingsTile(
+                              title: 'Active Text Size',
+                              subtitle: '${settingsSignal.lyricsActiveFontSize.value.round()}px',
+                              showLeading: false,
+                              trailing: SpinnerWidget(
+                                value: settingsSignal.lyricsActiveFontSize.value,
+                                min: 16.0,
+                                max: 48.0,
+                                step: 2.0,
+                                formatValue: (v) => v.toStringAsFixed(0),
+                                parseValue: (s) => double.tryParse(s),
+                                onChanged: (v) => settingsSignal.updateLyricsActiveFontSize(v),
+                              ),
+                            );
+                          }),
                           const SettingsDivider(indent: 16),
-                          _buildSliderSetting(
-                            context: context,
-                            title: 'Inactive Text Size',
-                            valueType: 'inactive',
-                          ),
+                          Watch((context) {
+                            return SettingsTile(
+                              title: 'Inactive Text Size',
+                              subtitle: '${settingsSignal.lyricsInactiveFontSize.value.round()}px',
+                              showLeading: false,
+                              trailing: SpinnerWidget(
+                                value: settingsSignal.lyricsInactiveFontSize.value,
+                                min: 16.0,
+                                max: 48.0,
+                                step: 2.0,
+                                formatValue: (v) => v.toStringAsFixed(0),
+                                parseValue: (s) => double.tryParse(s),
+                                onChanged: (v) => settingsSignal.updateLyricsInactiveFontSize(v),
+                              ),
+                            );
+                          }),
                           const SettingsDivider(indent: 16),
-                          _buildSliderSetting(
-                            context: context,
-                            title: 'Plain Text Size',
-                            valueType: 'plain',
-                          ),
+                          Watch((context) {
+                            return SettingsTile(
+                              title: 'Plain Text Size',
+                              subtitle: '${settingsSignal.plainLyricsFontSize.value.round()}px',
+                              showLeading: false,
+                              trailing: SpinnerWidget(
+                                value: settingsSignal.plainLyricsFontSize.value,
+                                min: 16.0,
+                                max: 48.0,
+                                step: 2.0,
+                                formatValue: (v) => v.toStringAsFixed(0),
+                                parseValue: (s) => double.tryParse(s),
+                                onChanged: (v) => settingsSignal.updatePlainLyricsFontSize(v),
+                              ),
+                            );
+                          }),
                           const SettingsDivider(indent: 16),
                           Watch((context) {
                             return SwitchListTile(
@@ -205,99 +239,6 @@ class LyricsAppearanceSection extends StatelessWidget {
     );
   }
 
-  Widget _buildSliderSetting({
-    required BuildContext context,
-    required String title,
-    required String valueType,
-  }) {
-    return Watch((context) {
-      final value = valueType == 'active' 
-          ? settingsSignal.lyricsActiveFontSize.value 
-          : valueType == 'inactive'
-              ? settingsSignal.lyricsInactiveFontSize.value
-              : settingsSignal.plainLyricsFontSize.value;
-          
-      return Column(
-        children: [
-          ListTile(
-            title: Text(
-              title,
-              style: TextStyle(
-                color: context.colorScheme.onSurface,
-                fontSize: 14,
-              ),
-            ),
-            subtitle: Text(
-              '${value.round()}px',
-              style: TextStyle(
-                color: context.colorScheme.secondary.withValues(alpha: 0.8),
-                fontSize: 12,
-              ),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 4,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(
-              left: 20,
-              right: 20,
-              bottom: 16,
-            ),
-            child: Row(
-              children: [
-                Text(
-                  'A',
-                  style: TextStyle(
-                    color: context.colorScheme.onSurface
-                        .withValues(alpha: 0.54),
-                    fontSize: 12,
-                  ),
-                ),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderThemeData(
-                      activeTrackColor: context.colorScheme.secondary,
-                      inactiveTrackColor: context.colorScheme.secondary
-                          .withValues(alpha: 0.2),
-                      thumbColor: context.colorScheme.secondary,
-                      overlayColor: context.colorScheme.secondary
-                          .withValues(alpha: 0.1),
-                    ),
-                    child: Slider(
-                      value: value,
-                      min: 16.0,
-                      max: 48.0,
-                      divisions: 32,
-                      onChanged: (newValue) {
-                         if (valueType == 'active') {
-                           settingsSignal.updateLyricsActiveFontSize(newValue);
-                         } else if (valueType == 'inactive') {
-                           settingsSignal.updateLyricsInactiveFontSize(newValue);
-                         } else {
-                           settingsSignal.updatePlainLyricsFontSize(newValue);
-                         }
-                      },
-                    ),
-                  ),
-                ),
-                Text(
-                  'A',
-                  style: TextStyle(
-                    color: context.colorScheme.onSurface
-                        .withValues(alpha: 0.54),
-                    fontSize: 20,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    });
-  }
-
   Widget _buildAlignmentButton(BuildContext context) {
     return SegmentedButton<TextAlign>(
       segments: const [
@@ -335,8 +276,6 @@ class LyricsAppearanceSection extends StatelessWidget {
     switch (id) {
       case 'lrclib':
         return 'LrcLib';
-      case 'simpmusic':
-        return 'SimpMusic';
       case 'better_lyrics':
         return 'BetterLyrics';
       case 'kugou':

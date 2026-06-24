@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:signals/signals_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../signals/settings_signal.dart';
 import '../../theme/app_theme_tokens.dart';
@@ -36,29 +37,31 @@ class SettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final blur = settingsSignal.enableGlobalBlur.value;
-    return Padding(
-      padding: padding,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: BackdropFilter(
-          filter: blur
-              ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
-              : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: context.tokens.sidebarBackground.withValues(
-                alpha: blur ? 0.67 : 1.0,
+    return Watch((context) {
+      final blur = settingsSignal.enableGlobalBlur.value;
+      return Padding(
+        padding: padding,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: BackdropFilter(
+            filter: blur
+                ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
+                : ImageFilter.blur(sigmaX: 0, sigmaY: 0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: context.tokens.sidebarBackground.withValues(
+                  alpha: blur ? 0.67 : 1.0,
+                ),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: context.accentBorder(0.15)),
               ),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: context.accentBorder(0.15)),
+              clipBehavior: Clip.antiAlias,
+              child: child,
             ),
-            clipBehavior: Clip.antiAlias,
-            child: child,
           ),
         ),
-      ),
-    );
+      );
+    });
   }
 }
 

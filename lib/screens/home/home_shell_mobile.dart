@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -24,7 +24,7 @@ import '../../signals/navigation_signal.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../widgets/sidebar.dart';
 import '../../widgets/morphing_player.dart';
-import '../../widgets/window_title_bar.dart';
+import '../../widgets/components/window_title_bar.dart';
 import 'mobile/mobile_nav_bar.dart';
 
 class HomeShellMobile extends StatefulWidget {

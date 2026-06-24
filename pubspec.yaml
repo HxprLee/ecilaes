@@ -1,9 +1,9 @@
 name: ecilaes
 description: "A local/streaming, cross-platform music player. Licensed under GPL-3.0."
 publish_to: 'none'
-copyright: "Copyright (C) 2024 Anton Borri"
+copyright: "Copyright (C) 2024 hxprlee"
 
-version: 0.5.2
+version: 0.5.3
 
 environment:
   sdk: ^3.10.1
@@ -51,6 +51,8 @@ dependencies:
   url_launcher: ^6.2.0
   url_launcher_linux: ^3.1.0
   marquee: ^2.3.0
+  crypto: ^3.0.7
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   flutter_test:

@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,10 +21,14 @@ import 'screens/file_explorer_screen.dart';
 import 'screens/playlist_screen.dart';
 import 'screens/playlists_screen.dart';
 import 'screens/settings_screen.dart';
-import 'screens/search_screen.dart';
+import 'screens/search/search_result_screen.dart';
+import 'screens/search/search_screen.dart';
+import 'screens/search/mood_screen.dart';
+import 'screens/search/yt_library_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/recently_played_screen.dart';
+import 'screens/most_played_screen.dart';
 import 'screens/recently_added_screen.dart';
 import 'screens/artists_screen.dart';
 import 'screens/artist_detail_screen.dart';
@@ -47,6 +51,7 @@ import 'screens/settings/lyrics_appearance_section.dart';
 import 'screens/settings/sidebar_layout_section.dart';
 import 'screens/settings/discord_presence_section.dart';
 import 'screens/settings/cache_management_screen.dart';
+import 'screens/settings/yt_login_webview_screen.dart';
 
 /// Creates the GoRouter configuration.
 final GoRouter router = GoRouter(
@@ -74,6 +79,24 @@ final GoRouter router = GoRouter(
           path: '/search',
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const SearchScreen()),
+        ),
+        // Search Results
+        GoRoute(
+          path: '/search-result',
+          pageBuilder: (context, state) =>
+              _buildPageWithTransition(state, const SearchResultScreen()),
+        ),
+        // Mood
+        GoRoute(
+          path: '/mood/:params',
+          pageBuilder: (context, state) {
+            final params = Uri.decodeComponent(state.pathParameters['params'] ?? '');
+            final title = state.extra as String? ?? 'Mood';
+            return _buildPageWithTransition(
+              state,
+              MoodScreen(title: title, params: params),
+            );
+          },
         ),
         // YouTube Music
         GoRoute(
@@ -119,6 +142,22 @@ final GoRouter router = GoRouter(
             ),
           ],
         ),
+        // YouTube Music Library
+        GoRoute(
+          path: '/yt-library/playlists',
+          pageBuilder: (context, state) =>
+              _buildPageWithTransition(state, const YtLibraryScreen(type: YTLibraryType.playlists)),
+        ),
+        GoRoute(
+          path: '/yt-library/albums',
+          pageBuilder: (context, state) =>
+              _buildPageWithTransition(state, const YtLibraryScreen(type: YTLibraryType.albums)),
+        ),
+        GoRoute(
+          path: '/yt-library/artists',
+          pageBuilder: (context, state) =>
+              _buildPageWithTransition(state, const YtLibraryScreen(type: YTLibraryType.artists)),
+        ),
         // Library
         GoRoute(
           path: '/library',
@@ -130,6 +169,12 @@ final GoRouter router = GoRouter(
           path: '/recently-played',
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const RecentlyPlayedScreen()),
+        ),
+        // Most Played
+        GoRoute(
+          path: '/most-played',
+          pageBuilder: (context, state) =>
+              _buildPageWithTransition(state, const MostPlayedScreen()),
         ),
         // Recently Added
         GoRoute(
@@ -278,6 +323,11 @@ final GoRouter router = GoRouter(
                   path: 'manage_cache',
                   pageBuilder: (context, state) =>
                       _buildPageWithTransition(state, const CacheManagementScreen()),
+                ),
+                GoRoute(
+                  path: 'youtube-login',
+                  pageBuilder: (context, state) =>
+                      _buildPageWithTransition(state, const YtLoginWebViewScreen()),
                 ),
               ],
             ),

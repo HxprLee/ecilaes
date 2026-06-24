@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -299,6 +299,73 @@ class MyAudioHandler extends BaseAudioHandler {
     _syncQueueSignal();
   }
 
+  Future<void> removeQueueItemAt(int index) async {
+    final current = List<MediaItem>.from(queue.value);
+    
+    int realIndex = index;
+    if (_shuffledIndices.isNotEmpty) {
+      if (index < 0 || index >= _shuffledIndices.length) return;
+      realIndex = _shuffledIndices[index];
+    }
+    
+    if (realIndex < 0 || realIndex >= current.length) return;
+    
+    current.removeAt(realIndex);
+
+    if (_shuffledIndices.isNotEmpty) {
+      _shuffledIndices.removeAt(index);
+      for (var i = 0; i < _shuffledIndices.length; i++) {
+        if (_shuffledIndices[i] > realIndex) _shuffledIndices[i]--;
+      }
+    }
+
+    if (realIndex < _currentIndex) {
+      _currentIndex--;
+    } else if (realIndex == _currentIndex && _currentIndex >= current.length) {
+      _currentIndex = current.isEmpty ? 0 : current.length - 1;
+    }
+
+    if (_shuffledIndices.isNotEmpty) {
+      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
+    }
+    
+    queue.add(current);
+    _syncQueueSignal();
+  }
+
+  Future<void> moveQueueItem(int oldIndex, int newIndex) async {
+    final current = List<MediaItem>.from(queue.value);
+    
+    if (_shuffledIndices.isNotEmpty) {
+      if (oldIndex < 0 || oldIndex >= _shuffledIndices.length) return;
+      if (newIndex < 0 || newIndex > _shuffledIndices.length) return;
+      final item = _shuffledIndices.removeAt(oldIndex);
+      final adjustedNewIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
+      _shuffledIndices.insert(adjustedNewIndex, item);
+      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
+      _syncQueueSignal();
+      return;
+    }
+    
+    if (oldIndex < 0 || oldIndex >= current.length) return;
+    if (newIndex < 0 || newIndex > current.length) return;
+    
+    final item = current.removeAt(oldIndex);
+    final adjustedNewIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
+    current.insert(adjustedNewIndex, item);
+    
+    if (_currentIndex == oldIndex) {
+      _currentIndex = adjustedNewIndex;
+    } else if (oldIndex < _currentIndex && adjustedNewIndex >= _currentIndex) {
+      _currentIndex--;
+    } else if (oldIndex > _currentIndex && adjustedNewIndex <= _currentIndex) {
+      _currentIndex++;
+    }
+    
+    queue.add(current);
+    _syncQueueSignal();
+  }
+
   // ---------------------------------------------------------------------------
   // Shuffle / repeat
   // ---------------------------------------------------------------------------
@@ -417,6 +484,10 @@ class MyAudioHandler extends BaseAudioHandler {
   @override
   Future<void> skipToPrevious() async {
     if (queue.value.isEmpty) return;
+    if (_player.position.inSeconds > 3) {
+      await _player.seek(Duration.zero);
+      return;
+    }
     _currentIndex = _getPreviousIndex();
     await _playCurrent();
   }
@@ -504,17 +575,22 @@ class MyAudioHandler extends BaseAudioHandler {
     }
 
     final List<String> orderPaths;
+    int indexToPass = _currentIndex;
+
     if (_shuffledIndices.isNotEmpty) {
       orderPaths = _shuffledIndices
           .map((idx) => queue.value[idx].id)
           .toList(growable: false);
+      indexToPass = _shuffledIndices.indexOf(_currentIndex);
+      // Fallback in case of missing index, though it shouldn't happen
+      if (indexToPass == -1) indexToPass = 0;
     } else {
       orderPaths = queue.value.map((i) => i.id).toList(growable: false);
     }
 
     queueSignal.syncFromHandler(
       playbackOrder: orderPaths,
-      currentIndex: _currentIndex,
+      currentIndex: indexToPass,
     );
 
     _scheduleRadioFill();

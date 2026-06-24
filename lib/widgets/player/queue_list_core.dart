@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@ import '../../signals/audio_signal.dart';
 import '../../signals/queue_signal.dart' as q;
 import '../../services/YoutubeDatasource.dart';
 import '../../theme/app_theme_tokens.dart';
-import '../common/flyout_sheet.dart';
+import '../components/flyout_sheet.dart';
 import '../playlist_dialogs.dart';
 import '../song_info_dialog.dart';
 
@@ -422,20 +422,18 @@ class _AnimatedUpNextList extends StatefulWidget {
 }
 
 class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
-  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   static const _identityAnimation = AlwaysStoppedAnimation(1.0);
 
   /// Stable keys so Dismissible state is retained across rebuilds.
-  final Map<String, GlobalKey> _itemKeys = {};
-
+  final List<Key> _itemKeys = [];
   List<Song> _displayedSongs = [];
 
   @override
   void initState() {
     super.initState();
     _displayedSongs = List.from(widget.songs);
-    for (final s in widget.songs) {
-      _itemKeys[s.path] ??= GlobalKey();
+    for (int i = 0; i < widget.songs.length; i++) {
+      _itemKeys.add(UniqueKey());
     }
   }
 
@@ -446,20 +444,28 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
   }
 
   void _syncFromSignal() {
-    _displayedSongs = List.from(widget.songs);
-    // Ensure all paths have a stable key.
-    for (final s in widget.songs) {
-      _itemKeys[s.path] ??= GlobalKey();
+    final newKeys = <Key>[];
+    // Try to preserve keys for songs that haven't changed position
+    for (int i = 0; i < widget.songs.length; i++) {
+      if (i < _displayedSongs.length && _displayedSongs[i].path == widget.songs[i].path) {
+        newKeys.add(_itemKeys[i]);
+      } else {
+        newKeys.add(UniqueKey());
+      }
     }
+    _displayedSongs = List.from(widget.songs);
+    _itemKeys
+      ..clear()
+      ..addAll(newKeys);
   }
 
   void _dismissItem(int index) {
     if (index < 0 || index >= _displayedSongs.length) return;
     final song = _displayedSongs[index];
     _displayedSongs.removeAt(index);
-    _itemKeys.remove(song.path);
+    _itemKeys.removeAt(index);
     setState(() {});
-    q.queueSignal.removeFromUpNext(song.path);
+    audioSignal.removeFromUpNext(index, song.path);
   }
 
   void _showActions(BuildContext context, Song song) {
@@ -486,7 +492,10 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
               label: 'Move to top',
               onTap: () {
                 Navigator.pop(ctx);
-                q.queueSignal.moveToTop(song.path);
+                final idx = _displayedSongs.indexWhere((s) => s.path == song.path);
+                if (idx >= 0) {
+                  audioSignal.reorderUpNext(idx, 0);
+                }
               },
             ),
             _ActionTile(
@@ -494,7 +503,10 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
               label: 'Remove from queue',
               onTap: () {
                 Navigator.pop(ctx);
-                q.queueSignal.removeFromUpNext(song.path);
+                final idx = _displayedSongs.indexWhere((s) => s.path == song.path);
+                if (idx >= 0) {
+                  audioSignal.removeFromUpNext(idx, song.path);
+                }
               },
             ),
             _ActionTile(
@@ -523,7 +535,6 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      key: _listKey,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _displayedSongs.length,
@@ -532,10 +543,10 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
           return const SizedBox.shrink();
         }
         final song = _displayedSongs[index];
-        final itemKey = _itemKeys[song.path]!;
+        final itemKey = _itemKeys[index];
 
-        return LongPressDraggable<Song>(
-          data: song,
+        return LongPressDraggable<int>(
+          data: index,
           feedback: Material(
             elevation: 8,
             shadowColor: Colors.black54,
@@ -568,15 +579,12 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
             widget.onDragStateChanged?.call(false);
             widget.onDraggingChanged?.call(null);
           },
-          child: DragTarget<Song>(
-            onWillAcceptWithDetails: (details) =>
-                details.data.path != song.path,
+          child: DragTarget<int>(
+            onWillAcceptWithDetails: (details) => details.data != index,
             onAcceptWithDetails: (details) {
-              final oldIdx = _displayedSongs.indexWhere(
-                (s) => s.path == details.data.path,
-              );
+              final oldIdx = details.data;
               if (oldIdx < 0 || oldIdx == index) return;
-              q.queueSignal.reorderUpNext(oldIdx, index);
+              audioSignal.reorderUpNext(oldIdx, index);
             },
             builder: (context, candidateData, rejectedData) {
               return _AnimatedTile(
@@ -621,20 +629,18 @@ class _AnimatedHistoryList extends StatefulWidget {
 }
 
 class _AnimatedHistoryListState extends State<_AnimatedHistoryList> {
-  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   static const _identityAnimation = AlwaysStoppedAnimation(1.0);
 
   /// Stable keys so Dismissible state is retained across rebuilds.
-  final Map<String, GlobalKey> _itemKeys = {};
-
+  final List<Key> _itemKeys = [];
   List<Song> _displayedSongs = [];
 
   @override
   void initState() {
     super.initState();
     _displayedSongs = List.from(widget.songs);
-    for (final s in widget.songs) {
-      _itemKeys[s.path] ??= GlobalKey();
+    for (int i = 0; i < widget.songs.length; i++) {
+      _itemKeys.add(UniqueKey());
     }
   }
 
@@ -645,17 +651,25 @@ class _AnimatedHistoryListState extends State<_AnimatedHistoryList> {
   }
 
   void _syncFromSignal() {
-    _displayedSongs = List.from(widget.songs);
-    for (final s in widget.songs) {
-      _itemKeys[s.path] ??= GlobalKey();
+    final newKeys = <Key>[];
+    for (int i = 0; i < widget.songs.length; i++) {
+      if (i < _displayedSongs.length && _displayedSongs[i].path == widget.songs[i].path) {
+        newKeys.add(_itemKeys[i]);
+      } else {
+        newKeys.add(UniqueKey());
+      }
     }
+    _displayedSongs = List.from(widget.songs);
+    _itemKeys
+      ..clear()
+      ..addAll(newKeys);
   }
 
   void _dismissItem(int index) {
     if (index < 0 || index >= _displayedSongs.length) return;
     final song = _displayedSongs[index];
     _displayedSongs.removeAt(index);
-    _itemKeys.remove(song.path);
+    _itemKeys.removeAt(index);
     setState(() {});
     widget.onDismiss(song.path);
   }
@@ -663,7 +677,6 @@ class _AnimatedHistoryListState extends State<_AnimatedHistoryList> {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      key: _listKey,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _displayedSongs.length,
@@ -672,7 +685,7 @@ class _AnimatedHistoryListState extends State<_AnimatedHistoryList> {
           return const SizedBox.shrink();
         }
         final song = _displayedSongs[index];
-        final itemKey = _itemKeys[song.path]!;
+        final itemKey = _itemKeys[index];
         return _AnimatedTile(
           song: song,
           itemKey: itemKey,
@@ -698,7 +711,7 @@ class _AnimatedHistoryListState extends State<_AnimatedHistoryList> {
 /// Wraps a tile in slide+fade animation and Dismissible with a stable key.
 class _AnimatedTile extends StatelessWidget {
   final Song song;
-  final GlobalKey itemKey;
+  final Key itemKey;
   final Animation<double> animation;
   final bool isRemoval;
   final bool showDragTargetHint;

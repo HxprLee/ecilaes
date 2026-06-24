@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -18,11 +18,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
-import '../models/playlist.dart';
-import '../models/song.dart';
-import '../signals/audio_signal.dart';
-import '../services/YoutubeDatasource.dart';
-import '../theme/app_theme_tokens.dart';
+import '../../models/playlist.dart';
+import '../../models/song.dart';
+import '../../signals/audio_signal.dart';
+import '../../services/YoutubeDatasource.dart';
+import '../../theme/app_theme_tokens.dart';
 import 'song_tile.dart';
 
 class PlaylistCover extends StatelessWidget {

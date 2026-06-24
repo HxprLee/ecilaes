@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -875,8 +875,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 // 5. Seekbar
                                 Watch((context) {
                                   final position = audioSignal.position.value;
-                                  final hasLyrics =
-                                      audioSignal.currentLyrics.value != null;
+                                  final lyrics = audioSignal.currentLyrics.value;
+                                  final hasLyrics = lyrics != null;
                                   final showQueue =
                                       audioSignal.showQueueInPlayer.value;
                                   return _buildMorphingSeekbar(
@@ -889,6 +889,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                     duration,
                                     screenWidth,
                                     expandedLayout.seekbar,
+                                    isDesktopLayoutMode: isDesktopLayoutMode,
                                   );
                                 }),
 
@@ -952,13 +953,14 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     Duration position,
     Duration duration,
     double screenWidth,
-    Rect targetRect,
-  ) {
+    Rect targetRect, {
+    bool isDesktopLayoutMode = false,
+  }) {
     if (value < 0.9) return const SizedBox.shrink();
 
     // Fade out seekbar if lyrics or queue is showing
-    final effectLyricsOpacity = hasLyrics ? lyricsValue : 0.0;
-    final effectQueueOpacity = showQueue ? 1.0 : 0.0;
+    final effectLyricsOpacity = isDesktopLayoutMode ? 0.0 : (hasLyrics ? lyricsValue : 0.0);
+    final effectQueueOpacity = isDesktopLayoutMode ? 0.0 : (showQueue ? 1.0 : 0.0);
     final seekbarOpacity =
         ((value - 0.9) * 10).clamp(0.0, 1.0) *
         (1.0 - effectLyricsOpacity) *
@@ -1831,11 +1833,10 @@ class _MorphingPlayerState extends State<MorphingPlayer>
 
     return Watch((context) {
       final lyrics = audioSignal.currentLyrics.value;
-      final hasLyrics = lyrics != null;
 
       final bottomEdge = isDesktopLayout
           ? MediaQuery.of(context).size.height
-          : (hasLyrics
+          : (lyrics != null
                 ? (_showControls
                       ? expandedLayout.controls.top
                       : MediaQuery.of(context).size.height - 24.0)
@@ -1844,7 +1845,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
       final availableHeight = bottomEdge - topPadding;
 
       Widget content;
-      if (!hasLyrics) {
+      if (lyrics == null) {
         final loadingHeight = expandedLayout.seekbar.top - topPadding;
         content = SizedBox(
           width: screenWidth,
@@ -1858,6 +1859,21 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                 color: Theme.of(
                   context,
                 ).colorScheme.secondary.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+        );
+      } else if (lyrics.isEmpty) {
+        content = SizedBox(
+          width: screenWidth,
+          height: availableHeight,
+          child: Center(
+            child: Text(
+              'No lyrics available',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5),
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),

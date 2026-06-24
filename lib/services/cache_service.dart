@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -77,6 +77,11 @@ class CacheService {
     return CacheStats(sizeBytes: 0, fileCount: 0);
   }
 
+  Future<CacheStats> getYtDataStats() async {
+    final cacheDir = await SongCache.cacheDir;
+    return getDirectoryStats('$cacheDir/yt_cache');
+  }
+
   Future<void> clearDirectory(String path, {bool Function(File)? exclude}) async {
     final dir = Directory(path);
     if (await dir.exists()) {
@@ -127,6 +132,11 @@ class CacheService {
     }
   }
 
+  Future<void> clearYtData() async {
+    final cacheDir = await SongCache.cacheDir;
+    await clearDirectory('$cacheDir/yt_cache');
+  }
+
   Future<CacheStats> getAudioStats() async {
     final cacheDir = await SongCache.cacheDir;
     return getDirectoryStats('$cacheDir/songs');
@@ -143,6 +153,7 @@ class CacheService {
     await clearLyrics();
     await clearMetadata();
     await clearAudioCache();
+    await clearYtData();
   }
 }
 

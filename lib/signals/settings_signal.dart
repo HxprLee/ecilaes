@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -78,13 +78,11 @@ class SettingsSignal {
   final showRomanizedLyrics = signal<bool>(false);
   final lyricsProviders = listSignal<String>([
     'lrclib',
-    'simpmusic',
     'better_lyrics',
     'kugou',
   ]);
   final enabledLyricsProviders = listSignal<String>([
     'lrclib',
-    'simpmusic',
     'better_lyrics',
     'kugou',
   ]);
@@ -97,6 +95,13 @@ class SettingsSignal {
   final enableStreamCaching = signal<bool>(true);
   final enablePreCaching = signal<bool>(true);
   final normalizationTargetLufs = signal<double>(-14.0);
+
+  // Last.fm integration
+  final lastFmSessionKey = signal<String?>(null);
+  final lastFmUsername = signal<String?>(null);
+
+  // YouTube Music Authentication
+  final ytAuthCookie = signal<String?>(null);
 
   // Discord Rich Presence
   final enableDiscordRpc = signal<bool>(true);
@@ -201,7 +206,12 @@ class SettingsSignal {
     }
 
     audioNormalization.value = prefs.getBool('audioNormalization') ?? false;
-    normalizationTargetLufs.value = prefs.getDouble('normalizationTargetLufs') ?? -14.0;
+    normalizationTargetLufs.value =
+        prefs.getDouble('normalizationTargetLufs') ?? -14.0;
+    
+    lastFmSessionKey.value = prefs.getString('lastFmSessionKey');
+    lastFmUsername.value = prefs.getString('lastFmUsername');
+    ytAuthCookie.value = prefs.getString('ytAuthCookie');
 
     enableStreamCaching.value = prefs.getBool('enableStreamCaching') ?? true;
     enablePreCaching.value = prefs.getBool('enablePreCaching') ?? true;
@@ -458,6 +468,32 @@ class SettingsSignal {
     normalizationTargetLufs.value = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('normalizationTargetLufs', value);
+  }
+
+  Future<void> updateLastFmSession(String? username, String? sessionKey) async {
+    lastFmUsername.value = username;
+    lastFmSessionKey.value = sessionKey;
+    final prefs = await SharedPreferences.getInstance();
+    if (username != null) {
+      await prefs.setString('lastFmUsername', username);
+    } else {
+      await prefs.remove('lastFmUsername');
+    }
+    if (sessionKey != null) {
+      await prefs.setString('lastFmSessionKey', sessionKey);
+    } else {
+      await prefs.remove('lastFmSessionKey');
+    }
+  }
+
+  Future<void> updateYtAuthCookie(String? cookie) async {
+    ytAuthCookie.value = cookie;
+    final prefs = await SharedPreferences.getInstance();
+    if (cookie != null) {
+      await prefs.setString('ytAuthCookie', cookie);
+    } else {
+      await prefs.remove('ytAuthCookie');
+    }
   }
 
   Future<void> updateStreamCaching(bool value) async {

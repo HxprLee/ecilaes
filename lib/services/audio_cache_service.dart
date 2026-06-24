@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -161,6 +161,26 @@ class AudioCacheService {
   /// Cancel all active downloads (e.g. on dispose).
   void cancelAll() {
     _activeDownloads.clear();
+  }
+
+  /// Get all downloaded video IDs
+  Future<List<String>> getDownloadedVideoIds() async {
+    await init();
+    final dir = Directory(_cacheDirPath!);
+    if (!await dir.exists()) return [];
+    
+    final List<String> ids = [];
+    try {
+      await for (final entity in dir.list()) {
+        if (entity is File && entity.path.endsWith('.m4a')) {
+          final filename = entity.path.split('/').last;
+          ids.add(filename.substring(0, filename.length - 4));
+        }
+      }
+    } catch (e) {
+      debugPrint('Error listing downloads: $e');
+    }
+    return ids;
   }
 }
 

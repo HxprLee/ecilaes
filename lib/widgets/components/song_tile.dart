@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -18,10 +18,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../models/song.dart';
-import '../signals/audio_signal.dart';
-import 'song_actions_sheet.dart';
-import '../services/YoutubeDatasource.dart';
+import '../../models/song.dart';
+import '../../signals/audio_signal.dart';
+import '../song_actions_sheet.dart';
+import '../../services/YoutubeDatasource.dart';
 
 class SongTile extends StatelessWidget {
   final Song song;
@@ -29,6 +29,7 @@ class SongTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final String? playlistId;
+  final List<Song>? fromList;
 
   const SongTile({
     super.key,
@@ -37,6 +38,7 @@ class SongTile extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.playlistId,
+    this.fromList,
   });
 
   static String getArtPath(String songPath, String? artDirPath) {
@@ -150,7 +152,15 @@ class SongTile extends StatelessWidget {
                 fontSize: 12,
               ),
             ),
-        onTap: onTap ?? () => audioSignal.playSong(song),
+        onTap: onTap ?? () {
+          if (playlistId != null) {
+            final playlist = audioSignal.playlists.value.firstWhere((p) => p.id == playlistId);
+            final resolvedSongs = playlist.songPaths.map(audioSignal.resolveSong).toList();
+            audioSignal.playSong(song, fromList: resolvedSongs);
+          } else {
+            audioSignal.playSong(song, fromList: fromList);
+          }
+        },
         onLongPress: () {
           showSongMoreActionsSheet(
             context: context,

@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../signals/audio_signal.dart';
+import '../../signals/audio_signal.dart';
 
 /// A self-contained sliver header that collapses as the user scrolls.
 ///

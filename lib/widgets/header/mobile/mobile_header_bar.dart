@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -16,12 +16,13 @@
 
 import 'dart:io';
 import '../../../models/playlist.dart';
-import '../../playlist_cover.dart';
+import '../../components/playlist_cover.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../../signals/audio_signal.dart';
+import '../../../signals/search_signal.dart';
 import '../../../signals/navigation_signal.dart';
 import '../../../theme/app_theme_tokens.dart';
 
@@ -75,12 +76,13 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     widget.searchController.selection = TextSelection.fromPosition(
       TextPosition(offset: suggestion.length),
     );
-    audioSignal.searchQuery.value = suggestion;
-    audioSignal.searchSuggestions.value = [];
+    searchSignal.searchQuery.value = suggestion;
+    searchSignal.addRecentSearch(suggestion);
+    searchSignal.searchSuggestions.value = [];
     _removeSuggestionsOverlay();
     final currentRoute = navigationSignal.currentRoute.value;
-    if (currentRoute != '/search') {
-      context.go('/search');
+    if (currentRoute != '/search-result') {
+      context.go('/search-result');
     }
   }
 
@@ -89,8 +91,8 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     final headerHeight = 60.0 + topPadding;
 
     return Watch((context) {
-      final suggestions = audioSignal.searchSuggestions.value;
-      final query = audioSignal.searchQuery.value;
+      final suggestions = searchSignal.searchSuggestions.value;
+      final query = searchSignal.searchQuery.value;
 
       if (suggestions.isEmpty || query.trim().isEmpty || !_isSearchExpanded) {
         return const SizedBox.shrink();
@@ -129,7 +131,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                     widget.searchController.selection = TextSelection.fromPosition(
                       TextPosition(offset: suggestion.length),
                     );
-                    audioSignal.searchQuery.value = suggestion;
+                    searchSignal.searchQuery.value = suggestion;
                   },
                 ),
                 onTap: () => _selectSuggestion(suggestion),
@@ -155,8 +157,8 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     } else {
       _focusNode.unfocus();
       widget.searchController.clear();
-      audioSignal.searchQuery.value = '';
-      audioSignal.searchSuggestions.value = [];
+      searchSignal.searchQuery.value = '';
+      searchSignal.searchSuggestions.value = [];
       _removeSuggestionsOverlay();
     }
   }
@@ -518,7 +520,16 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                 controller: widget.searchController,
                                 focusNode: _focusNode,
                                 onChanged: (value) =>
-                                    audioSignal.searchQuery.value = value,
+                                    searchSignal.searchQuery.value = value,
+                                onSubmitted: (value) {
+                                  searchSignal.searchSuggestions.value = [];
+                                  searchSignal.addRecentSearch(value);
+                                  _removeSuggestionsOverlay();
+                                  final currentRoute = navigationSignal.currentRoute.value;
+                                  if (currentRoute != '/search-result') {
+                                    context.go('/search-result');
+                                  }
+                                },
                                 style: TextStyle(
                                   color: Theme.of(
                                     context,
@@ -549,7 +560,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                 ),
                                 onPressed: () {
                                   widget.searchController.clear();
-                                  audioSignal.searchQuery.value = '';
+                                  searchSignal.searchQuery.value = '';
                                 },
                               ),
                           ],

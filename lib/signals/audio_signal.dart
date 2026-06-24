@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -25,6 +25,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:palette_generator_master/palette_generator_master.dart';
 import 'package:http/http.dart' as http;
 import 'settings_signal.dart';
+import 'search_signal.dart';
+import '../services/scrobble_service.dart';
 import '../theme/app_theme_style.dart';
 import '../utils/platform_utils.dart';
 import 'package:uuid/uuid.dart';
@@ -37,6 +39,7 @@ import '../services/song_cache.dart';
 import '../services/platform_service.dart';
 import '../services/album_art_service.dart';
 import '../services/playlist_service.dart';
+import '../services/palette_cache_service.dart';
 import '../services/playback_history_service.dart';
 import '../services/youtube_service.dart';
 import '../services/YoutubeDatasource.dart';
@@ -48,7 +51,7 @@ import '../signals/queue_signal.dart' as q;
 import '../models/library_models.dart';
 import '../services/artist_art_cache.dart';
 
-enum LocalSearchFilter { songs, playlists, albums, artists, folders }
+
 
 class AudioSignal {
   static final AudioSignal _instance = AudioSignal._internal();
@@ -78,12 +81,11 @@ class AudioSignal {
   final isAlbumDetailGridView = signal<bool>(false);
   final isPlaylistsGridView = signal<bool>(true); // Default playlists to grid
   final isPlaylistDetailGridView = signal<bool>(false);
+  final isYtLibraryGridView = signal<bool>(true); // Default YT library to grid
   final currentPlaylist = signal<Playlist?>(null);
   final isRadioMode = signal<bool>(false);
   final isScanning = signal<bool>(false);
   final scanProgress = signal<double>(0.0);
-  final searchQuery = signal<String>('');
-  final searchSuggestions = listSignal<String>([]);
   final isShuffleMode = signal<bool>(false);
   final repeatMode = signal<AudioServiceRepeatMode>(AudioServiceRepeatMode.none);
   final shuffledIndices = listSignal<int>([]);
@@ -113,6 +115,10 @@ class AudioSignal {
   ); // artistName -> localPath
   final artistArtCache = ArtistArtCache();
 
+  bool _hasScrobbledCurrentSong = false;
+  int _currentSongStartTime = 0;
+  bool _hasUpdatedNowPlaying = false;
+
   late final songMap = computed(() {
     return {for (var s in allSongs.value) s.path: s};
   });
@@ -124,7 +130,7 @@ class AudioSignal {
         (path.startsWith('yt:')
             ? [
                 ...ytRadioSongs.value,
-                ...youtubeSearchResults.value,
+                ...searchSignal.youtubeSearchResults.value,
               ].firstWhere(
                 (s) => s.path == path,
                 orElse: () => Song.fromPath(path),
@@ -155,15 +161,7 @@ class AudioSignal {
   // Caches
   final Map<String, Song> _explorerSongCache = {};
 
-  final youtubeSearchResults = listSignal<Song>([]);
-  final ytSearchResults = listSignal<Map<String, dynamic>>([]);
-  final ytSearchFilter = signal<SearchFilter?>(SearchFilter.songs);
-  final isSearchingYoutube = signal<bool>(false);
-  final hasMoreYtResults = signal<bool>(false);
-  int _ytSearchLoadedCount = 0;
-  Timer? _searchDebounce;
-  Timer? _localSearchDebounce;
-  Timer? _suggestionDebounce;
+
 
   /// Cache of all songs fetched from YouTube radio/playlists — indexed by path.
   /// Used by [resolveSong] so queue items show proper title/artist/artwork.
@@ -172,18 +170,7 @@ class AudioSignal {
   // Computed for backward compatibility or simple checks
   late final isPlayerExpanded = computed(() => playerExpansion.value > 0.1);
 
-  // Debounced local search – only recomputes after user stops typing,
-  // not on every signal tick (unlike the previous computed approach)
-  final localSearchResults = listSignal<Song>([]);
-  final localSearchFilter = signal<LocalSearchFilter>(LocalSearchFilter.songs);
-  final localSearchPlaylists = listSignal<Playlist>([]);
-  final localSearchAlbums = listSignal<Album>([]);
-  final localSearchArtists = listSignal<Artist>([]);
-  final localSearchFolders = listSignal<String>([]);
 
-  late final searchResults = computed(() {
-    return [...localSearchResults.value, ...youtubeSearchResults.value];
-  });
 
   late final recentlyAdded = computed(() {
     final start = DateTime.now();
@@ -332,7 +319,7 @@ class AudioSignal {
 
           // For YouTube songs (yt: prefix), look up in youtubeSearchResults
           if (song == null && item.id.startsWith('yt:')) {
-            song = youtubeSearchResults.value.firstWhere(
+            song = searchSignal.youtubeSearchResults.value.firstWhere(
               (s) => s.path == item.id,
               orElse: () => Song(
                 path: item.id,
@@ -345,15 +332,28 @@ class AudioSignal {
           }
 
           if (song != null) {
+            final isSameSong = currentSong.value?.path == song.path;
             currentSong.value = song;
-            _updateDynamicTheme(song);
-            _loadLyricsForSong(song);
-            if (isDesktop) unawaited(_updateDiscordPresence(force: true));
 
-            // Lazy metadata fix for untagged local songs
-            if (!song.path.startsWith('yt:') &&
-                (song.artist == 'Unknown Artist' || song.album == null)) {
-              unawaited(_refreshMetadata(song));
+            if (!isSameSong) {
+              _hasScrobbledCurrentSong = false;
+              _hasUpdatedNowPlaying = false;
+              _currentSongStartTime = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+              _updateDynamicTheme(song);
+              _loadLyricsForSong(song);
+              if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+
+              // Lazy metadata fix for untagged local songs
+              if (!song.path.startsWith('yt:') &&
+                  (song.artist == 'Unknown Artist' || song.album == null)) {
+                unawaited(_refreshMetadata(song));
+              }
+            } else {
+              // If it's the same song but duration was just resolved and we still have no lyrics, try again
+              if ((currentLyrics.value == null || currentLyrics.value == '') && 
+                  song.duration != null && song.duration!.inSeconds > 0) {
+                _loadLyricsForSong(song);
+              }
             }
           }
         } catch (_) {}
@@ -368,137 +368,31 @@ class AudioSignal {
       final myHandler = _audioHandler;
       _subscriptions.add(myHandler.player.positionStream.listen((pos) {
         position.value = pos;
+        
+        final sessionKey = settingsSignal.lastFmSessionKey.value;
+        if (sessionKey != null && sessionKey.isNotEmpty) {
+          final song = currentSong.value;
+          if (song != null && !_hasScrobbledCurrentSong && isPlaying.value) {
+            final dur = duration.value.inSeconds;
+            final played = pos.inSeconds;
+            if (played > 0 && dur > 0) {
+              if (!_hasUpdatedNowPlaying) {
+                _hasUpdatedNowPlaying = true;
+                scrobbleService.updateNowPlaying(sessionKey, song.title, song.artist, album: song.album);
+              }
+              if (played >= dur / 2 || played >= 240) {
+                _hasScrobbledCurrentSong = true;
+                scrobbleService.scrobble(sessionKey, song.title, song.artist, _currentSongStartTime, album: song.album);
+              }
+            }
+          }
+        }
       }));
       _subscriptions.add(myHandler.shuffleIndicesStream.listen((indices) {
         shuffledIndices.value = indices;
       }));
     }
 
-    // Search suggestions effect – faster debounce for typeahead
-    _effectDisposals.add(effect(() {
-      final query = searchQuery.value;
-      _suggestionDebounce?.cancel();
-
-      if (query.trim().isEmpty) {
-        searchSuggestions.value = [];
-        return;
-      }
-
-      _suggestionDebounce = Timer(const Duration(milliseconds: 300), () async {
-        try {
-          final suggestions = await youtubeDatasource.getSearchSuggestions(query.trim());
-          searchSuggestions.value = suggestions;
-        } catch (e) {
-          debugPrint('Search suggestions error: $e');
-        }
-      });
-    }));
-
-    // Local search effect – debounced to avoid recomputing on every signal tick
-    _effectDisposals.add(effect(() {
-      final query = searchQuery.value;
-      final filter = localSearchFilter.value;
-      _localSearchDebounce?.cancel();
-
-      if (query.isEmpty) {
-        localSearchResults.value = [];
-        localSearchPlaylists.value = [];
-        localSearchAlbums.value = [];
-        localSearchArtists.value = [];
-        localSearchFolders.value = [];
-        return;
-      }
-
-      _localSearchDebounce = Timer(const Duration(milliseconds: 150), () {
-        final q = query.toLowerCase();
-        // Clear all result types first
-        localSearchResults.value = [];
-        localSearchPlaylists.value = [];
-        localSearchAlbums.value = [];
-        localSearchArtists.value = [];
-        localSearchFolders.value = [];
-
-        switch (filter) {
-          case LocalSearchFilter.songs:
-            localSearchResults.value = allSongs.value.where((song) {
-              return song.title.toLowerCase().contains(q) ||
-                  song.artist.toLowerCase().contains(q) ||
-                  (song.album?.toLowerCase().contains(q) ?? false);
-            }).toList();
-          case LocalSearchFilter.playlists:
-            localSearchPlaylists.value = playlists.value.where((p) {
-              return p.name.toLowerCase().contains(q);
-            }).toList();
-          case LocalSearchFilter.albums:
-            localSearchAlbums.value = albums.value.where((a) {
-              return a.name.toLowerCase().contains(q) ||
-                  a.artist.toLowerCase().contains(q);
-            }).toList();
-          case LocalSearchFilter.artists:
-            localSearchArtists.value = artists.value.where((a) {
-              return a.name.toLowerCase().contains(q);
-            }).toList();
-          case LocalSearchFilter.folders:
-            final dirs = allSongs.value
-                .where((song) => !song.path.startsWith('yt:'))
-                .map((s) => s.path.substring(0, s.path.lastIndexOf('/')))
-                .where((dir) => dir.toLowerCase().contains(q))
-                .toSet()
-                .toList()
-                  ..sort();
-            localSearchFolders.value = dirs;
-        }
-      });
-    }));
-
-    // YouTube search effect – reacts to query AND filter changes
-    _effectDisposals.add(effect(() {
-      final query = searchQuery.value;
-      final filter = ytSearchFilter.value;
-      _searchDebounce?.cancel();
-
-      if (query.isEmpty) {
-        youtubeSearchResults.value = [];
-        ytSearchResults.value = [];
-        _ytSearchLoadedCount = 0;
-        hasMoreYtResults.value = false;
-        return;
-      }
-
-      _searchDebounce = Timer(const Duration(milliseconds: 700), () async {
-        try {
-          final trimmedQuery = query.trim();
-          if (trimmedQuery.isEmpty) return;
-
-          isSearchingYoutube.value = true;
-          debugPrint(
-              'AudioSignal: Debounced search for "$trimmedQuery" (filter: $filter) starting...');
-
-          // Reset pagination state for new query
-          _ytSearchLoadedCount = 0;
-          hasMoreYtResults.value = false;
-
-          final rawResults = await youtubeService.search(trimmedQuery, filter: filter, limit: 20);
-          _ytSearchLoadedCount = rawResults.length;
-          hasMoreYtResults.value = rawResults.length >= 20;
-          ytSearchResults.value = rawResults;
-          
-          // Also map songs for backwards compatibility
-          if (filter == SearchFilter.songs || filter == null) {
-            youtubeSearchResults.value = rawResults.map((s) => youtubeDatasource.mapToSong(s)).toList();
-          } else {
-            youtubeSearchResults.value = [];
-          }
-          
-          debugPrint(
-              'AudioSignal: Search results updated (${rawResults.length} items)');
-        } catch (e) {
-          debugPrint('AudioSignal: YouTube search error: $e');
-        } finally {
-          isSearchingYoutube.value = false;
-        }
-      });
-    }));
 
     // 1. Initial Load (Delayed to allow UI and Debugger to settle)
     Future.delayed(const Duration(seconds: 1), () async {
@@ -718,6 +612,7 @@ class AudioSignal {
     final receivePort = ReceivePort();
     final exitPort = ReceivePort();
     Isolate? isolate;
+    StreamSubscription? exitSub;
 
     try {
       final musicPath = await getMusicPath();
@@ -783,12 +678,11 @@ class AudioSignal {
       bool isolateDone = false;
 
       // Listen for exit in the background
-      exitPort.first.then((_) {
+      exitSub = exitPort.listen((_) {
         if (!isolateDone) {
           print('Isolate exited unexpectedly');
           isScanning.value = false;
           receivePort.close();
-          exitPort.close();
         }
       });
 
@@ -830,6 +724,7 @@ class AudioSignal {
     } catch (e) {
       print('Error during scan: $e');
     } finally {
+      exitSub?.cancel();
       receivePort.close();
       exitPort.close();
       isolate?.kill(priority: Isolate.immediate);
@@ -899,6 +794,10 @@ class AudioSignal {
   Future<void> playSong(Song song, {List<Song>? fromList}) async {
     if (_audioHandler is! MyAudioHandler) return;
     final handler = _audioHandler;
+
+    if (fromList != null) {
+      cacheRadioSongs(fromList);
+    }
 
     // Auto-stop radio when a non-YouTube song starts playing.
     if (!song.path.startsWith('yt:') && isRadioMode.value) {
@@ -1033,6 +932,30 @@ class AudioSignal {
     await handler.addQueueItem(mediaItem);
   }
 
+  Future<void> removeFromUpNext(int indexInUpNext, String songPath) async {
+    if (_audioHandler is! MyAudioHandler) return;
+    final handler = _audioHandler;
+    
+    q.queueSignal.removeFromUpNext(songPath);
+    
+    // Convert upNext index to full queue index
+    final queueIndex = q.queueSignal.currentIndex.value + 1 + indexInUpNext;
+    await handler.removeQueueItemAt(queueIndex);
+  }
+
+  Future<void> reorderUpNext(int oldIndexInUpNext, int newIndexInUpNext) async {
+    if (_audioHandler is! MyAudioHandler) return;
+    final handler = _audioHandler;
+
+    q.queueSignal.reorderUpNext(oldIndexInUpNext, newIndexInUpNext);
+
+    final currentIndex = q.queueSignal.currentIndex.value;
+    final oldQueueIndex = currentIndex + 1 + oldIndexInUpNext;
+    final newQueueIndex = currentIndex + 1 + newIndexInUpNext;
+
+    await handler.moveQueueItem(oldQueueIndex, newQueueIndex);
+  }
+
   /// Start radio mode for the given song, fetching a batch of similar songs
   /// from YouTube Music's radio endpoint and adding them to the queue.
   Future<void> startRadio(Song seedSong) async {
@@ -1073,51 +996,6 @@ class AudioSignal {
     }
   }
 
-  /// Load the next page of YouTube search results.
-  /// Safe to call multiple times — guarded by [isSearchingYoutube].
-  Future<void> loadMoreYtResults() async {
-    if (isSearchingYoutube.value) return;
-    final query = searchQuery.value.trim();
-    if (query.isEmpty) return;
-
-    final filter = ytSearchFilter.value;
-    final offset = _ytSearchLoadedCount;
-
-    isSearchingYoutube.value = true;
-    try {
-      // ytmusicapi_dart's search() returns paginated results via continuation.
-      // Passing a higher limit returns all results up to that limit.
-      // We request a fixed batch size and slice off the already-loaded offset.
-      final rawResults = await youtubeService.search(
-        query,
-        filter: filter,
-        limit: offset + 20,
-      );
-
-      if (rawResults.length <= offset) {
-        hasMoreYtResults.value = false;
-        return;
-      }
-
-      final newItems = rawResults.skip(offset).toList();
-      final currentYt = List<Map<String, dynamic>>.from(ytSearchResults.value);
-      currentYt.addAll(newItems);
-      ytSearchResults.value = currentYt;
-
-      final currentSongs = List<Song>.from(youtubeSearchResults.value);
-      if (filter == SearchFilter.songs || filter == null) {
-        currentSongs.addAll(newItems.map((s) => youtubeDatasource.mapToSong(s)));
-        youtubeSearchResults.value = currentSongs;
-      }
-
-      _ytSearchLoadedCount = currentYt.length;
-      hasMoreYtResults.value = newItems.isNotEmpty;
-    } catch (e) {
-      debugPrint('AudioSignal: loadMoreYtResults error: $e');
-    } finally {
-      isSearchingYoutube.value = false;
-    }
-  }
 
   Future<void> _updateDynamicTheme(Song song) async {
     if (settingsSignal.themeStyle.value == AppThemeStyle.signature) return;
@@ -1128,6 +1006,16 @@ class AudioSignal {
     }
 
     try {
+      final cachedPalette = await PaletteCacheService.getPalette(song.path);
+      if (cachedPalette != null) {
+        batch(() {
+          dominantColor.value = cachedPalette['dominant'];
+          mutedColor.value = cachedPalette['muted'];
+          dynamicThemeSeed.value = cachedPalette['seed'];
+        });
+        return;
+      }
+
       ImageProvider? imageProvider;
 
       if (song.path.startsWith('yt:')) {
@@ -1165,6 +1053,13 @@ class AudioSignal {
 
       final color = _selectBestSeedColor(palette);
 
+      await PaletteCacheService.savePalette(
+        song.path,
+        palette.dominantColor?.color,
+        palette.mutedColor?.color ?? palette.darkMutedColor?.color,
+        color,
+      );
+
       batch(() {
         dominantColor.value = palette.dominantColor?.color;
         mutedColor.value =
@@ -1198,7 +1093,7 @@ class AudioSignal {
 
     // Ensure the song hasn't changed while we were fetching
     if (currentSong.value?.path == song.path) {
-      currentLyrics.value = lyrics;
+      currentLyrics.value = lyrics ?? '';
     }
   }
 
@@ -1599,12 +1494,6 @@ class AudioSignal {
   void dispose() {
     _sleepInternalTimer?.cancel();
     _sleepInternalTimer = null;
-    _searchDebounce?.cancel();
-    _searchDebounce = null;
-    _localSearchDebounce?.cancel();
-    _localSearchDebounce = null;
-    _suggestionDebounce?.cancel();
-    _suggestionDebounce = null;
     
     for (final sub in _subscriptions) {
       sub.cancel();

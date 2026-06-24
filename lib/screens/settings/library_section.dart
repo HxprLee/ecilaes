@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -14,17 +14,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import 'dart:io';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../signals/settings_signal.dart';
 import '../../signals/audio_signal.dart';
 import '../../theme/app_theme_tokens.dart';
-import '../../widgets/app_dialog.dart';
-import '../../widgets/settings/settings_section.dart';
-import '../../widgets/sliver_page_header.dart';
+import '../../widgets/components/app_dialog.dart';
+import '../../widgets/components/settings_section.dart';
+import '../../widgets/components/sliver_page_header.dart';
 
 class LibrarySection extends StatelessWidget {
   const LibrarySection({super.key});
@@ -53,6 +56,40 @@ class LibrarySection extends StatelessWidget {
                     SettingsSection(
                       child: Column(
                         children: [
+                          Watch((context) {
+                            final hasCookie = settingsSignal.ytAuthCookie.value != null && settingsSignal.ytAuthCookie.value!.isNotEmpty;
+                            return SettingsTile(
+                              icon: FontAwesomeIcons.youtube,
+                              title: 'YouTube Music Account',
+                              subtitle: hasCookie ? 'Connected' : 'Not connected',
+                              trailing: hasCookie
+                                  ? TextButton(
+                                      onPressed: () async {
+                                        await settingsSignal.updateYtAuthCookie(null);
+                                        audioSignal.reindexLibrary();
+                                      },
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Theme.of(context).colorScheme.error,
+                                      ),
+                                      child: const Text('Disconnect'),
+                                    )
+                                  : const Icon(Icons.chevron_right, size: 20),
+                              onTap: hasCookie
+                                  ? null
+                                  : () {
+                                      if (!kIsWeb && Platform.isLinux) {
+                                        // WebView on Linux AppImage is finicky, use manual fallback
+                                        showDialog(
+                                          context: context,
+                                          builder: (context) => const _YtAuthDialog(),
+                                        );
+                                      } else {
+                                        context.go('/settings/library/youtube-login');
+                                      }
+                                    },
+                            );
+                          }),
+                          const SettingsDivider(indent: 16),
                           // Current directory
                           Watch((context) {
                             final currentDir =
@@ -511,5 +548,90 @@ class LibrarySection extends StatelessWidget {
     const suffixes = ['B', 'KB', 'MB', 'GB', 'TB'];
     var i = (math.log(bytes) / math.log(1024)).floor();
     return '${(bytes / math.pow(1024, i)).toStringAsFixed(1)} ${suffixes[i]}';
+  }
+}
+
+class _YtAuthDialog extends StatefulWidget {
+  const _YtAuthDialog();
+
+  @override
+  State<_YtAuthDialog> createState() => _YtAuthDialogState();
+}
+
+class _YtAuthDialogState extends State<_YtAuthDialog> {
+  final _cookieController = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _cookieController.dispose();
+    super.dispose();
+  }
+
+  void _submit() async {
+    final cookie = _cookieController.text.trim();
+    if (cookie.isEmpty) return;
+
+    if (cookie.contains('…') || cookie.contains('...')) {
+      setState(() {
+        _error = 'Cookie is truncated. Please copy the entire string, not just the visible part.';
+      });
+      return;
+    }
+
+    // Strip out any non-ascii characters that might crash the HTTP client
+    final sanitizedCookie = cookie.replaceAll(RegExp(r'[^\x20-\x7E]'), '');
+
+    await settingsSignal.updateYtAuthCookie(sanitizedCookie);
+    audioSignal.reindexLibrary();
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppDialog(
+      title: 'YouTube Music Login',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'To access your personalized YouTube Music library, you must provide your authentication cookie.',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '1. Go to music.youtube.com in your browser and log in.\n'
+            '2. Open Developer Tools (F12) -> Network tab.\n'
+            '3. Refresh the page, click on any request to music.youtube.com.\n'
+            '4. Scroll down to Request Headers, copy the entire value of "cookie".',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _cookieController,
+            decoration: InputDecoration(
+              labelText: 'Cookie String',
+              border: const OutlineInputBorder(),
+              isDense: true,
+              errorText: _error,
+            ),
+            maxLines: 3,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Save'),
+        ),
+      ],
+    );
   }
 }

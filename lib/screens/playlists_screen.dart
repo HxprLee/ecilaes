@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,11 +21,12 @@ import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
 import '../theme/app_theme_style.dart';
-import '../widgets/sliver_page_header.dart';
+import '../widgets/components/sliver_page_header.dart';
 import '../widgets/playlist_dialogs.dart';
-import '../widgets/playlist_cover.dart';
-import '../widgets/standard_sliver_list.dart';
-import '../widgets/standard_sliver_grid.dart';
+import '../widgets/components/playlist_cover.dart';
+import '../widgets/components/standard_sliver_list.dart';
+import '../widgets/components/standard_sliver_grid.dart';
+import '../widgets/components/grid_card.dart';
 import '../models/playlist.dart';
 
 class PlaylistsScreen extends StatelessWidget {
@@ -61,26 +62,33 @@ class PlaylistsScreen extends StatelessWidget {
             if (isGrid)
               StandardSliverGrid<Playlist>(
                 items: allPlaylists,
-                childAspectRatio: 0.85,
                 leadingItems: [
-                  _PlaylistCard(
-                    playlist: Playlist(
-                      id: 'create',
-                      name: 'Create Playlist',
-                      songPaths: [],
-                      createdAt: DateTime.now(),
+                  GridCard(
+                    title: 'Create Playlist',
+                    image: PlaylistCover(
+                      playlist: Playlist(
+                        id: 'create',
+                        name: 'Create Playlist',
+                        songPaths: [],
+                        createdAt: DateTime.now(),
+                      ),
+                      borderRadius: 12,
+                      iconOverride: FontAwesomeIcons.plus,
                     ),
-                    icon: FontAwesomeIcons.plus,
-                    isAction: true,
                     onTap: () => CreatePlaylistDialog.show(context),
                   ),
                 ],
                 itemBuilder: (context, playlist, index) {
-                  return _PlaylistCard(
-                    playlist: playlist,
-                    icon: playlist.id == 'favorites'
-                        ? FontAwesomeIcons.solidHeart
-                        : FontAwesomeIcons.list,
+                  return GridCard(
+                    title: playlist.name,
+                    subtitle: '${playlist.songPaths.length} songs',
+                    image: PlaylistCover(
+                      playlist: playlist,
+                      borderRadius: 12,
+                      iconOverride: playlist.id == 'favorites'
+                          ? FontAwesomeIcons.solidHeart
+                          : FontAwesomeIcons.list,
+                    ),
                     onTap: () => context.go('/playlist/${playlist.id}'),
                   );
                 },
@@ -181,50 +189,5 @@ class PlaylistsScreen extends StatelessWidget {
       return Color.lerp(surface, Colors.white, 0.05)!;
     }
     return Theme.of(context).colorScheme.surfaceContainerHighest;
-  }
-}
-
-class _PlaylistCard extends StatelessWidget {
-  final Playlist playlist;
-  final FaIconData icon;
-  final VoidCallback onTap;
-  final bool isAction;
-
-  const _PlaylistCard({
-    required this.playlist,
-    required this.icon,
-    required this.onTap,
-    this.isAction = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(12),
-            child: PlaylistCover(
-              playlist: playlist,
-              borderRadius: 12,
-              iconOverride: icon,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          playlist.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.secondary,
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
   }
 }

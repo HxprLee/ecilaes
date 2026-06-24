@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@ import '../signals/queue_signal.dart' as q;
 import '../services/song_cache.dart';
 import '../models/song.dart';
 import '../models/history_entry.dart';
-import '../widgets/sliver_page_header.dart';
-import '../widgets/song_list_view.dart';
-import '../widgets/song_tile.dart';
-import '../widgets/song_grid_card.dart';
-import '../widgets/standard_sliver_grid.dart';
+import '../widgets/components/sliver_page_header.dart';
+import '../widgets/components/song_list_view.dart';
+import '../widgets/components/song_tile.dart';
+import '../widgets/components/song_grid_card.dart';
+import '../widgets/components/standard_sliver_grid.dart';
 
 class RecentlyPlayedScreen extends StatefulWidget {
   const RecentlyPlayedScreen({super.key});

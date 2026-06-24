@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -20,8 +20,8 @@ import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../models/song.dart';
 import '../services/YoutubeDatasource.dart';
-import '../widgets/sliver_page_header.dart';
-import '../widgets/song_list_view.dart';
+import '../widgets/components/sliver_page_header.dart';
+import '../widgets/components/song_list_view.dart';
 import '../widgets/song_actions_sheet.dart';
 
 class YtPlaylistScreen extends StatefulWidget {
@@ -86,6 +86,64 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
     final tracks = (_playlistData['tracks'] as List<Song>?) ?? [];
     final trackCount = _playlistData['trackCount'] ?? tracks.length;
 
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isSmallScreen = screenWidth < 600;
+
+    final playButton = ElevatedButton.icon(
+      onPressed: () => audioSignal.playSong(tracks.first, fromList: tracks),
+      icon: const FaIcon(FontAwesomeIcons.play, size: 14),
+      label: const Text('Play'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: cs.secondary,
+        foregroundColor: cs.onSecondary,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        shape: const StadiumBorder(),
+      ),
+    );
+
+    final shuffleButton = OutlinedButton(
+      onPressed: () {
+        final shuffled = List<Song>.from(tracks)..shuffle();
+        audioSignal.playSong(shuffled.first, fromList: shuffled);
+      },
+      style: OutlinedButton.styleFrom(
+        shape: const CircleBorder(),
+        padding: const EdgeInsets.all(12),
+        side: BorderSide(color: cs.secondary.withValues(alpha: 0.3)),
+      ),
+      child: FaIcon(
+        FontAwesomeIcons.shuffle,
+        size: 14,
+        color: cs.secondary,
+      ),
+    );
+
+    final moreOptionsMenu = PopupMenuButton<String>(
+      onSelected: (value) {
+        // Implement save to library in future
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'save',
+          child: Row(
+            children: [
+              Icon(Icons.bookmark_add_outlined, size: 20),
+              SizedBox(width: 12),
+              Text('Save to Library'),
+            ],
+          ),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        child: FaIcon(
+          FontAwesomeIcons.ellipsisVertical,
+          color: cs.onSurface.withValues(alpha: 0.54),
+          size: 20,
+        ),
+      ),
+    );
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
@@ -94,8 +152,8 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
             title: title,
             subtitle: [if (author.isNotEmpty) author, '$trackCount songs'].join(' • '),
             leading: Container(
-              width: 140,
-              height: 140,
+              width: isSmallScreen ? 120 : 140,
+              height: isSmallScreen ? 120 : 140,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 color: cs.surfaceContainerHighest,
@@ -120,10 +178,18 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
                     )
                   : null,
             ),
+            topActions: isSmallScreen ? [moreOptionsMenu] : null,
+            underTextActions: isSmallScreen && !_loading && tracks.isNotEmpty
+                ? [
+                    playButton,
+                    const SizedBox(width: 8),
+                    shuffleButton,
+                  ]
+                : null,
           ),
 
-          // Actions
-          if (!_loading && tracks.isNotEmpty)
+          // Actions (Desktop only)
+          if (!isSmallScreen && !_loading && tracks.isNotEmpty)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -153,6 +219,8 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       ),
                     ),
+                    const Spacer(),
+                    moreOptionsMenu,
                   ],
                 ),
               ),

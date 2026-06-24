@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -91,8 +91,6 @@ class LyricsService {
 
     // 3. Fallback chain
     // We try multiple providers in order of reliability/quality
-    final videoId = path.startsWith('yt:') ? path.substring(3) : null;
-
     final providersPref = settingsSignal.lyricsProviders.value;
     final enabledPrefs = settingsSignal.enabledLyricsProviders.value;
 
@@ -103,11 +101,6 @@ class LyricsService {
       switch (providerId) {
         case 'lrclib':
           fetcher = () => _fetchFromLrclib(title, artist, duration);
-          break;
-        case 'simpmusic':
-          if (videoId != null) {
-            fetcher = () => _fetchFromSimpMusic(videoId);
-          }
           break;
         case 'better_lyrics':
           fetcher = () => _fetchFromBetterLyrics(title, artist);
@@ -145,6 +138,37 @@ class LyricsService {
     final cleanTitle = _cleanQuery(title);
     final cleanArtist = _cleanQuery(artist);
 
+    // Try fast exact match first if duration is available
+    if (duration != null && duration.inSeconds > 0) {
+      final getUrl = Uri.https('lrclib.net', '/api/get', {
+        'track_name': cleanTitle,
+        'artist_name': cleanArtist,
+        'duration': duration.inSeconds.toString(),
+      });
+      
+      try {
+        final getResponse = await http
+            .get(getUrl, headers: {'User-Agent': 'Ecilaes/1.0.0 (https://github.com/hxprlee/ecilaes)'})
+            .timeout(const Duration(seconds: 5));
+            
+        if (getResponse.statusCode == 200) {
+          final data = jsonDecode(getResponse.body);
+          final syncedLyrics = data['syncedLyrics'] as String?;
+          if (syncedLyrics != null && syncedLyrics.trim().isNotEmpty) {
+            debugPrint('LyricsService: Found exact synced lyrics on lrclib.net');
+            return syncedLyrics;
+          }
+          final plainLyrics = data['plainLyrics'] as String?;
+          if (plainLyrics != null && plainLyrics.trim().isNotEmpty) {
+            debugPrint('LyricsService: Found exact plain lyrics on lrclib.net');
+            return _plainToLrc(plainLyrics);
+          }
+        }
+      } catch (e) {
+        debugPrint('LyricsService: lrclib.net exact GET error/timeout, falling back to search');
+      }
+    }
+
     final query = Uri.encodeQueryComponent('$cleanArtist $cleanTitle');
     final url = 'https://lrclib.net/api/search?q=$query';
 
@@ -153,8 +177,8 @@ class LyricsService {
     );
 
     final response = await http
-        .get(Uri.parse(url), headers: {'User-Agent': 'MusicApp/1.0'})
-        .timeout(const Duration(seconds: 8));
+        .get(Uri.parse(url), headers: {'User-Agent': 'Ecilaes/1.0.0 (https://github.com/hxprlee/ecilaes)'})
+        .timeout(const Duration(seconds: 10));
 
     if (response.statusCode == 200) {
       final List<dynamic> results = jsonDecode(response.body);
@@ -188,30 +212,6 @@ class LyricsService {
     return null;
   }
 
-  /// Fetch from SimpMusic API (videoId based)
-  Future<String?> _fetchFromSimpMusic(String videoId) async {
-    final url = 'https://api.simpmusic.org/lyrics?videoId=$videoId';
-
-    debugPrint('LyricsService: Searching SimpMusic for videoId: $videoId');
-
-    try {
-      final response = await http
-          .get(Uri.parse(url), headers: {'User-Agent': 'MusicApp/1.0'})
-          .timeout(const Duration(seconds: 8));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final lyrics = data['syncedLyrics'] as String?;
-        if (lyrics != null && lyrics.trim().isNotEmpty) {
-          debugPrint('LyricsService: Found lyrics on SimpMusic');
-          return lyrics;
-        }
-      }
-    } catch (e) {
-      debugPrint('LyricsService: SimpMusic error: $e');
-    }
-    return null;
-  }
 
   /// Fetch from KuGou API
   Future<String?> _fetchFromKuGou(
@@ -234,8 +234,8 @@ class LyricsService {
 
     try {
       final searchResponse = await http
-          .get(Uri.parse(searchUrl), headers: {'User-Agent': 'MusicApp/1.0'})
-          .timeout(const Duration(seconds: 8));
+          .get(Uri.parse(searchUrl), headers: {'User-Agent': 'Ecilaes/1.0.0 (https://github.com/hxprlee/ecilaes)'})
+          .timeout(const Duration(seconds: 10));
 
       if (searchResponse.statusCode == 200) {
         final searchData = jsonDecode(searchResponse.body);
@@ -258,9 +258,9 @@ class LyricsService {
         final downloadResponse = await http
             .get(
               Uri.parse(downloadUrl),
-              headers: {'User-Agent': 'MusicApp/1.0'},
+              headers: {'User-Agent': 'Ecilaes/1.0.0 (https://github.com/hxprlee/ecilaes)'},
             )
-            .timeout(const Duration(seconds: 8));
+            .timeout(const Duration(seconds: 10));
 
         if (downloadResponse.statusCode == 200) {
           final downloadData = jsonDecode(downloadResponse.body);
@@ -292,8 +292,8 @@ class LyricsService {
 
     try {
       final response = await http
-          .get(Uri.parse(url), headers: {'User-Agent': 'MusicApp/1.0'})
-          .timeout(const Duration(seconds: 8));
+          .get(Uri.parse(url), headers: {'User-Agent': 'Ecilaes/1.0.0 (https://github.com/hxprlee/ecilaes)'})
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

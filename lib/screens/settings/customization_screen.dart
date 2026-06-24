@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,10 +21,11 @@ import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
-import '../../theme/app_theme_style.dart';
 import '../../theme/app_theme_tokens.dart';
-import '../../widgets/settings/settings_section.dart';
-import '../../widgets/sliver_page_header.dart';
+import '../../theme/app_theme_style.dart';
+import '../../widgets/components/settings_section.dart';
+import '../../widgets/components/spinner_widget.dart';
+import '../../widgets/components/sliver_page_header.dart';
 
 class CustomizationScreen extends StatelessWidget {
   const CustomizationScreen({super.key});
@@ -86,7 +87,18 @@ class CustomizationScreen extends StatelessWidget {
                               subtitleColor: context.colorScheme.secondary
                                   .withValues(alpha: 0.8),
                               showLeading: false,
-                              trailing: _buildTextScaleSpinner(context, scale),
+                              trailing: SpinnerWidget(
+                                value: scale,
+                                min: 0.5,
+                                max: 2.0,
+                                step: 0.05,
+                                formatValue: (v) => '${(v * 100).round()}',
+                                parseValue: (s) {
+                                  final p = int.tryParse(s);
+                                  return p != null ? p / 100.0 : null;
+                                },
+                                onChanged: (v) => settingsSignal.updateTextScale(v),
+                              ),
                             );
                           }),
                         ],
@@ -281,7 +293,7 @@ class CustomizationScreen extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: _buildThemeStyleButton(context),
+            child: Watch((context) => _buildThemeStyleButton(context)),
           ),
         ],
       ),
@@ -306,68 +318,13 @@ class CustomizationScreen extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: _buildThemeModeButton(context),
+            child: Watch((context) => _buildThemeModeButton(context)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTextScaleSpinner(BuildContext context, double scale) {
-    final accentColor = context.colorScheme.secondary;
-    final onSurface = context.colorScheme.onSurface;
-    return Container(
-      decoration: BoxDecoration(
-        color: context.tokens.sidebarBackground,
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: onSurface.withValues(alpha: 0.12)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _AdwSpinnerButton(
-            icon: Icons.remove,
-            onTap: scale > 0.5
-                ? () => settingsSignal.updateTextScale(
-                    (scale - 0.05).clamp(0.5, 2.0),
-                  )
-                : null,
-            accentColor: accentColor,
-            isLeft: true,
-          ),
-          Container(
-            width: 1,
-            height: 32,
-            color: onSurface.withValues(alpha: 0.12),
-          ),
-          _TextScaleTextField(
-            scale: scale,
-            accentColor: accentColor,
-            onChanged: (value) {
-              final parsed = double.tryParse(value);
-              if (parsed != null) {
-                settingsSignal.updateTextScale((parsed / 100).clamp(0.5, 2.0));
-              }
-            },
-          ),
-          Container(
-            width: 1,
-            height: 32,
-            color: onSurface.withValues(alpha: 0.12),
-          ),
-          _AdwSpinnerButton(
-            icon: Icons.add,
-            onTap: scale < 2.0
-                ? () => settingsSignal.updateTextScale(
-                    (scale + 0.05).clamp(0.5, 2.0),
-                  )
-                : null,
-            accentColor: accentColor,
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildThemeStyleButton(BuildContext context) {
     return SegmentedButton<AppThemeStyle>(
@@ -417,148 +374,3 @@ class CustomizationScreen extends StatelessWidget {
   }
 }
 
-class _AdwSpinnerButton extends StatefulWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  final Color accentColor;
-  final bool isLeft;
-
-  const _AdwSpinnerButton({
-    required this.icon,
-    required this.onTap,
-    required this.accentColor,
-    this.isLeft = false,
-  });
-
-  @override
-  State<_AdwSpinnerButton> createState() => _AdwSpinnerButtonState();
-}
-
-class _AdwSpinnerButtonState extends State<_AdwSpinnerButton> {
-  bool _isHovered = false;
-  bool _isPressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = widget.onTap != null;
-
-    Color bgColor = Colors.transparent;
-    if (enabled) {
-      if (_isPressed) {
-        bgColor = widget.accentColor.withValues(alpha: 0.18);
-      } else if (_isHovered) {
-        bgColor = widget.accentColor.withValues(alpha: 0.10);
-      }
-    }
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _isPressed = true),
-        onTapUp: (_) => setState(() => _isPressed = false),
-        onTapCancel: () => setState(() => _isPressed = false),
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 100),
-          width: 38,
-          height: 32,
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(widget.isLeft ? 32 : 0),
-              bottomLeft: Radius.circular(widget.isLeft ? 32 : 0),
-              topRight: Radius.circular(widget.isLeft ? 0 : 32),
-              bottomRight: Radius.circular(widget.isLeft ? 0 : 32),
-            ),
-          ),
-          child: Center(
-            child: Icon(
-              widget.icon,
-              size: 16,
-              color: enabled
-                  ? widget.accentColor
-                  : widget.accentColor.withValues(alpha: 0.3),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TextScaleTextField extends StatefulWidget {
-  final double scale;
-  final Color accentColor;
-  final ValueChanged<String> onChanged;
-
-  const _TextScaleTextField({
-    required this.scale,
-    required this.accentColor,
-    required this.onChanged,
-  });
-
-  @override
-  State<_TextScaleTextField> createState() => _TextScaleTextFieldState();
-}
-
-class _TextScaleTextFieldState extends State<_TextScaleTextField> {
-  late TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(
-      text: '${(widget.scale * 100).round()}',
-    );
-  }
-
-  @override
-  void didUpdateWidget(_TextScaleTextField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final newValue = '${(widget.scale * 100).round()}';
-    if (_controller.text != newValue &&
-        int.tryParse(_controller.text) != (widget.scale * 100).round()) {
-      _controller.text = newValue;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 48,
-      height: 32,
-      child: Center(
-        child: TextField(
-          controller: _controller,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: context.colorScheme.onSurface,
-          ),
-          decoration: const InputDecoration(
-            isDense: true,
-            contentPadding: EdgeInsets.zero,
-            border: InputBorder.none,
-          ),
-          keyboardType: TextInputType.number,
-          onSubmitted: widget.onChanged,
-          onChanged: (value) {
-            final parsed = int.tryParse(value);
-            if (parsed != null) {
-              widget.onChanged(value);
-            }
-          },
-        ),
-      ),
-    );
-  }
-}

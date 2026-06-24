@@ -1,5 +1,5 @@
 // Ecilaes - Cross-platform music player
-// Copyright (C) 2024  Anton Borri
+// Copyright (C) 2024  hxprlee
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -18,10 +18,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
-import '../signals/audio_signal.dart';
-import '../services/album_art_cache.dart';
-import '../theme/app_theme_tokens.dart';
-import 'settings/settings_section.dart';
+import '../../signals/audio_signal.dart';
+import '../../services/album_art_cache.dart';
+import '../../theme/app_theme_tokens.dart';
+import 'settings_section.dart';
 
 class QuickActionCard extends StatefulWidget {
   final FaIconData icon;
