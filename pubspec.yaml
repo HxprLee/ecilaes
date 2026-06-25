@@ -23,6 +23,7 @@ dependencies:
   just_audio_media_kit: ^2.1.0
   media_kit_libs_linux: ^1.2.1
   media_kit_libs_android_audio: ^1.2.1
+  media_kit_libs_windows_audio: ^1.0.9
   font_awesome_flutter: ^11.0.0
   http: ^1.6.0
   dart_discord_presence: ^1.1.0

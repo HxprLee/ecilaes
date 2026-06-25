@@ -7,6 +7,7 @@
 # Produces:
 #   - Android: universal APK + ABI-split APKs (arm64-v8a, armeabi-v7a, x86_64)
 #   - Linux:   AppImage
+#   - Windows: ZIP (exe + DLLs)
 #
 # Signing note: APKs are signed with debug keystore by default.
 # For production, add key.properties + ANDROID_KEYSTORE_* secrets.
@@ -111,9 +112,36 @@ jobs:
           path: build/release/*.AppImage
           if-no-files-found: error
 
+  windows:
+    name: Build Windows ZIP
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Package ZIP
+        run: |
+          Compress-Archive -Path build/windows/runner/Release/* -DestinationPath ecilaes-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: ecilaes-windows-x64.zip
+          if-no-files-found: error
+
   release:
     name: Create Release
-    needs: [android, linux]
+    needs: [android, linux, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -143,6 +171,8 @@ jobs:
           ls -lh android-apks/ 2>/dev/null || echo "(empty)"
           echo "=== linux-appimage ==="
           ls -lh linux-appimage/ 2>/dev/null || echo "(empty)"
+          echo "=== windows-zip ==="
+          ls -lh windows-zip/ 2>/dev/null || echo "(empty)"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -152,5 +182,6 @@ jobs:
           files: |
             android-apks/app-*.apk
             linux-appimage/*.AppImage
+            windows-zip/ecilaes-windows-x64.zip
           generate_release_notes: true
           fail_on_unmatched_files: true
