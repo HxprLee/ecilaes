@@ -70,113 +70,149 @@ class SearchSignal {
 
   void _initEffects() {
     // Search suggestions effect
-    _effectDisposals.add(effect(() {
-      final query = searchQuery.value;
-      _suggestionsDebounce?.cancel();
+    _effectDisposals.add(
+      effect(() {
+        final query = searchQuery.value;
+        _suggestionsDebounce?.cancel();
 
-      if (query.isEmpty) {
-        searchSuggestions.value = [];
-        return;
-      }
-
-      _suggestionsDebounce = Timer(const Duration(milliseconds: 300), () async {
-        try {
-          final suggestions = await youtubeDatasource.getSearchSuggestions(query.trim());
-          searchSuggestions.value = suggestions;
-        } catch (e) {
-          debugPrint('Search suggestions error: $e');
+        if (query.isEmpty) {
+          searchSuggestions.value = [];
+          return;
         }
-      });
-    }));
+
+        _suggestionsDebounce = Timer(
+          const Duration(milliseconds: 300),
+          () async {
+            try {
+              final suggestions = await youtubeDatasource.getSearchSuggestions(
+                query.trim(),
+              );
+              searchSuggestions.value = suggestions;
+            } catch (e) {
+              debugPrint('Search suggestions error: $e');
+            }
+          },
+        );
+      }),
+    );
 
     // Local search effect
-    _effectDisposals.add(effect(() {
-      final query = searchQuery.value;
-      final filter = localSearchFilter.value;
-      _localSearchDebounce?.cancel();
+    _effectDisposals.add(
+      effect(() {
+        final query = searchQuery.value;
+        final filter = localSearchFilter.value;
+        _localSearchDebounce?.cancel();
 
-      if (query.isEmpty) {
-        localSearchResults.value = [];
-        localSearchPlaylists.value = [];
-        localSearchAlbums.value = [];
-        localSearchArtists.value = [];
-        localSearchFolders.value = [];
-        return;
-      }
-
-      _localSearchDebounce = Timer(const Duration(milliseconds: 150), () {
-        localSearchResults.value = [];
-        localSearchPlaylists.value = [];
-        localSearchAlbums.value = [];
-        localSearchArtists.value = [];
-        localSearchFolders.value = [];
-
-        final allSongs = audioSignal.allSongs.value;
-
-        switch (filter) {
-          case LocalSearchFilter.songs:
-            localSearchResults.value = LocalSearchService.searchSongs(query, allSongs);
-            break;
-          case LocalSearchFilter.playlists:
-            localSearchPlaylists.value = LocalSearchService.searchPlaylists(query, audioSignal.playlists.value);
-            break;
-          case LocalSearchFilter.albums:
-            localSearchAlbums.value = LocalSearchService.searchAlbums(query, audioSignal.albums.value);
-            break;
-          case LocalSearchFilter.artists:
-            localSearchArtists.value = LocalSearchService.searchArtists(query, audioSignal.artists.value);
-            break;
-          case LocalSearchFilter.folders:
-            localSearchFolders.value = LocalSearchService.searchFolders(query, allSongs);
-            break;
+        if (query.isEmpty) {
+          localSearchResults.value = [];
+          localSearchPlaylists.value = [];
+          localSearchAlbums.value = [];
+          localSearchArtists.value = [];
+          localSearchFolders.value = [];
+          return;
         }
-      });
-    }));
+
+        _localSearchDebounce = Timer(const Duration(milliseconds: 150), () {
+          localSearchResults.value = [];
+          localSearchPlaylists.value = [];
+          localSearchAlbums.value = [];
+          localSearchArtists.value = [];
+          localSearchFolders.value = [];
+
+          final allSongs = audioSignal.allSongs.value;
+
+          switch (filter) {
+            case LocalSearchFilter.songs:
+              localSearchResults.value = LocalSearchService.searchSongs(
+                query,
+                allSongs,
+              );
+              break;
+            case LocalSearchFilter.playlists:
+              localSearchPlaylists.value = LocalSearchService.searchPlaylists(
+                query,
+                audioSignal.playlists.value,
+              );
+              break;
+            case LocalSearchFilter.albums:
+              localSearchAlbums.value = LocalSearchService.searchAlbums(
+                query,
+                audioSignal.albums.value,
+              );
+              break;
+            case LocalSearchFilter.artists:
+              localSearchArtists.value = LocalSearchService.searchArtists(
+                query,
+                audioSignal.artists.value,
+              );
+              break;
+            case LocalSearchFilter.folders:
+              localSearchFolders.value = LocalSearchService.searchFolders(
+                query,
+                allSongs,
+              );
+              break;
+          }
+        });
+      }),
+    );
 
     // YouTube search effect
-    _effectDisposals.add(effect(() {
-      final query = searchQuery.value;
-      final filter = ytSearchFilter.value;
-      _searchDebounce?.cancel();
+    _effectDisposals.add(
+      effect(() {
+        final query = searchQuery.value;
+        final filter = ytSearchFilter.value;
+        _searchDebounce?.cancel();
 
-      if (query.isEmpty) {
-        youtubeSearchResults.value = [];
-        ytSearchResults.value = [];
-        _ytSearchLoadedCount = 0;
-        hasMoreYtResults.value = false;
-        return;
-      }
-
-      _searchDebounce = Timer(const Duration(milliseconds: 700), () async {
-        try {
-          final trimmedQuery = query.trim();
-          if (trimmedQuery.isEmpty) return;
-
-          isSearchingYoutube.value = true;
-          debugPrint('SearchSignal: Debounced search for "$trimmedQuery" (filter: $filter) starting...');
-
+        if (query.isEmpty) {
+          youtubeSearchResults.value = [];
+          ytSearchResults.value = [];
           _ytSearchLoadedCount = 0;
           hasMoreYtResults.value = false;
-
-          final rawResults = await youtubeService.search(trimmedQuery, filter: filter, limit: 20);
-          _ytSearchLoadedCount = rawResults.length;
-          hasMoreYtResults.value = rawResults.length >= 20;
-          ytSearchResults.value = rawResults;
-          
-          if (filter == SearchFilter.songs || filter == null) {
-            youtubeSearchResults.value = rawResults.map((s) => youtubeDatasource.mapToSong(s)).toList();
-          } else {
-            youtubeSearchResults.value = [];
-          }
-          
-          debugPrint('SearchSignal: Search results updated (${rawResults.length} items)');
-        } catch (e) {
-          debugPrint('SearchSignal: YouTube search error: $e');
-        } finally {
-          isSearchingYoutube.value = false;
+          return;
         }
-      });
-    }));
+
+        _searchDebounce = Timer(const Duration(milliseconds: 700), () async {
+          try {
+            final trimmedQuery = query.trim();
+            if (trimmedQuery.isEmpty) return;
+
+            isSearchingYoutube.value = true;
+            debugPrint(
+              'SearchSignal: Debounced search for "$trimmedQuery" (filter: $filter) starting...',
+            );
+
+            _ytSearchLoadedCount = 0;
+            hasMoreYtResults.value = false;
+
+            final rawResults = await youtubeService.search(
+              trimmedQuery,
+              filter: filter,
+              limit: 20,
+            );
+            _ytSearchLoadedCount = rawResults.length;
+            hasMoreYtResults.value = rawResults.length >= 20;
+            ytSearchResults.value = rawResults;
+
+            if (filter == SearchFilter.songs || filter == null) {
+              youtubeSearchResults.value = rawResults
+                  .map((s) => youtubeDatasource.mapToSong(s))
+                  .toList();
+            } else {
+              youtubeSearchResults.value = [];
+            }
+
+            debugPrint(
+              'SearchSignal: Search results updated (${rawResults.length} items)',
+            );
+          } catch (e) {
+            debugPrint('SearchSignal: YouTube search error: $e');
+          } finally {
+            isSearchingYoutube.value = false;
+          }
+        });
+      }),
+    );
   }
 
   Future<void> loadMoreYtResults() async {
@@ -207,7 +243,9 @@ class SearchSignal {
 
       final currentSongs = List<Song>.from(youtubeSearchResults.value);
       if (filter == SearchFilter.songs || filter == null) {
-        currentSongs.addAll(newItems.map((s) => youtubeDatasource.mapToSong(s)));
+        currentSongs.addAll(
+          newItems.map((s) => youtubeDatasource.mapToSong(s)),
+        );
         youtubeSearchResults.value = currentSongs;
       }
 
@@ -246,7 +284,8 @@ class SearchSignal {
   }
 
   Future<void> loadExploreData({bool force = false}) async {
-    if (!force && (exploreData.value.isNotEmpty || isLoadingExplore.value)) return;
+    if (!force && (exploreData.value.isNotEmpty || isLoadingExplore.value))
+      return;
     if (force && isLoadingExplore.value) return;
 
     if (!force) {
@@ -291,7 +330,6 @@ class SearchSignal {
     _suggestionsDebounce?.cancel();
     _suggestionsDebounce = null;
   }
-
 }
 
 final searchSignal = SearchSignal();

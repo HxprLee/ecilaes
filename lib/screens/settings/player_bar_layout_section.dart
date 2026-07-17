@@ -229,7 +229,8 @@ class PlayerBarLayoutSection extends StatelessWidget {
     String targetCollection,
     int targetIndex,
   ) {
-    if (data.sourceCollection == targetCollection && data.index == targetIndex) {
+    if (data.sourceCollection == targetCollection &&
+        data.index == targetIndex) {
       return;
     }
 
