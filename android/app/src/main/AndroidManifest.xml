@@ -13,9 +13,7 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="false"
-        android:usesCleartextTraffic="true"
-        android:extractNativeLibs="true"
-        tools:replace="android:extractNativeLibs">
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
