@@ -148,7 +148,12 @@ jobs:
         run: choco install innosetup --no-progress
 
       - name: Build installer
-        run: iscc packaging/windows/setup.iss "/DMyAppVersion=${{ steps.version.outputs.version }}"
+        shell: pwsh
+        run: |
+          iscc windows/setup.iss `
+            /DMyAppVersion="${{ steps.version.outputs.version }}" `
+            /DSourceDir="${{ github.workspace }}\build\windows\x64\runner\Release" `
+            /DOutputDir="${{ github.workspace }}\build\windows\installer"
 
       - uses: actions/upload-artifact@v4
         with:
