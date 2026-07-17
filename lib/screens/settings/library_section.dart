@@ -14,17 +14,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import 'dart:io';
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
-import 'package:signals/signals_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:signals/signals_flutter.dart';
 import '../../signals/settings_signal.dart';
 import '../../signals/audio_signal.dart';
+import '../../router/routes.dart';
+import '../../services/YoutubeDatasource.dart';
 import '../../theme/app_theme_tokens.dart';
+import '../../utils/navigation.dart';
 import '../../widgets/components/app_dialog.dart';
 import '../../widgets/components/settings_section.dart';
 import '../../widgets/components/sliver_page_header.dart';
@@ -49,125 +48,6 @@ class LibrarySection extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 24),
-
-                    // Music Sources
-                    const SettingsSectionLabel('Music Sources'),
-                    SettingsSection(
-                      child: Column(
-                        children: [
-                          Watch((context) {
-                            final hasCookie = settingsSignal.ytAuthCookie.value != null && settingsSignal.ytAuthCookie.value!.isNotEmpty;
-                            return SettingsTile(
-                              icon: FontAwesomeIcons.youtube,
-                              title: 'YouTube Music Account',
-                              subtitle: hasCookie ? 'Connected' : 'Not connected',
-                              trailing: hasCookie
-                                  ? TextButton(
-                                      onPressed: () async {
-                                        await settingsSignal.updateYtAuthCookie(null);
-                                        audioSignal.reindexLibrary();
-                                      },
-                                      style: TextButton.styleFrom(
-                                        foregroundColor: Theme.of(context).colorScheme.error,
-                                      ),
-                                      child: const Text('Disconnect'),
-                                    )
-                                  : const Icon(Icons.chevron_right, size: 20),
-                              onTap: hasCookie
-                                  ? null
-                                  : () {
-                                      if (!kIsWeb && Platform.isLinux) {
-                                        // WebView on Linux AppImage is finicky, use manual fallback
-                                        showDialog(
-                                          context: context,
-                                          builder: (context) => const _YtAuthDialog(),
-                                        );
-                                      } else {
-                                        context.go('/settings/library/youtube-login');
-                                      }
-                                    },
-                            );
-                          }),
-                          const SettingsDivider(indent: 16),
-                          // Current directory
-                          Watch((context) {
-                            final currentDir =
-                                settingsSignal.musicDirectory.value;
-                            return SettingsTile(
-                              icon: Icons.folder,
-                              title: 'Music Directory',
-                              subtitleWidget: FutureBuilder<String>(
-                                future: audioSignal.getMusicPath(),
-                                builder: (context, snapshot) {
-                                  return Text(
-                                    snapshot.data ?? 'Loading...',
-                                    style: TextStyle(
-                                      color: context.colorScheme.onSurface
-                                          .withValues(alpha: 0.54),
-                                      fontSize: 12,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  );
-                                },
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (currentDir != null)
-                                    IconButton(
-                                      onPressed: () async {
-                                        await settingsSignal
-                                            .updateMusicDirectory(null);
-                                        audioSignal.reindexLibrary();
-                                      },
-                                      icon: Icon(
-                                        Icons.restore,
-                                        color: context.colorScheme.onSurface
-                                            .withValues(alpha: 0.54),
-                                      ),
-                                      tooltip: 'Reset to default',
-                                    ),
-                                ],
-                              ),
-                              onTap: () => _pickDirectory(context),
-                            );
-                          }),
-
-                          // Change folder button
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              left: 16,
-                              right: 16,
-                              bottom: 16,
-                              top: 8,
-                            ),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: () => _pickDirectory(context),
-                                icon: Icon(Icons.folder_open, size: 18),
-                                label: Text('Change Folder'),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor:
-                                      context.colorScheme.secondary,
-                                  foregroundColor:
-                                      context.colorScheme.surface,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(36),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
                     const SizedBox(height: 24),
 
                     // Storage Management
@@ -288,7 +168,7 @@ class LibrarySection extends StatelessWidget {
                             onTap: () {
                               debugPrint(
                                   'MANAGE_CACHES: pushing /settings/library/manage_cache');
-                              context.push('/settings/library/manage_cache');
+                              navigatePush(context, AppRoutes.settingsLibraryManageCache);
                             },
                           ),
                         ],
@@ -582,7 +462,16 @@ class _YtAuthDialogState extends State<_YtAuthDialog> {
     // Strip out any non-ascii characters that might crash the HTTP client
     final sanitizedCookie = cookie.replaceAll(RegExp(r'[^\x20-\x7E]'), '');
 
-    await settingsSignal.updateYtAuthCookie(sanitizedCookie);
+    // Fetch account name in the background so we can store it
+    String? username;
+    try {
+      // Temporarily set the cookie so getAccountName can use it
+      await settingsSignal.updateYtAuthCookie(sanitizedCookie);
+      final datasource = YoutubeDatasource();
+      username = await datasource.getAccountName();
+    } catch (_) {}
+
+    await settingsSignal.updateYtAuthCookie(sanitizedCookie, username: username);
     audioSignal.reindexLibrary();
     if (mounted) {
       Navigator.of(context).pop();

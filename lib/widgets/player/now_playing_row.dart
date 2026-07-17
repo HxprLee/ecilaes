@@ -20,6 +20,7 @@ import 'package:signals/signals_flutter.dart';
 import 'package:audio_service/audio_service.dart';
 import '../../models/song.dart';
 import '../../signals/audio_signal.dart';
+import '../../services/album_art_cache.dart';
 import '../../services/YoutubeDatasource.dart';
 
 /// Sticky "Now playing" row at the top of the Up Next section. Renders the
@@ -210,20 +211,26 @@ class _Artwork extends StatelessWidget {
         errorBuilder: (_, _, _) => fallbackIcon,
       );
     }
-    return Watch((context) {
-      final artDir = audioSignal.albumArtDir.value;
-      if (artDir == null) return fallbackIcon;
-      final file = File('$artDir/${song.path.hashCode.abs()}.jpg');
-      if (file.existsSync()) {
-        return Image.file(
-          file,
-          fit: BoxFit.cover,
-          cacheWidth: (size * 2).toInt(),
-          cacheHeight: (size * 2).toInt(),
-          errorBuilder: (_, _, _) => fallbackIcon,
-        );
-      }
-      return fallbackIcon;
-    });
+    final known = audioSignal.songMap.value[song.path];
+    if (known == null) {
+      final cachedPath = AlbumArtCache().getArtPathSync(song.path);
+      if (cachedPath == null) return fallbackIcon;
+      return Image.file(
+        File(cachedPath),
+        fit: BoxFit.cover,
+        cacheWidth: (size * 2).toInt(),
+        cacheHeight: (size * 2).toInt(),
+        errorBuilder: (_, _, _) => fallbackIcon,
+      );
+    }
+    final artDir = audioSignal.albumArtDir.value;
+    if (artDir == null) return fallbackIcon;
+    return Image.file(
+      File('$artDir/${song.path.hashCode.abs()}.jpg'),
+      fit: BoxFit.cover,
+      cacheWidth: (size * 2).toInt(),
+      cacheHeight: (size * 2).toInt(),
+      errorBuilder: (_, _, _) => fallbackIcon,
+    );
   }
 }

@@ -17,7 +17,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
+import '../../../utils/navigation.dart';
 
 class MobileNavBar extends StatelessWidget {
   final String location;
@@ -84,7 +84,7 @@ class MobileNavBar extends StatelessWidget {
     return Expanded(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: route != null ? () => context.go(route) : null,
+        onTap: route != null ? () => navigateGo(context, route) : null,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

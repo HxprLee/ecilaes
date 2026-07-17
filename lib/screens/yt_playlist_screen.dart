@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
+import '../signals/search_signal.dart';
 import '../models/song.dart';
 import '../services/YoutubeDatasource.dart';
 import '../widgets/components/sliver_page_header.dart';
@@ -74,6 +75,13 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
         audioSignal.headerArtCover.value = thumb;
         audioSignal.headerArtCoverIsNetwork.value = true;
       }
+      final tracks = data['tracks'] as List<Song>? ?? [];
+      if (tracks.isNotEmpty) {
+        searchSignal.ytBrowseResults.value = [
+          ...searchSignal.ytBrowseResults.value,
+          ...tracks,
+        ];
+      }
     }
   }
 
@@ -102,10 +110,7 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
     );
 
     final shuffleButton = OutlinedButton(
-      onPressed: () {
-        final shuffled = List<Song>.from(tracks)..shuffle();
-        audioSignal.playSong(shuffled.first, fromList: shuffled);
-      },
+      onPressed: () => audioSignal.playShuffledFromList(tracks),
       style: OutlinedButton.styleFrom(
         shape: const CircleBorder(),
         padding: const EdgeInsets.all(12),
@@ -207,10 +212,7 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
                     ),
                     const SizedBox(width: 12),
                     OutlinedButton.icon(
-                      onPressed: () {
-                        final shuffled = List<Song>.from(tracks)..shuffle();
-                        audioSignal.playSong(shuffled.first, fromList: shuffled);
-                      },
+                      onPressed: () => audioSignal.playShuffledFromList(tracks),
                       icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
                       label: const Text('Shuffle'),
                       style: OutlinedButton.styleFrom(

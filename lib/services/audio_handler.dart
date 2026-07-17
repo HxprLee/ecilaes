@@ -19,6 +19,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -54,15 +55,7 @@ class MyAudioHandler extends BaseAudioHandler {
   final AudioPlayer _player = AudioPlayer();
 
   int _currentIndex = 0;
-  AudioServiceShuffleMode _shuffleMode = AudioServiceShuffleMode.none;
   AudioServiceRepeatMode _repeatMode = AudioServiceRepeatMode.none;
-
-  // Shuffle state. _shuffledIndices maps a "shuffle position" to a queue
-  // index; the current song is always at shuffle-position 0.
-  List<int> _shuffledIndices = [];
-  final StreamController<List<int>> _shuffleIndicesController =
-      StreamController<List<int>>.broadcast();
-  Stream<List<int>> get shuffleIndicesStream => _shuffleIndicesController.stream;
 
   // Load generation — bumped on every new playSong/skipToNext. In-flight
   // loads capture this value and bail out if it changes before they finish.
@@ -82,11 +75,16 @@ class MyAudioHandler extends BaseAudioHandler {
   // Radio queue auto-fill guard
   bool _isFillingRadio = false;
   Timer? _radioFillDebounce;
+  int _radioFillAttempts = 0;
+  String? _lastRadioSeedVideoId;
 
   // Audio normalization
   bool _normalizationEnabled = false;
   double _normalizationTargetLufs = -14.0;
   final Map<String, double> _gainMap = {};
+
+  // Playback speed & pitch — applied to _player via setPlaybackSpeed/setPlaybackPitch
+  // and read back through player.speed / player.pitch streams.
 
   MyAudioHandler() {
     _init();
@@ -107,40 +105,45 @@ class MyAudioHandler extends BaseAudioHandler {
     _normalizationTargetLufs = settingsSignal.normalizationTargetLufs.value;
 
     _subscriptions.add(_player.playerStateStream.listen(_onPlayerStateChanged));
-    _subscriptions
-        .add(_player.processingStateStream.listen(_onProcessingStateChanged));
+    _subscriptions.add(
+      _player.processingStateStream.listen(_onProcessingStateChanged),
+    );
     _subscriptions.add(_player.durationStream.listen(_onDurationChanged));
-    _subscriptions.add(mediaItem.listen((item) {
-      if (!_isDisposed && item != null) _updateWidget();
-    }));
+    _subscriptions.add(
+      mediaItem.listen((item) {
+        if (!_isDisposed && item != null) _updateWidget();
+      }),
+    );
   }
 
   void _onPlayerStateChanged(PlayerState state) {
     if (_isDisposed) return;
     final playing = state.playing;
 
-    playbackState.add(playbackState.value.copyWith(
-      controls: [
-        MediaControl.skipToPrevious,
-        if (playing) MediaControl.pause else MediaControl.play,
-        MediaControl.stop,
-        MediaControl.skipToNext,
-      ],
-      systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-      },
-      androidCompactActionIndices: const [0, 1, 3],
-      processingState: _mapProcessingState(state.processingState),
-      playing: playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-      queueIndex: _currentIndex,
-      shuffleMode: _shuffleMode,
-      repeatMode: _repeatMode,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: [
+          MediaControl.skipToPrevious,
+          if (playing) MediaControl.pause else MediaControl.play,
+          MediaControl.stop,
+          MediaControl.skipToNext,
+        ],
+        systemActions: const {
+          MediaAction.seek,
+          MediaAction.seekForward,
+          MediaAction.seekBackward,
+        },
+        androidCompactActionIndices: const [0, 1, 3],
+        processingState: _mapProcessingState(state.processingState),
+        playing: playing,
+        updatePosition: _player.position,
+        bufferedPosition: _player.bufferedPosition,
+        speed: _player.speed,
+        queueIndex: _currentIndex,
+        shuffleMode: AudioServiceShuffleMode.none,
+        repeatMode: _repeatMode,
+      ),
+    );
     _updateWidget();
     _handleHistoryTracking(playing);
   }
@@ -148,6 +151,14 @@ class MyAudioHandler extends BaseAudioHandler {
   void _onProcessingStateChanged(ProcessingState state) {
     if (_isDisposed) return;
     if (state != ProcessingState.completed) return;
+
+    // Advance the radio seed so the continuation chain stays fresh.
+    final current = mediaItem.value;
+    if (current != null &&
+        current.id.startsWith('yt:') &&
+        audioSignal.isRadioMode.value) {
+      audioSignal.advanceRadioSeed(current.id.substring(3));
+    }
 
     if (_repeatMode == AudioServiceRepeatMode.one) {
       _player.seek(Duration.zero);
@@ -194,20 +205,39 @@ class MyAudioHandler extends BaseAudioHandler {
 
     _gainMap
       ..clear()
-      ..addEntries(songs
-          .where((s) => s.gainDb != 0.0)
-          .map((s) => MapEntry(s.path, s.gainDb)));
+      ..addEntries(
+        songs
+            .where((s) => s.gainDb != 0.0)
+            .map((s) => MapEntry(s.path, s.gainDb)),
+      );
 
     final mediaItems = songs.map(_toMediaItem).toList(growable: false);
 
     queue.add(mediaItems);
     _currentIndex = 0;
-    _shuffledIndices = const [];
+  }
 
-    if (_shuffleMode == AudioServiceShuffleMode.all) {
-      _generateShuffledIndices();
+  /// Reorder the handler's queue to [songs] while preserving the
+  /// currently playing song. The handler's [_currentIndex] is updated to
+  /// follow the same song in the new order (matched by `path`); if the
+  /// song isn't present, [_currentIndex] is set to 0 and the caller is
+  /// expected to drive playback. Does NOT restart the underlying
+  /// player.
+  Future<void> reorderQueue(List<Song> songs) async {
+    final mediaItems = songs.map(_toMediaItem).toList(growable: false);
+
+    final currentPath =
+        (_currentIndex >= 0 && _currentIndex < queue.value.length)
+        ? queue.value[_currentIndex].id
+        : null;
+
+    queue.add(mediaItems);
+
+    if (currentPath != null) {
+      final newIndex = mediaItems.indexWhere((item) => item.id == currentPath);
+      _currentIndex = newIndex == -1 ? 0 : newIndex;
     } else {
-      _shuffleIndicesController.add(const []);
+      _currentIndex = 0;
     }
   }
 
@@ -217,7 +247,9 @@ class MyAudioHandler extends BaseAudioHandler {
     if (cached != null) {
       artUri = Uri.file(cached);
     } else if (song.path.startsWith('yt:')) {
-      artUri = Uri.parse(youtubeDatasource.getArtworkUrl(song.path.substring(3)));
+      artUri = Uri.parse(
+        youtubeDatasource.getArtworkUrl(song.path.substring(3)),
+      );
     }
 
     return MediaItem(
@@ -231,13 +263,21 @@ class MyAudioHandler extends BaseAudioHandler {
     );
   }
 
+  /// Add a batch of songs as a single radio fill operation.
+  /// Does NOT cancel pending radio fills — use this instead of multiple addQueueItem calls.
+  Future<void> addRadioBatch(List<MediaItem> items) async {
+    if (items.isEmpty) return;
+    final newQueue = [...queue.value, ...items];
+    queue.add(newQueue);
+    _syncQueueSignal();
+  }
+
   @override
   Future<void> addQueueItem(MediaItem mediaItem) async {
+    // User manually added to queue — cancel any pending radio fill.
+    _radioFillDebounce?.cancel();
+    _radioFillAttempts = 0;
     final newQueue = [...queue.value, mediaItem];
-    if (_shuffleMode == AudioServiceShuffleMode.all) {
-      _shuffledIndices.add(newQueue.length - 1);
-      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-    }
     queue.add(newQueue);
     _syncQueueSignal();
   }
@@ -247,19 +287,14 @@ class MyAudioHandler extends BaseAudioHandler {
     final id = mediaItem.id;
     final current = List<MediaItem>.from(queue.value);
 
-    final indices =
-        [for (var i = 0; i < current.length; i++) if (current[i].id == id) i];
+    final indices = [
+      for (var i = 0; i < current.length; i++)
+        if (current[i].id == id) i,
+    ];
     if (indices.isEmpty) return;
 
     for (final index in indices.reversed) {
       current.removeAt(index);
-
-      if (_shuffledIndices.isNotEmpty) {
-        _shuffledIndices.remove(index);
-        for (var i = 0; i < _shuffledIndices.length; i++) {
-          if (_shuffledIndices[i] > index) _shuffledIndices[i]--;
-        }
-      }
 
       if (index < _currentIndex) {
         _currentIndex--;
@@ -268,92 +303,52 @@ class MyAudioHandler extends BaseAudioHandler {
       }
     }
 
-    if (_shuffledIndices.isNotEmpty) {
-      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-    }
     queue.add(current);
     _syncQueueSignal();
   }
 
   @override
   Future<void> insertQueueItem(int index, MediaItem mediaItem) async {
+    // User manually inserted to queue — cancel any pending radio fill.
+    _radioFillDebounce?.cancel();
+    _radioFillAttempts = 0;
     final current = List<MediaItem>.from(queue.value);
     final clamped = index.clamp(0, current.length);
     current.insert(clamped, mediaItem);
-
-    if (_shuffledIndices.isNotEmpty) {
-      for (var i = 0; i < _shuffledIndices.length; i++) {
-        if (_shuffledIndices[i] >= clamped) _shuffledIndices[i]++;
-      }
-      final currentShuffledPos = _shuffledIndices.indexOf(_currentIndex);
-      if (currentShuffledPos != -1) {
-        _shuffledIndices.insert(currentShuffledPos + 1, clamped);
-      } else {
-        _shuffledIndices.add(clamped);
-      }
-      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-    }
 
     if (clamped <= _currentIndex) _currentIndex++;
     queue.add(current);
     _syncQueueSignal();
   }
 
+  @override
   Future<void> removeQueueItemAt(int index) async {
     final current = List<MediaItem>.from(queue.value);
-    
-    int realIndex = index;
-    if (_shuffledIndices.isNotEmpty) {
-      if (index < 0 || index >= _shuffledIndices.length) return;
-      realIndex = _shuffledIndices[index];
-    }
-    
-    if (realIndex < 0 || realIndex >= current.length) return;
-    
-    current.removeAt(realIndex);
 
-    if (_shuffledIndices.isNotEmpty) {
-      _shuffledIndices.removeAt(index);
-      for (var i = 0; i < _shuffledIndices.length; i++) {
-        if (_shuffledIndices[i] > realIndex) _shuffledIndices[i]--;
-      }
-    }
+    if (index < 0 || index >= current.length) return;
 
-    if (realIndex < _currentIndex) {
+    current.removeAt(index);
+
+    if (index < _currentIndex) {
       _currentIndex--;
-    } else if (realIndex == _currentIndex && _currentIndex >= current.length) {
+    } else if (index == _currentIndex && _currentIndex >= current.length) {
       _currentIndex = current.isEmpty ? 0 : current.length - 1;
     }
 
-    if (_shuffledIndices.isNotEmpty) {
-      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-    }
-    
     queue.add(current);
     _syncQueueSignal();
   }
 
   Future<void> moveQueueItem(int oldIndex, int newIndex) async {
     final current = List<MediaItem>.from(queue.value);
-    
-    if (_shuffledIndices.isNotEmpty) {
-      if (oldIndex < 0 || oldIndex >= _shuffledIndices.length) return;
-      if (newIndex < 0 || newIndex > _shuffledIndices.length) return;
-      final item = _shuffledIndices.removeAt(oldIndex);
-      final adjustedNewIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
-      _shuffledIndices.insert(adjustedNewIndex, item);
-      _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-      _syncQueueSignal();
-      return;
-    }
-    
+
     if (oldIndex < 0 || oldIndex >= current.length) return;
     if (newIndex < 0 || newIndex > current.length) return;
-    
+
     final item = current.removeAt(oldIndex);
     final adjustedNewIndex = newIndex > oldIndex ? newIndex - 1 : newIndex;
     current.insert(adjustedNewIndex, item);
-    
+
     if (_currentIndex == oldIndex) {
       _currentIndex = adjustedNewIndex;
     } else if (oldIndex < _currentIndex && adjustedNewIndex >= _currentIndex) {
@@ -361,7 +356,7 @@ class MyAudioHandler extends BaseAudioHandler {
     } else if (oldIndex > _currentIndex && adjustedNewIndex <= _currentIndex) {
       _currentIndex++;
     }
-    
+
     queue.add(current);
     _syncQueueSignal();
   }
@@ -369,23 +364,11 @@ class MyAudioHandler extends BaseAudioHandler {
   // ---------------------------------------------------------------------------
   // Shuffle / repeat
   // ---------------------------------------------------------------------------
-
-  @override
-  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
-    _shuffleMode = shuffleMode;
-    if (shuffleMode == AudioServiceShuffleMode.all) {
-      if (_shuffledIndices.isEmpty) {
-        _generateShuffledIndices();
-      }
-    } else {
-      if (_shuffledIndices.isNotEmpty) {
-        _currentIndex = _shuffledIndices[_currentIndex];
-      }
-      _shuffledIndices = const [];
-      _shuffleIndicesController.add(const []);
-    }
-    playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
-  }
+  //
+  // Shuffle is managed entirely by [QueueSignal] which hands the handler a
+  // queue already in play order. The handler only forwards the
+  // `AudioServiceShuffleMode.none` value to the platform so that lock-screen
+  // and notification surfaces see a coherent (no-shuffle) state.
 
   @override
   Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
@@ -393,51 +376,24 @@ class MyAudioHandler extends BaseAudioHandler {
     playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
   }
 
-  void _generateShuffledIndices() {
-    final count = queue.value.length;
-    if (count == 0) return;
-    _shuffledIndices = List<int>.generate(count, (i) => i)..shuffle();
-    _shuffledIndices.remove(_currentIndex);
-    _shuffledIndices.insert(0, _currentIndex);
-    _shuffleIndicesController.add(List<int>.from(_shuffledIndices));
-  }
-
   int _getNextIndex() {
     final count = queue.value.length;
     if (count == 0) return 0;
     if (_repeatMode == AudioServiceRepeatMode.one) return _currentIndex;
 
-    if (_shuffleMode == AudioServiceShuffleMode.none || _shuffledIndices.isEmpty) {
-      final next = _currentIndex + 1;
-      if (next < count) return next;
-      return _repeatMode == AudioServiceRepeatMode.all ? 0 : _currentIndex;
-    }
-
-    final pos = _shuffledIndices.indexOf(_currentIndex);
-    if (pos != -1 && pos < _shuffledIndices.length - 1) {
-      return _shuffledIndices[pos + 1];
-    }
-    return _repeatMode == AudioServiceRepeatMode.all
-        ? _shuffledIndices[0]
-        : _currentIndex;
+    final next = _currentIndex + 1;
+    if (next < count) return next;
+    return _repeatMode == AudioServiceRepeatMode.all ? 0 : _currentIndex;
   }
 
   int _getPreviousIndex() {
-    if (_shuffleMode == AudioServiceShuffleMode.none || _shuffledIndices.isEmpty) {
-      final len = queue.value.length;
-      return len == 0 ? 0 : (_currentIndex - 1 + len) % len;
-    }
-    final pos = _shuffledIndices.indexOf(_currentIndex);
-    if (pos > 0) return _shuffledIndices[pos - 1];
-    return _shuffledIndices.last;
+    final len = queue.value.length;
+    return len == 0 ? 0 : (_currentIndex - 1 + len) % len;
   }
 
   bool get _isAtEnd {
     final count = queue.value.length;
     if (count == 0) return true;
-    if (_shuffledIndices.isNotEmpty) {
-      return _currentIndex == _shuffledIndices.length - 1;
-    }
     return _currentIndex == count - 1;
   }
 
@@ -471,13 +427,10 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> skipToNext() async {
     if (queue.value.isEmpty) return;
     if (_repeatMode == AudioServiceRepeatMode.none && _isAtEnd) {
-      _currentIndex = _shuffleMode == AudioServiceShuffleMode.all &&
-              _shuffledIndices.isNotEmpty
-          ? _shuffledIndices[0]
-          : 0;
-    } else {
-      _currentIndex = _getNextIndex();
+      stop();
+      return;
     }
+    _currentIndex = _getNextIndex();
     await _playCurrent();
   }
 
@@ -537,6 +490,22 @@ class MyAudioHandler extends BaseAudioHandler {
     }
   }
 
+  Future<void> setPlaybackSpeed(double speed) async {
+    try {
+      await _player.setSpeed(speed);
+    } catch (_) {
+      // setSpeed is supported on every backend we ship with, but stay safe.
+    }
+  }
+
+  Future<void> setPlaybackPitch(double pitch) async {
+    try {
+      await _player.setPitch(pitch);
+    } catch (_) {
+      // setPitch is unsupported on some platforms; no-op.
+    }
+  }
+
   void setGainMap(Map<String, double> gainMap) {
     _gainMap
       ..clear()
@@ -567,33 +536,32 @@ class MyAudioHandler extends BaseAudioHandler {
   /// canonical state (path list + current index) and persists to disk.
   void _syncQueueSignal() {
     if (_currentIndex < 0 || queue.value.isEmpty) {
-      queueSignal.syncFromHandler(
-        playbackOrder: const [],
-        currentIndex: -1,
-      );
+      queueSignal.syncFromHandler(playbackOrder: const [], currentIndex: -1);
       return;
     }
 
-    final List<String> orderPaths;
-    int indexToPass = _currentIndex;
-
-    if (_shuffledIndices.isNotEmpty) {
-      orderPaths = _shuffledIndices
-          .map((idx) => queue.value[idx].id)
-          .toList(growable: false);
-      indexToPass = _shuffledIndices.indexOf(_currentIndex);
-      // Fallback in case of missing index, though it shouldn't happen
-      if (indexToPass == -1) indexToPass = 0;
-    } else {
-      orderPaths = queue.value.map((i) => i.id).toList(growable: false);
-    }
-
+    // The handler always plays in queue.value order — shuffle (if any) is
+    // already baked into the order by the caller (AudioSignal).
     queueSignal.syncFromHandler(
-      playbackOrder: orderPaths,
-      currentIndex: indexToPass,
+      playbackOrder: queue.value.map((i) => i.id).toList(growable: false),
+      currentIndex: _currentIndex,
     );
 
     _scheduleRadioFill();
+  }
+
+  /// Push [path] onto the played-history signal (newest first), deduped
+  /// and capped to [QueueSignal.historyLimit]. Called from
+  /// [_playCurrent] so the Played section only grows on actual song
+  /// changes, not on every queue sync.
+  void _recordHistory(String path) {
+    final existing = queueSignal.history.value;
+    if (existing.isNotEmpty && existing.first == path) return;
+    final next = <String>[path, ...existing.where((p) => p != path)];
+    if (next.length > QueueSignal.historyLimit) {
+      next.removeRange(QueueSignal.historyLimit, next.length);
+    }
+    queueSignal.history.value = next;
   }
 
   void _scheduleRadioFill() {
@@ -603,7 +571,10 @@ class MyAudioHandler extends BaseAudioHandler {
     if (remaining > 3) return;
     // Debounce so a burst of queue updates doesn't trigger multiple fills.
     _radioFillDebounce?.cancel();
-    _radioFillDebounce = Timer(const Duration(milliseconds: 250), _fillRadioQueue);
+    _radioFillDebounce = Timer(
+      const Duration(milliseconds: 250),
+      _fillRadioQueue,
+    );
   }
 
   Future<void> _fillRadioQueue() async {
@@ -613,29 +584,63 @@ class MyAudioHandler extends BaseAudioHandler {
 
     _isFillingRadio = true;
     try {
+      // Drain the prefetch batch first — no API call needed.
+      if (audioSignal.radioPrefetchBatch.value.isNotEmpty) {
+        _lastRadioSeedVideoId = current.id.substring(3);
+        _radioFillAttempts = 0;
+        final batch = audioSignal.radioPrefetchBatch.value.toList();
+        audioSignal.radioPrefetchBatch.clear();
+        audioSignal.cacheRadioSongs(batch);
+        audioCacheService.prefetchRadioSongs(batch, limit: 5);
+        await _addRadioBatchItems(batch);
+        return;
+      }
+
+      // Prefetch batch is empty — need to fetch from API.
       final videoId = current.id.substring(3);
+
+      // Cancel if the queue has drifted away from radio (user skipped/seeked).
+      if (_lastRadioSeedVideoId != null && _lastRadioSeedVideoId != videoId) {
+        return;
+      }
+
       final songs = await youtubeDatasource.getRadioSongs(videoId);
       if (_isDisposed) return;
-      audioSignal.cacheRadioSongs(songs);
-      for (final song in songs) {
-        if (_isDisposed) return;
-        final songVideoId =
-            song.path.startsWith('yt:') ? song.path.substring(3) : '';
-        final artUri =
-            Uri.parse(youtubeDatasource.getArtworkUrl(songVideoId));
-        await addQueueItem(MediaItem(
-          id: song.path,
-          album: song.album ?? 'YouTube Music',
-          title: song.title,
-          artist: song.artist,
-          duration: song.duration,
-          artUri: artUri,
-          extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
-        ));
+
+      if (songs.isEmpty) {
+        _radioFillAttempts++;
+        debugPrint('Radio fill failed, attempt $_radioFillAttempts');
+        return;
       }
+      _radioFillAttempts = 0;
+      _lastRadioSeedVideoId = videoId;
+
+      audioSignal.cacheRadioSongs(songs);
+      audioSignal.radioPrefetchBatch.addAll(songs);
+      audioCacheService.prefetchRadioSongs(songs, limit: 5);
+      await _addRadioBatchItems(songs);
     } finally {
       _isFillingRadio = false;
     }
+  }
+
+  Future<void> _addRadioBatchItems(List<Song> songs) async {
+    final items = songs.map((song) {
+      final songVideoId = song.path.startsWith('yt:')
+          ? song.path.substring(3)
+          : '';
+      final artUri = Uri.parse(youtubeDatasource.getArtworkUrl(songVideoId));
+      return MediaItem(
+        id: song.path,
+        album: song.album ?? 'YouTube Music',
+        title: song.title,
+        artist: song.artist,
+        duration: song.duration,
+        artUri: artUri,
+        extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
+      );
+    }).toList();
+    await addRadioBatch(items);
   }
 
   // ---------------------------------------------------------------------------
@@ -657,6 +662,7 @@ class MyAudioHandler extends BaseAudioHandler {
 
     final baseItem = queue.value[_currentIndex];
     _syncQueueSignal();
+    _recordHistory(baseItem.id);
 
     try {
       var item = await _resolveArt(baseItem, token);
@@ -683,9 +689,11 @@ class MyAudioHandler extends BaseAudioHandler {
       if (e.toString().contains('Loading interrupted')) return;
       // Only surface errors for the still-active load.
       if (_activeToken == token) {
-        playbackState.add(playbackState.value.copyWith(
-          processingState: AudioProcessingState.error,
-        ));
+        playbackState.add(
+          playbackState.value.copyWith(
+            processingState: AudioProcessingState.error,
+          ),
+        );
         // Don't strand the user on a broken track — advance the queue
         // so the next song has a chance to play.
         if (queue.value.length > 1) {
@@ -872,7 +880,6 @@ class MyAudioHandler extends BaseAudioHandler {
     }
     _subscriptions.clear();
 
-    await _shuffleIndicesController.close();
     await _player.dispose();
   }
 }

@@ -51,11 +51,13 @@ class SettingsSignal {
     'add_to_playlist',
     'play_next',
     'add_to_queue',
+    'start_radio',
   ]);
   final actionsSheetListActions = listSignal<String>([
     'go_to_album',
     'go_to_artist',
     'sleep_timer',
+    'speed',
     'info',
     'edit_metadata',
     'share',
@@ -64,6 +66,7 @@ class SettingsSignal {
   final playerBarActions = listSignal<String>([
     'shuffle',
     'repeat',
+    'speed',
     'lyrics',
     'queue',
     'more',
@@ -95,6 +98,9 @@ class SettingsSignal {
   final enableStreamCaching = signal<bool>(true);
   final enablePreCaching = signal<bool>(true);
   final normalizationTargetLufs = signal<double>(-14.0);
+  final playbackSpeed = signal<double>(1.0);
+  final playbackPitch = signal<double>(1.0);
+  final syncPitchWithSpeed = signal<bool>(true);
 
   // Last.fm integration
   final lastFmSessionKey = signal<String?>(null);
@@ -102,6 +108,7 @@ class SettingsSignal {
 
   // YouTube Music Authentication
   final ytAuthCookie = signal<String?>(null);
+  final ytUsername = signal<String?>(null);
 
   // Discord Rich Presence
   final enableDiscordRpc = signal<bool>(true);
@@ -159,18 +166,22 @@ class SettingsSignal {
 
     actionsSheetShowLabels.value =
         prefs.getBool('actionsSheetShowLabels') ?? false;
-    
+
     final playerActions = prefs.getStringList('playerBarActions');
     if (playerActions != null) {
       playerBarActions.value = playerActions;
     }
 
     final alignIndex = prefs.getInt('lyricsAlignment');
-    if (alignIndex != null && alignIndex >= 0 && alignIndex < TextAlign.values.length) {
+    if (alignIndex != null &&
+        alignIndex >= 0 &&
+        alignIndex < TextAlign.values.length) {
       lyricsAlignment.value = TextAlign.values[alignIndex];
     }
-    lyricsActiveFontSize.value = prefs.getDouble('lyricsActiveFontSize') ?? 28.0;
-    lyricsInactiveFontSize.value = prefs.getDouble('lyricsInactiveFontSize') ?? 22.0;
+    lyricsActiveFontSize.value =
+        prefs.getDouble('lyricsActiveFontSize') ?? 28.0;
+    lyricsInactiveFontSize.value =
+        prefs.getDouble('lyricsInactiveFontSize') ?? 22.0;
     plainLyricsFontSize.value = prefs.getDouble('plainLyricsFontSize') ?? 18.0;
 
     showRomanizedLyrics.value = prefs.getBool('showRomanizedLyrics') ?? false;
@@ -188,7 +199,9 @@ class SettingsSignal {
     final excluded = prefs.getStringList('excludedPaths');
     if (excluded != null) {
       // Migrate old paths (no prefix) to new format with 'f:'/'d:' prefix.
-      bool needsMigration = excluded.any((e) => !e.startsWith('f:') && !e.startsWith('d:'));
+      bool needsMigration = excluded.any(
+        (e) => !e.startsWith('f:') && !e.startsWith('d:'),
+      );
       if (needsMigration) {
         final migrated = <String>[];
         for (final path in excluded) {
@@ -208,15 +221,21 @@ class SettingsSignal {
     audioNormalization.value = prefs.getBool('audioNormalization') ?? false;
     normalizationTargetLufs.value =
         prefs.getDouble('normalizationTargetLufs') ?? -14.0;
-    
+    playbackSpeed.value = prefs.getDouble('playbackSpeed') ?? 1.0;
+    playbackPitch.value = prefs.getDouble('playbackPitch') ?? 1.0;
+    syncPitchWithSpeed.value = prefs.getBool('syncPitchWithSpeed') ?? true;
+
     lastFmSessionKey.value = prefs.getString('lastFmSessionKey');
     lastFmUsername.value = prefs.getString('lastFmUsername');
     ytAuthCookie.value = prefs.getString('ytAuthCookie');
+    ytUsername.value = prefs.getString('ytUsername');
 
     enableStreamCaching.value = prefs.getBool('enableStreamCaching') ?? true;
     enablePreCaching.value = prefs.getBool('enablePreCaching') ?? true;
-    enableDiscordListenButton.value = prefs.getBool('enableDiscordListenButton') ?? true;
-    enableDiscordProjectLink.value = prefs.getBool('enableDiscordProjectLink') ?? true;
+    enableDiscordListenButton.value =
+        prefs.getBool('enableDiscordListenButton') ?? true;
+    enableDiscordProjectLink.value =
+        prefs.getBool('enableDiscordProjectLink') ?? true;
     enableDiscordRpc.value = prefs.getBool('enableDiscordRpc') ?? true;
   }
 
@@ -470,6 +489,34 @@ class SettingsSignal {
     await prefs.setDouble('normalizationTargetLufs', value);
   }
 
+  Future<void> updatePlaybackSpeed(double value) async {
+    playbackSpeed.value = value;
+    if (syncPitchWithSpeed.value) {
+      playbackPitch.value = value;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('playbackPitch', value);
+    }
+    final prefs2 = await SharedPreferences.getInstance();
+    await prefs2.setDouble('playbackSpeed', value);
+  }
+
+  Future<void> updatePlaybackPitch(double value) async {
+    playbackPitch.value = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('playbackPitch', value);
+  }
+
+  Future<void> updateSyncPitchWithSpeed(bool value) async {
+    syncPitchWithSpeed.value = value;
+    if (value) {
+      playbackPitch.value = playbackSpeed.value;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('playbackPitch', playbackPitch.value);
+    }
+    final prefs2 = await SharedPreferences.getInstance();
+    await prefs2.setBool('syncPitchWithSpeed', value);
+  }
+
   Future<void> updateLastFmSession(String? username, String? sessionKey) async {
     lastFmUsername.value = username;
     lastFmSessionKey.value = sessionKey;
@@ -486,13 +533,23 @@ class SettingsSignal {
     }
   }
 
-  Future<void> updateYtAuthCookie(String? cookie) async {
+  Future<void> updateYtAuthCookie(String? cookie, {String? username}) async {
     ytAuthCookie.value = cookie;
+    if (username != null) {
+      ytUsername.value = username;
+    } else {
+      ytUsername.value = null;
+    }
     final prefs = await SharedPreferences.getInstance();
     if (cookie != null) {
       await prefs.setString('ytAuthCookie', cookie);
     } else {
       await prefs.remove('ytAuthCookie');
+    }
+    if (username != null) {
+      await prefs.setString('ytUsername', username);
+    } else {
+      await prefs.remove('ytUsername');
     }
   }
 

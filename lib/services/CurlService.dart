@@ -37,12 +37,6 @@ class CurlResponse {
 class CurlService {
   static fc.Client? _mobileClient;
 
-  static Future<void> init() async {
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      _mobileClient ??= fc.Client();
-    }
-  }
-
   static Future<CurlResponse> get(
     String url, {
     Map<String, String>? headers,
@@ -72,7 +66,7 @@ class CurlService {
     bool followRedirects = true,
     String? userAgent,
   }) async {
-    await init();
+    _mobileClient ??= fc.Client();
     final requestHeaders = Map<String, String>.from(headers ?? {});
     if (userAgent != null) {
       requestHeaders['User-Agent'] = userAgent;

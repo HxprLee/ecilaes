@@ -17,9 +17,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
+import '../router/routes.dart';
 import '../signals/audio_signal.dart';
+import '../utils/navigation.dart';
 import '../widgets/components/sliver_page_header.dart';
 import '../widgets/components/standard_sliver_list.dart';
 import '../widgets/components/standard_sliver_grid.dart';
@@ -58,7 +59,8 @@ class ArtistsScreen extends StatelessWidget {
                 childAspectRatio: 0.8,
                 itemBuilder: (context, artist, index) {
                   return GestureDetector(
-                    onTap: () => context.go(
+                    onTap: () => navigateGo(
+                      context,
                       '/artists/${Uri.encodeComponent(artist.name)}',
                     ),
                     child: Column(
@@ -174,7 +176,7 @@ class ArtistsScreen extends StatelessWidget {
                     size: 20,
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                   ),
-                  onTap: () => context.go('/artists/${Uri.encodeComponent(artist.name)}'),
+                  onTap: () => navigateGo(context, '${AppRoutes.artists}/${Uri.encodeComponent(artist.name)}'),
                 );
               },
             ),

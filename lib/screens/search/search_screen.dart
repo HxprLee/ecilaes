@@ -15,10 +15,11 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/search_signal.dart';
 import '../../signals/audio_signal.dart';
+import '../../router/routes.dart';
+import '../../utils/navigation.dart';
 import '../../widgets/components/sliver_page_header.dart';
 import '../../widgets/components/song_tile.dart';
 import '../../models/song.dart';
@@ -47,7 +48,14 @@ class _SearchScreenState extends State<SearchScreen> {
         final moodCategories = searchSignal.moodCategories.value;
         final isLoading = searchSignal.isLoadingExplore.value;
 
-        return CustomScrollView(
+        return NotificationListener<OverscrollIndicatorNotification>(
+          onNotification: (notification) {
+            if (notification.leading) {
+              searchSignal.loadExploreData(force: true);
+            }
+            return false;
+          },
+          child: CustomScrollView(
           slivers: [
             const SliverPageHeader(
               title: 'Search',
@@ -98,7 +106,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           // Setting the signal alone might not update the TextField unless it's bound.
                           // We'll just push to results for now.
                           searchSignal.searchQuery.value = query;
-                          context.go('/search-result');
+                          navigateGo(context, AppRoutes.searchResult);
                         },
                       );
                     },
@@ -113,16 +121,16 @@ class _SearchScreenState extends State<SearchScreen> {
               )
             else ...[
               if (exploreData['new_videos'] != null)
-                _buildSection(context, 'New Music Videos', exploreData['new_videos']),
-              
+                _buildSection(context, 'New Music Videos', 'new_videos', exploreData['new_videos']),
+
               if (exploreData['trending'] != null && exploreData['trending']['items'] != null)
-                _buildSection(context, 'Trending', exploreData['trending']['items']),
+                _buildSection(context, 'Trending', 'trending', exploreData['trending']['items']),
 
               if (exploreData['new_releases'] != null)
-                _buildSection(context, 'New Releases', exploreData['new_releases']),
+                _buildSection(context, 'New Releases', 'new_releases', exploreData['new_releases']),
 
               if (exploreData['top_songs'] != null && exploreData['top_songs']['items'] != null)
-                _buildSection(context, 'Top Songs', exploreData['top_songs']['items']),
+                _buildSection(context, 'Top Songs', 'top_songs', exploreData['top_songs']['items']),
 
               if (exploreData['moods_and_genres'] != null)
                 _buildMoods(context, 'Mood & Genres', exploreData['moods_and_genres']),
@@ -135,25 +143,36 @@ class _SearchScreenState extends State<SearchScreen> {
               child: SizedBox(height: audioSignal.reservedHeight.value),
             ),
           ],
+          ),
         );
       }),
     );
   }
 
-  Widget _buildSection(BuildContext context, String title, List<dynamic> items) {
+  Widget _buildSection(BuildContext context, String title, String sectionKey, List<dynamic> items) {
     if (items.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
-    
+
     return SliverToBoxAdapter(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+            padding: const EdgeInsets.fromLTRB(24, 24, 8, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () => navigatePush(context, AppRoutes.seeMore, extra: {'sectionKey': sectionKey, 'title': title}),
+                ),
+              ],
             ),
           ),
           SizedBox(
@@ -196,12 +215,14 @@ class _SearchScreenState extends State<SearchScreen> {
                         audioSignal.playSong(song);
                       } else if (item['browseId'] != null) {
                         if (item['type'] == 'Album') {
-                          context.go(
+                          navigateGo(
+                            context,
                             '/youtube/album/${Uri.encodeComponent(item['browseId'])}',
                             extra: {'title': titleText, 'thumbnailUrl': thumbnailUrl},
                           );
                         } else {
-                          context.go(
+                          navigateGo(
+                            context,
                             '/youtube/playlist/${Uri.encodeComponent(item['browseId'])}',
                             extra: {'title': titleText, 'thumbnailUrl': thumbnailUrl},
                           );
@@ -216,7 +237,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         children: [
                           Expanded(
                             child: AspectRatio(
-                              aspectRatio: item['videoId'] != null ? 16 / 9 : 1.0,
+                              aspectRatio: 1.0,
                               child: Container(
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(8),
@@ -286,10 +307,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   label: Text(map['title'] ?? ''),
                   onPressed: () {
                     if (map['params'] != null) {
-                       context.go('/mood/${Uri.encodeComponent(map['params'])}', extra: map['title']);
+                       navigateGo(context, '${AppRoutes.mood}/${Uri.encodeComponent(map['params'])}', extra: map['title']);
                     } else {
                        searchSignal.searchQuery.value = map['title'] ?? '';
-                       context.go('/search-result');
+                       navigateGo(context, AppRoutes.searchResult);
                     }
                   },
                 );

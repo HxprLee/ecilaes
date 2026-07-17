@@ -14,4 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-export 'mobile/mobile_header_bar.dart';
+/// Stub used on non-Linux platforms (Android, iOS, web). The conditional
+/// import in `mpris_helper.dart` selects this file unless `dart:io` is
+/// available, in which case `mpris_helper_linux.dart` is loaded instead.
+///
+/// Public so the conditional import in `mpris_helper.dart` can resolve it.
+void registerMprisPlatformImpl() {
+  // No-op: the platform's native media-control surface is handled by
+  // audio_service's built-in plugin platform.
+}

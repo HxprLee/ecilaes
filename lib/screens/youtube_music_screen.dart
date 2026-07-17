@@ -16,12 +16,16 @@
 
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
+import '../signals/search_signal.dart';
+import '../router/routes.dart';
 import '../services/YoutubeDatasource.dart';
 import '../theme/app_theme_tokens.dart';
+import '../utils/navigation.dart';
 import '../widgets/components/sliver_page_header.dart';
+import '../widgets/components/song_tile.dart';
+import '../widgets/components/yt_home_skeleton.dart';
 import '../widgets/song_actions_sheet.dart';
 
 class YoutubeMusicScreen extends StatefulWidget {
@@ -54,9 +58,14 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
     return Colors.white24;
   }
 
-  void _updateStateWithData(Map<String, dynamic> moodsData, Map<String, dynamic> exploreData, List<Map<String, dynamic>> sections) {
+  void _updateStateWithData(
+    Map<String, dynamic> moodsData,
+    Map<String, dynamic> exploreData,
+    List<Map<String, dynamic>> sections, {
+    required bool isFromCache,
+  }) {
     if (!mounted) return;
-    
+
     final newMoods = <Map<String, dynamic>>[];
     if (moodsData.isNotEmpty) {
       for (var v in moodsData.values) {
@@ -65,28 +74,30 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
         }
       }
     }
-    
+
     final newSections = <Map<String, dynamic>>[];
     // Add Explore sections to the top
     if (exploreData.containsKey('new_releases') && exploreData['new_releases'] is List) {
        newSections.add({
          'title': 'New Releases',
+         'sectionKey': 'new_releases',
          'items': exploreData['new_releases'],
        });
     }
-    
+
     if (exploreData.containsKey('trending') && exploreData['trending'] is Map) {
        final trending = exploreData['trending'];
        if (trending['items'] is List) {
            newSections.add({
              'title': 'Trending',
+             'sectionKey': 'trending',
              'items': trending['items'],
            });
        }
     }
-    
+
     newSections.addAll(sections);
-    
+
     setState(() {
       _moods.clear();
       _moods.addAll(newMoods);
@@ -94,27 +105,45 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
       _sections.addAll(newSections);
       _isLoading = false;
     });
+
+    // Cache browsed songs so resolveSong can find them later.
+    // Only do this for freshly-fetched data to avoid duplicating already-cached entries.
+    if (!isFromCache) {
+      for (final section in newSections) {
+        final items = section['items'] as List? ?? [];
+        for (final item in items) {
+          if (item is Map && item['videoId'] != null) {
+            searchSignal.ytBrowseResults.value = [
+              ...searchSignal.ytBrowseResults.value,
+              youtubeDatasource.mapToSong(Map<String, dynamic>.from(item)),
+            ];
+          }
+        }
+      }
+    }
   }
 
   Future<void> _loadHome() async {
-    // 1. Try to load from cache first for instant UI
+    // 1. Try to load from cache first for instant UI.
+    // Show skeleton while attempting cache (if empty) or fetching fresh.
     final cachedMoods = await youtubeDatasource.getCachedMoodCategories();
     final cachedExplore = await youtubeDatasource.getCachedExplore();
     final cachedSections = await youtubeDatasource.getCachedHomeSections();
-    
+
     if (cachedMoods != null && cachedExplore != null && cachedSections != null && cachedSections.isNotEmpty) {
-      _updateStateWithData(cachedMoods, cachedExplore, cachedSections);
+      _updateStateWithData(cachedMoods, cachedExplore, cachedSections, isFromCache: true);
     } else {
       setState(() => _isLoading = true);
     }
-    
-    // 2. Fetch fresh data in background
+
+    // 2. Fetch fresh data in parallel (cache writes are non-awaited).
     try {
-      final moodsData = await youtubeDatasource.getMoodCategories();
-      final exploreData = await youtubeDatasource.getExplore();
+      final (moodsData, exploreData) = await (
+        youtubeDatasource.getMoodCategories(),
+        youtubeDatasource.getExplore(),
+      ).wait;
       final sections = await youtubeDatasource.getHomeSections();
-      
-      _updateStateWithData(moodsData, exploreData, sections);
+      _updateStateWithData(moodsData, exploreData, sections, isFromCache: false);
     } catch (e) {
       debugPrint('Error refreshing YTM home: $e');
       if (_sections.isEmpty && mounted) {
@@ -157,16 +186,13 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
                 ),
               ),
             ),
-          if (_isLoading)
-            const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
-            )
+          if (_isLoading && _sections.isEmpty)
+            const YtHomeSkeleton()
           else if (_sections.isEmpty)
             const SliverFillRemaining(
               child: Center(child: Text('Failed to load YouTube Music home.')),
             )
-          else
-            ..._sections.map((section) => _buildSection(context, section)),
+          else ..._sections.map((section) => _buildSection(context, section)),
             
           // Bottom spacing
           SliverToBoxAdapter(
@@ -179,6 +205,7 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
 
   Widget _buildSection(BuildContext context, Map<String, dynamic> section) {
     final title = section['title'] as String;
+    final sectionKey = section['sectionKey'] as String? ?? title.toLowerCase().replaceAll(' ', '_');
     final items = section['items'] as List<dynamic>;
 
     if (items.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
@@ -191,21 +218,31 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
     });
 
     if (isSongSection) {
-      return _buildSongGridSection(context, title, items.cast<Map<String, dynamic>>());
+      return _buildSongGridSection(context, title, sectionKey, items.cast<Map<String, dynamic>>());
     }
 
     return SliverMainAxisGroup(
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
-                color: Theme.of(context).colorScheme.secondary,
-              ),
+            padding: const EdgeInsets.fromLTRB(24, 32, 8, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w500,
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () => navigatePush(context, AppRoutes.seeMore, extra: {'sectionKey': sectionKey, 'title': title}),
+                ),
+              ],
             ),
           ),
         ),
@@ -255,7 +292,7 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
     );
   }
 
-  Widget _buildSongGridSection(BuildContext context, String title, List<Map<String, dynamic>> items) {
+  Widget _buildSongGridSection(BuildContext context, String title, String sectionKey, List<Map<String, dynamic>> items) {
     final chunks = <List<Map<String, dynamic>>>[];
     for (var i = 0; i < items.length; i += 4) {
       chunks.add(items.sublist(i, i + 4 > items.length ? items.length : i + 4));
@@ -265,14 +302,24 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
-                color: Theme.of(context).colorScheme.secondary,
-              ),
+            padding: const EdgeInsets.fromLTRB(24, 32, 8, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w500,
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () => navigatePush(context, AppRoutes.seeMore, extra: {'sectionKey': sectionKey, 'title': title}),
+                ),
+              ],
             ),
           ),
         ),
@@ -294,47 +341,10 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
                   child: Column(
                     children: chunk.map((dItem) {
                       final song = youtubeDatasource.mapToSong(dItem);
-                      
-                      String? rawThumbnail;
-                      final dynamic thumbnails = dItem['thumbnails'];
-                      if (thumbnails is List && thumbnails.isNotEmpty) {
-                        rawThumbnail = thumbnails.last['url'];
-                      }
-                      final thumbnailUrl = youtubeDatasource.transformThumbnail(rawThumbnail ?? '');
-
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8.0),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.only(right: 8),
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: thumbnailUrl.isNotEmpty ? Image.network(
-                              thumbnailUrl,
-                              width: 48,
-                              height: 48,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, _, _) => Container(
-                                width: 48, height: 48, color: Colors.grey[900],
-                                child: Icon(Icons.music_note, color: _placeholderIconColor(context), size: 24),
-                              ),
-                            ) : Container(
-                                width: 48, height: 48, color: Colors.grey[900],
-                                child: Icon(Icons.music_note, color: _placeholderIconColorStatic(), size: 24),
-                            ),
-                          ),
-                          title: Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                          ),
-                          subtitle: Text(
-                            song.artist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.6), fontSize: 12),
-                          ),
-                          onTap: () => audioSignal.playSong(song),
+                        child: SongTile(
+                          song: song,
                           trailing: IconButton(
                             icon: FaIcon(FontAwesomeIcons.ellipsisVertical, size: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38)),
                             onPressed: () => showSongMoreActionsSheet(context: context, song: song),
@@ -358,27 +368,32 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
     final playlistId = dItem['playlistId']?.toString() ?? '';
     final videoId = dItem['videoId']?.toString() ?? '';
 
-    if (browseId.startsWith('MPRE')) {
+    // Song/video: check videoId first because items like "Listen again" can have
+    // both videoId and playlistId, and playlistId should not take priority.
+    if (videoId.isNotEmpty) {
+      final song = youtubeDatasource.mapToSong(dItem);
+      searchSignal.ytBrowseResults.value = [
+        ...searchSignal.ytBrowseResults.value,
+        song,
+      ];
+      audioSignal.playSong(song);
+    } else if (browseId.startsWith('MPRE')) {
       // It's an album
-      context.go('/youtube/album/${Uri.encodeComponent(browseId)}',
+      navigateGo(context, '${AppRoutes.youtube}/album/${Uri.encodeComponent(browseId)}',
         extra: {'title': title, 'thumbnailUrl': thumbnailUrl});
     } else if (browseId.startsWith('UC') || browseId.startsWith('MPLA')) {
       // It's an artist
-      context.go('/youtube/artist/${Uri.encodeComponent(browseId)}',
+      navigateGo(context, '${AppRoutes.youtube}/artist/${Uri.encodeComponent(browseId)}',
         extra: {'name': title, 'thumbnailUrl': thumbnailUrl});
     } else if (playlistId.isNotEmpty) {
       // It's a playlist
-      context.go('/youtube/playlist/${Uri.encodeComponent(playlistId)}',
+      navigateGo(context, '${AppRoutes.youtube}/playlist/${Uri.encodeComponent(playlistId)}',
         extra: {'title': title, 'thumbnailUrl': thumbnailUrl});
-    } else if (videoId.isNotEmpty) {
-      // It's a song/video — play it
-      final song = youtubeDatasource.mapToSong(dItem);
-      audioSignal.playSong(song);
     } else if (browseId.isNotEmpty) {
       // Generic browse — try as playlist (some community playlists are VL prefixed)
       String cleanId = browseId;
       if (cleanId.startsWith('VL')) cleanId = cleanId.substring(2);
-      context.go('/youtube/playlist/${Uri.encodeComponent(cleanId)}',
+      navigateGo(context, '${AppRoutes.youtube}/playlist/${Uri.encodeComponent(cleanId)}',
         extra: {'title': title, 'thumbnailUrl': thumbnailUrl});
     }
   }

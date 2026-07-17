@@ -31,7 +31,7 @@ class DiscordPresenceSection extends StatelessWidget {
       body: CustomScrollView(
         slivers: [
           const SliverPageHeader(
-            title: 'Discord Rich Presence',
+            title: 'Discord Presence',
             maxWidth: 600,
           ),
           SliverToBoxAdapter(

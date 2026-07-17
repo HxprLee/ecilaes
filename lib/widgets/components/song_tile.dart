@@ -30,6 +30,9 @@ class SongTile extends StatelessWidget {
   final VoidCallback? onTap;
   final String? playlistId;
   final List<Song>? fromList;
+  /// Override the art directory path (used by callers that don't have access to
+  /// audioSignal.albumArtDir, e.g. search tabs).
+  final String? artDirPath;
 
   const SongTile({
     super.key,
@@ -39,6 +42,7 @@ class SongTile extends StatelessWidget {
     this.onTap,
     this.playlistId,
     this.fromList,
+    this.artDirPath,
   });
 
   static String getArtPath(String songPath, String? artDirPath) {
@@ -60,7 +64,7 @@ class SongTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Watch((context) {
       final isCurrent = audioSignal.currentSong.value?.path == song.path;
-      final artDir = audioSignal.albumArtDir.value;
+      final artDir = artDirPath ?? audioSignal.albumArtDir.value;
       final isYoutube = song.path.startsWith('yt:');
       final hasArt = song.hasAlbumArt && (artDir != null || isYoutube);
       final artPath = hasArt && !isYoutube ? SongTile.getArtPath(song.path, artDir) : '';

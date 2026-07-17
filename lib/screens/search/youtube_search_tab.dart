@@ -14,15 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../../models/song.dart';
-import '../../../signals/audio_signal.dart';
 import '../../../signals/search_signal.dart';
 import '../../../services/YoutubeDatasource.dart';
 import '../../../widgets/components/standard_sliver_list.dart';
+import '../../../widgets/components/song_tile.dart';
+import '../../../widgets/components/search_skeleton.dart';
 import 'widgets/raw_results_list.dart';
 
 class YouTubeResultsTab extends StatefulWidget {
@@ -123,96 +122,30 @@ class _YouTubeResultsTabState extends State<YouTubeResultsTab> {
 
   List<Widget> _buildSongsSlivers(BuildContext context) {
     final resultsWidget = Watch((context) {
-      final isSearchingYoutube = searchSignal.isSearchingYoutube.value;
       return StandardSliverList<Song>(
         items: widget.songResults,
-        isLoading: isSearchingYoutube && widget.songResults.isEmpty,
+        isLoading: searchSignal.isSearchingYoutube.value && widget.songResults.isEmpty,
+        loadingWidget: const SearchSkeleton(),
         emptyMessage: widget.isSearching ? 'No YouTube songs found' : 'Start typing to search',
-        itemBuilder: (context, song, index) {
-          final isYoutube = song.path.startsWith('yt:');
-          final artPath = !isYoutube
-              ? (widget.artDirPath != null
-                    ? '${widget.artDirPath}/${song.path.hashCode.abs()}.jpg'
-                    : '')
-              : '';
-          final ytThumbnailUrl = isYoutube
-              ? youtubeDatasource.getArtworkUrl(song.path.substring(3))
-              : null;
-          final hasArt = song.hasAlbumArt && (artPath.isNotEmpty || isYoutube);
-
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 4,
-              horizontal: 24,
+        itemBuilder: (context, song, index) => SongTile(
+          song: song,
+          artDirPath: widget.artDirPath,
+          trailing: Text(
+            _formatDuration(song.duration ?? Duration.zero),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+              fontSize: 12,
             ),
-            leading: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(4),
-                image: isYoutube && hasArt
-                    ? DecorationImage(
-                        image: NetworkImage(ytThumbnailUrl!),
-                        fit: BoxFit.cover,
-                      )
-                    : hasArt
-                    ? DecorationImage(
-                        image: FileImage(File(artPath)),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              child: !hasArt
-                  ? Center(
-                      child: FaIcon(
-                        FontAwesomeIcons.music,
-                        size: 18,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.24),
-                      ),
-                    )
-                  : null,
-            ),
-            title: Text(
-              song.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.secondary,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
-            subtitle: Text(
-              song.artist,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondary.withValues(alpha: 0.7),
-                fontSize: 12,
-              ),
-            ),
-            trailing: Text(
-              song.duration == null || song.duration == Duration.zero
-                  ? '--:--'
-                  : '${song.duration!.inMinutes}:${song.duration!.inSeconds.remainder(60).toString().padLeft(2, '0')}',
-              style: TextStyle(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.38),
-                fontSize: 12,
-              ),
-            ),
-            onTap: () => audioSignal.playSong(song),
-          );
-        },
+          ),
+        ),
       );
     });
 
     return [resultsWidget];
+  }
+
+  String _formatDuration(Duration? duration) {
+    if (duration == null || duration == Duration.zero) return '--:--';
+    return '${duration.inMinutes}:${duration.inSeconds.remainder(60).toString().padLeft(2, '0')}';
   }
 }

@@ -17,9 +17,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/search_signal.dart';
-import '../../signals/navigation_signal.dart';
 import '../../services/song_cache.dart';
 import '../../services/YoutubeDatasource.dart';
 import 'widgets/search_filter_chips.dart';
@@ -85,8 +85,8 @@ class _SearchResultScreenState extends State<SearchResultScreen> with SingleTick
       body: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.escape): () {
-            if (navigationSignal.canPopSync) {
-              navigationSignal.goBack(context);
+            if (GoRouter.of(context).canPop()) {
+              GoRouter.of(context).pop();
               searchSignal.searchQuery.value = '';
             }
           },

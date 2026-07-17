@@ -16,11 +16,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
+import '../router/routes.dart';
 import '../signals/audio_signal.dart';
+import '../signals/search_signal.dart';
 import '../models/song.dart';
 import '../services/YoutubeDatasource.dart';
+import '../utils/navigation.dart';
 import '../widgets/components/sliver_page_header.dart';
 import '../widgets/components/song_list_view.dart';
 import '../widgets/song_actions_sheet.dart';
@@ -75,6 +77,13 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
       if (thumb.isNotEmpty) {
         audioSignal.headerArtCover.value = thumb;
         audioSignal.headerArtCoverIsNetwork.value = true;
+      }
+      final topSongs = data['topSongs'] as List<Song>? ?? [];
+      if (topSongs.isNotEmpty) {
+        searchSignal.ytBrowseResults.value = [
+          ...searchSignal.ytBrowseResults.value,
+          ...topSongs,
+        ];
       }
     }
   }
@@ -144,10 +153,7 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
                     ),
                     const SizedBox(width: 12),
                     OutlinedButton.icon(
-                      onPressed: () {
-                        final shuffled = List<Song>.from(topSongs)..shuffle();
-                        audioSignal.playSong(shuffled.first, fromList: shuffled);
-                      },
+                      onPressed: () => audioSignal.playShuffledFromList(topSongs),
                       icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
                       label: const Text('Shuffle'),
                       style: OutlinedButton.styleFrom(
@@ -219,7 +225,7 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
                         thumbnailUrl: artUrl,
                         onTap: () {
                           if (album['browseId'] != null) {
-                            context.go('/youtube/album/${Uri.encodeComponent(album['browseId'])}',
+                            navigateGo(context, '${AppRoutes.youtube}/album/${Uri.encodeComponent(album['browseId'])}',
                               extra: {'title': album['title'] ?? '', 'thumbnailUrl': artUrl});
                           }
                         },
@@ -261,7 +267,7 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
                         thumbnailUrl: artUrl,
                         onTap: () {
                           if (single['browseId'] != null) {
-                            context.go('/youtube/album/${Uri.encodeComponent(single['browseId'])}',
+                            navigateGo(context, '${AppRoutes.youtube}/album/${Uri.encodeComponent(single['browseId'])}',
                               extra: {'title': single['title'] ?? '', 'thumbnailUrl': artUrl});
                           }
                         },

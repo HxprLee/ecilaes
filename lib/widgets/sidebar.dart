@@ -23,6 +23,8 @@ import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
+import '../router/routes.dart';
+import '../utils/navigation.dart';
 import '../theme/app_theme_tokens.dart';
 import '../models/playlist.dart';
 import 'components/playlist_cover.dart';
@@ -199,19 +201,19 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                               'albums': {
                                 'icon': FontAwesomeIcons.compactDisc,
                                 'label': 'Albums',
-                                'onTap': () => context.go('/albums'),
+                                'onTap': () => navigateGo(context, AppRoutes.albums),
                                 'isSelected': currentLocation == '/albums',
                               },
                               'songs': {
                                 'icon': FontAwesomeIcons.music,
                                 'label': 'Songs',
-                                'onTap': () => context.go('/songs'),
+                                'onTap': () => navigateGo(context, AppRoutes.songs),
                                 'isSelected': currentLocation == '/songs',
                               },
                               'playlists': {
                                 'icon': FontAwesomeIcons.list,
                                 'label': 'Playlists',
-                                'onTap': () => context.go('/playlists'),
+                                'onTap': () => navigateGo(context, AppRoutes.playlists),
                                 'isSelected': currentLocation.startsWith(
                                   '/playlists',
                                 ),
@@ -219,7 +221,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                               'folders': {
                                 'icon': FontAwesomeIcons.solidFolder,
                                 'label': 'Folders',
-                                'onTap': () => context.go('/explorer'),
+                                'onTap': () => navigateGo(context, AppRoutes.explorer),
                                 'isSelected': currentLocation.startsWith(
                                   '/explorer',
                                 ),
@@ -227,7 +229,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                               'artists': {
                                 'icon': FontAwesomeIcons.user,
                                 'label': 'Artists',
-                                'onTap': () => context.go('/artists'),
+                                'onTap': () => navigateGo(context, AppRoutes.artists),
                                 'isSelected': currentLocation == '/artists',
                               },
                               'downloaded': {
@@ -253,14 +255,14 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                   'Home',
                                   value,
                                   isSelected: currentLocation == '/',
-                                  onTap: () => context.go('/'),
+                                  onTap: () => navigateGo(context, AppRoutes.home),
                                 ),
                                 _buildNavItem(
                                   FontAwesomeIcons.youtube,
                                   'YouTube Music',
                                   value,
                                   isSelected: currentLocation == '/youtube',
-                                  onTap: () => context.go('/youtube'),
+                                  onTap: () => navigateGo(context, AppRoutes.youtube),
                                 ),
                                 _buildNavItem(
                                   FontAwesomeIcons.recordVinyl,
@@ -269,7 +271,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                   isSelected: currentLocation.startsWith(
                                     '/library',
                                   ),
-                                  onTap: () => context.go('/library'),
+                                  onTap: () => navigateGo(context, AppRoutes.library),
                                 ),
                                 if (pinnedItems.isNotEmpty) ...[
                                   Divider(
@@ -368,7 +370,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                         isSelected: currentLocation.startsWith(
                                           playlistPath,
                                         ),
-                                        onTap: () => context.go(playlistPath),
+                                        onTap: () => navigateGo(context, playlistPath),
                                         imagePath: playlist.imagePath,
                                       );
                                     }).toList(),
@@ -388,7 +390,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                         'Settings',
                         value,
                         isSelected: isSettings,
-                        onTap: () => context.go('/settings'),
+                        onTap: () => navigateGo(context, AppRoutes.settings),
                       ),
                       const SizedBox(height: 12),
                     ],

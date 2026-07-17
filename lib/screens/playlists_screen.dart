@@ -16,11 +16,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
+import '../router/routes.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
 import '../theme/app_theme_style.dart';
+import '../utils/navigation.dart';
 import '../widgets/components/sliver_page_header.dart';
 import '../widgets/playlist_dialogs.dart';
 import '../widgets/components/playlist_cover.dart';
@@ -89,7 +90,7 @@ class PlaylistsScreen extends StatelessWidget {
                           ? FontAwesomeIcons.solidHeart
                           : FontAwesomeIcons.list,
                     ),
-                    onTap: () => context.go('/playlist/${playlist.id}'),
+                    onTap: () => navigateGo(context, '${AppRoutes.playlists}/${playlist.id}'),
                   );
                 },
               )
@@ -168,7 +169,7 @@ class PlaylistsScreen extends StatelessWidget {
                         context,
                       ).colorScheme.onSurface.withValues(alpha: 0.38),
                     ),
-                    onTap: () => context.go('/playlist/${playlist.id}'),
+                    onTap: () => navigateGo(context, '${AppRoutes.playlists}/${playlist.id}'),
                   );
                 },
               ),

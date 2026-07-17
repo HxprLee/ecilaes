@@ -15,16 +15,17 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import 'dart:io';
-import '../../../models/playlist.dart';
-import '../../components/playlist_cover.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
+import '../../../models/playlist.dart';
+import '../../../widgets/components/playlist_cover.dart';
 import '../../../signals/audio_signal.dart';
 import '../../../signals/search_signal.dart';
-import '../../../signals/navigation_signal.dart';
+import '../../../router/routes.dart';
 import '../../../theme/app_theme_tokens.dart';
+import '../../../utils/navigation.dart';
 
 class MobileHeaderBar extends StatefulWidget {
   final double leftOffset;
@@ -80,10 +81,19 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     searchSignal.addRecentSearch(suggestion);
     searchSignal.searchSuggestions.value = [];
     _removeSuggestionsOverlay();
-    final currentRoute = navigationSignal.currentRoute.value;
-    if (currentRoute != '/search-result') {
-      context.go('/search-result');
-    }
+    _focusNode.unfocus();
+    // Defer the navigation to the next frame so it runs after the overlay
+    // removal and any unfocus side-effects have settled. This avoids any race
+    // where GoRouter's page-replacement is processed before the previous
+    // route's disposal completes, which can silently drop the navigation.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Force the navigation even when already on /search-result so the
+      // tap always lands the user on the results screen with the new query,
+      // matching the explicit "go to search results" intent of clicking a
+      // suggestion.
+      GoRouter.of(context).go(AppRoutes.searchResult);
+    });
   }
 
   Widget _buildSuggestionsOverlay(BuildContext context) {
@@ -94,8 +104,28 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
       final suggestions = searchSignal.searchSuggestions.value;
       final query = searchSignal.searchQuery.value;
 
-      if (suggestions.isEmpty || query.trim().isEmpty || !_isSearchExpanded) {
+      if (!_isSearchExpanded) {
         return const SizedBox.shrink();
+      }
+
+      if (query.trim().isEmpty) {
+        return const SizedBox.shrink();
+      }
+
+      if (suggestions.isEmpty) {
+        return Positioned.fill(
+          top: headerHeight,
+          child: Material(
+            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.97),
+            child: const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+        );
       }
 
       return Positioned.fill(
@@ -150,10 +180,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     if (_isSearchExpanded) {
       _focusNode.requestFocus();
       _showSuggestionsOverlay();
-      final currentRoute = navigationSignal.currentRoute.value;
-      if (currentRoute != '/search') {
-        context.go('/search');
-      }
+      navigateGo(context, AppRoutes.search);
     } else {
       _focusNode.unfocus();
       widget.searchController.clear();
@@ -183,6 +210,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     if (route == '/settings/customization/sidebar-layout') return 'Sidebar Items';
     if (route == '/settings/customization/discord-presence') return 'Discord Rich Presence';
     if (route == '/settings/library/manage_cache') return 'Cache Management';
+    if (route == AppRoutes.settingsIntegrationsYoutubeLogin) return 'YouTube Music Login';
     if (route == '/playlists') return 'Playlists';
     if (route == '/albums') return 'Albums';
     if (route == '/artists') return 'Artists';
@@ -200,7 +228,6 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     }
     if (route.startsWith('/explorer/')) return 'Folders';
     if (route.startsWith('/playlist/')) {
-      // Try to find playlist name
       final id = route.split('/').last;
       try {
         final playlist = audioSignal.playlists.value.firstWhere(
@@ -217,22 +244,23 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
+    final router = GoRouter.of(context);
 
     return Watch((context) {
-      final currentRoute = navigationSignal.currentRoute.value;
-      final isSearchPage = currentRoute == '/search';
+      final currentRoute = GoRouterState.of(context).uri.toString();
+      final isSearchPage = currentRoute == AppRoutes.search;
       final titleProgress = audioSignal.headerTitleProgress.value;
       final pageTitle = audioSignal.headerPageTitle.value ?? _getPageTitle(currentRoute);
       final shouldBack =
           currentRoute.startsWith('/settings') ||
-          currentRoute == '/songs' ||
+          currentRoute == AppRoutes.songs ||
           currentRoute.startsWith('/playlist') ||
           currentRoute.startsWith('/playlists') ||
           currentRoute.startsWith('/albums') ||
           currentRoute.startsWith('/artists') ||
           currentRoute.startsWith('/explorer') ||
-          currentRoute == '/recently-played' ||
-          currentRoute == '/recently-added' ||
+          currentRoute == AppRoutes.recentlyPlayed ||
+          currentRoute == AppRoutes.recentlyAdded ||
           currentRoute.startsWith('/youtube');
 
       // Auto-collapse if we navigate away from search
@@ -286,7 +314,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                           key: ValueKey(shouldBack),
                           onPressed: () {
                             if (shouldBack) {
-                              navigationSignal.goBack(context);
+                              router.pop();
                             } else {
                               Scaffold.of(context).openDrawer();
                             }
@@ -329,8 +357,8 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                               child: Row(
                                 children: [
                                   Builder(builder: (context) {
-                                    final playlistId = currentRoute.startsWith('/playlist/') 
-                                        ? currentRoute.split('/').last 
+                                    final playlistId = currentRoute.startsWith('/playlist/')
+                                        ? currentRoute.split('/').last
                                         : null;
                                     Playlist? playlist;
                                     if (playlistId != null) {
@@ -476,7 +504,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                   ),
                                   if (!currentRoute.startsWith('/settings'))
                                     IconButton(
-                                      onPressed: () => context.go('/settings'),
+                                      onPressed: () => navigateGo(context, AppRoutes.settings),
                                       icon: FaIcon(
                                         FontAwesomeIcons.gear,
                                         color: Theme.of(
@@ -508,10 +536,10 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                               ),
                               onPressed: () {
                                 _toggleSearch();
-                                if (navigationSignal.canPopSync) {
-                                  navigationSignal.goBack(context);
+                                if (router.canPop()) {
+                                  router.pop();
                                 } else {
-                                  context.go('/');
+                                  navigateGo(context, AppRoutes.home);
                                 }
                               },
                             ),
@@ -525,10 +553,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                   searchSignal.searchSuggestions.value = [];
                                   searchSignal.addRecentSearch(value);
                                   _removeSuggestionsOverlay();
-                                  final currentRoute = navigationSignal.currentRoute.value;
-                                  if (currentRoute != '/search-result') {
-                                    context.go('/search-result');
-                                  }
+                                  navigateGo(context, AppRoutes.searchResult);
                                 },
                                 style: TextStyle(
                                   color: Theme.of(

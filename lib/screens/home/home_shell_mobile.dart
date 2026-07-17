@@ -14,13 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
-import '../../signals/navigation_signal.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../widgets/sidebar.dart';
 import '../../widgets/morphing_player.dart';
@@ -39,17 +37,18 @@ class _HomeShellMobileState extends State<HomeShellMobile> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _playerKey = GlobalKey();
 
-  String? _lastLocation;
+  String? _lastRoute;
 
   @override
   Widget build(BuildContext context) {
+    final router = GoRouter.of(context);
     final location = GoRouterState.of(context).uri.toString();
     final topPadding = MediaQuery.of(context).padding.top;
     final headerHeight = 64.0 + topPadding;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
-    if (_lastLocation != location) {
-      _lastLocation = location;
+    if (_lastRoute != location) {
+      _lastRoute = location;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         audioSignal.headerShowBlur.value = false;
         audioSignal.headerTitleProgress.value = 0.0;
@@ -73,18 +72,17 @@ class _HomeShellMobileState extends State<HomeShellMobile> {
         }
 
         return PopScope(
-          canPop: !navigationSignal.canGoBack.value &&
+          canPop: !router.canPop() &&
               audioSignal.playerExpansion.value < 0.001,
           onPopInvokedWithResult: (didPop, result) {
             if (didPop) return;
             final expansion = audioSignal.playerExpansion.value;
-            final canGoBack = navigationSignal.canGoBack.value;
             if (expansion > 0.001) {
               audioSignal.minimizePlayerTrigger.value++;
               return;
             }
-            if (canGoBack) {
-              navigationSignal.goBack(context);
+            if (router.canPop()) {
+              router.pop();
             }
           },
           child: Scaffold(
@@ -123,29 +121,6 @@ class _HomeShellMobileState extends State<HomeShellMobile> {
                   height: headerHeight,
                   child: const WindowTitleBar(leftOffset: 0),
                 ),
-                if (kDebugMode)
-                  Watch(
-                    (context) {
-                      final bgColor = context.isMaterial3
-                          ? context.colorScheme.onSurface.withValues(alpha: 0.5)
-                          : Colors.black54;
-                      return Positioned(
-                        top: 100,
-                        left: 10,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          color: bgColor,
-                          child: Text(
-                            'Route: ${navigationSignal.currentRoute.value}\nBack: ${navigationSignal.canGoBack.value}\n${navigationSignal.historyDebugString}',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
                 Positioned.fill(
                   child: Watch((context) {
                     final expansion = audioSignal.playerExpansion.value;

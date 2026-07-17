@@ -16,21 +16,24 @@
 
 import 'dart:io';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
-import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../../../router.dart' as app_router;
+import '../../../router/routes.dart';
 import '../../../signals/audio_signal.dart';
+import '../../../signals/navigation_signal.dart';
 import '../../../signals/search_signal.dart';
 import '../../../signals/settings_signal.dart';
-import '../../../signals/navigation_signal.dart';
 import '../../../models/playlist.dart';
 import '../../../theme/app_theme_tokens.dart';
+import '../../../utils/navigation.dart';
 import '../../components/playlist_cover.dart';
 
 class DesktopHeaderBar extends StatefulWidget {
+  static _DesktopHeaderBarState? current;
+
   final double leftOffset;
   final double hideContentOpacity;
   final double expansion;
@@ -54,14 +57,27 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
   OverlayEntry? _overlayEntry;
   bool _isFocused = false;
 
+  void focusSearch() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_searchFocusNode.canRequestFocus) {
+        _searchFocusNode.requestFocus();
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    DesktopHeaderBar.current = this;
     _searchFocusNode.addListener(_onFocusChange);
   }
 
   @override
   void dispose() {
+    if (DesktopHeaderBar.current == this) {
+      DesktopHeaderBar.current = null;
+    }
     _removeOverlay();
     _searchFocusNode.removeListener(_onFocusChange);
     _searchFocusNode.dispose();
@@ -72,11 +88,9 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
     final focused = _searchFocusNode.hasFocus;
     if (_isFocused != focused) {
       setState(() => _isFocused = focused);
-      if (focused) {
-        _showOverlay();
-      } else {
-        _removeOverlay();
-      }
+    }
+    if (!focused) {
+      _removeOverlay();
     }
   }
 
@@ -129,6 +143,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
     if (route == '/settings/customization/sidebar-layout') return 'Sidebar Items';
     if (route == '/settings/customization/discord-presence') return 'Discord Rich Presence';
     if (route == '/settings/library/manage_cache') return 'Cache Management';
+    if (route == AppRoutes.settingsIntegrationsYoutubeLogin) return 'YouTube Music Login';
     if (route.startsWith('/explorer/')) return 'Folders';
     if (route.startsWith('/playlist/')) {
       final id = route.split('/').last;
@@ -154,7 +169,17 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
     searchSignal.searchSuggestions.value = [];
     _removeOverlay();
     _searchFocusNode.unfocus();
-    app_router.router.go('/search-result');
+    // Defer the navigation to the next frame so it runs after the overlay
+    // removal and unfocus side-effects have settled, and so GoRouter's
+    // page-replacement runs after the previous route's disposal completes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Force the navigation even when already on /search-result so the
+      // tap always lands the user on the results screen with the new query,
+      // matching the explicit "go to search results" intent of clicking a
+      // suggestion.
+      GoRouter.of(context).go(AppRoutes.searchResult);
+    });
   }
 
   Widget _buildOverlay(BuildContext context) {
@@ -162,8 +187,34 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
       final suggestions = searchSignal.searchSuggestions.value;
       final query = searchSignal.searchQuery.value;
 
-      if (suggestions.isEmpty || query.trim().isEmpty || !_isFocused) {
+      if (query.trim().isEmpty) {
         return const SizedBox.shrink();
+      }
+
+      if (suggestions.isEmpty) {
+        return Positioned(
+          width: 600,
+          child: CompositedTransformFollower(
+            link: _layerLink,
+            showWhenUnlinked: false,
+            offset: const Offset(0, 44),
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(12),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: const SizedBox(
+                height: 48,
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
       }
 
       return Positioned(
@@ -215,52 +266,60 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
   @override
   Widget build(BuildContext context) {
     // Trigger overlay rebuild when suggestions change
-    Watch.builder(
-      builder: (context) {
-        searchSignal.searchSuggestions.value;
-        searchSignal.searchQuery.value;
-        _updateOverlay();
-        return const SizedBox.shrink();
-      },
-    );
-
     return Container(
       height: 80,
       padding: EdgeInsets.only(left: 2 + widget.leftOffset, right: 2),
       child: Row(
         children: [
+          // Invisible overlay controller that subscribes to search signals
+          Watch((context) {
+            searchSignal.searchSuggestions.value;
+            searchSignal.searchQuery.value;
+            final query = searchSignal.searchQuery.value;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              if (query.trim().isNotEmpty && _isFocused) {
+                if (_overlayEntry == null) {
+                  _showOverlay();
+                } else {
+                  _updateOverlay();
+                }
+              } else {
+                _removeOverlay();
+              }
+            });
+            return const SizedBox.shrink();
+          }),
           // Left: Navigation Buttons
           Opacity(
             opacity: widget.hideContentOpacity,
             child: IgnorePointer(
               ignoring: widget.expansion > 0.5,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(width: 16),
-                  Watch((context) {
-                    final canBack = navigationSignal.canGoBack.value;
-                    return _CircularIconButton(
+              child: Watch((context) {
+                final canBack = navigationSignal.canGoBack;
+                final canFwd = navigationSignal.canGoForward;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(width: 16),
+                    _CircularIconButton(
                       icon: Icons.chevron_left,
                       onPressed: canBack
                           ? () => navigationSignal.goBack(context)
                           : null,
                       tooltip: 'Back',
-                    );
-                  }),
-                  const SizedBox(width: 8),
-                  Watch((context) {
-                    final canForward = navigationSignal.canGoForward.value;
-                    return _CircularIconButton(
+                    ),
+                    const SizedBox(width: 8),
+                    _CircularIconButton(
                       icon: Icons.chevron_right,
-                      onPressed: canForward
+                      onPressed: canFwd
                           ? () => navigationSignal.goForward(context)
                           : null,
                       tooltip: 'Forward',
-                    );
-                  }),
-                ],
-              ),
+                    ),
+                  ],
+                );
+              }),
             ),
           ),
 
@@ -268,10 +327,8 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
           // Morphing Page Title and Art
           Watch((context) {
             final titleProgress = audioSignal.headerTitleProgress.value;
-            final currentRoute = navigationSignal.currentRoute.value;
-            debugPrint('HEADER: currentRoute=$currentRoute');
+            final currentRoute = GoRouterState.of(context).uri.toString();
             final routeTitle = _getPageTitle(currentRoute);
-            debugPrint('HEADER: routeTitle=$routeTitle');
             final pageTitle = audioSignal.headerPageTitle.value ?? routeTitle;
             final isVisible = pageTitle.isNotEmpty && titleProgress >= 0.01;
 
@@ -401,10 +458,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
               textAlignVertical: TextAlignVertical.center,
               onTap: () {
                 if (widget.searchController.text.trim().isEmpty) {
-                  final currentRoute = navigationSignal.currentRoute.value;
-                  if (currentRoute != '/search') {
-                    context.go('/search');
-                  }
+                  navigateGo(context, AppRoutes.search);
                 }
               },
               onChanged: (value) => searchSignal.searchQuery.value = value,
@@ -412,10 +466,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
                 searchSignal.searchSuggestions.value = [];
                 searchSignal.addRecentSearch(value);
                 _removeOverlay();
-                final currentRoute = navigationSignal.currentRoute.value;
-                if (currentRoute != '/search-result') {
-                  context.go('/search-result');
-                }
+                navigateGo(context, AppRoutes.searchResult);
               },
               decoration: InputDecoration(
                 hintText: 'Search songs, albums, artists',
@@ -455,10 +506,6 @@ class _CircularIconButton extends StatelessWidget {
     required this.tooltip,
   });
 
-  static Color _circleBackground(BuildContext context) {
-    return context.tokens.circleIconBackground;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Tooltip(
@@ -474,7 +521,7 @@ class _CircularIconButton extends StatelessWidget {
             height: 32,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _circleBackground(context),
+              color: context.tokens.circleIconBackground,
             ),
             child: Icon(
               icon,
@@ -539,10 +586,6 @@ class _CircularWindowButton extends StatelessWidget {
     this.isClose = false,
   });
 
-  static Color _circleBackground(BuildContext context) {
-    return context.tokens.circleIconBackground;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Tooltip(
@@ -556,7 +599,7 @@ class _CircularWindowButton extends StatelessWidget {
             height: 28,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _circleBackground(context),
+              color: context.tokens.circleIconBackground,
             ),
             child: Icon(
               icon,

@@ -16,9 +16,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
+import '../router/routes.dart';
 import '../signals/audio_signal.dart';
+import '../utils/navigation.dart';
 import '../widgets/components/settings_section.dart';
 import '../widgets/components/sliver_page_header.dart';
 
@@ -51,7 +52,7 @@ class SettingsScreen extends StatelessWidget {
                             title: 'Customization',
                             subtitle: 'Themes, layouts, and visual effects',
                             onTap: () =>
-                                context.go('/settings/customization'),
+                                navigateGo(context, AppRoutes.settingsCustomization),
                           ),
                           const SettingsDivider(),
                           SettingsTile(
@@ -59,14 +60,21 @@ class SettingsScreen extends StatelessWidget {
                             title: 'Playback',
                             subtitle:
                                 'Controls, gestures, and background behavior',
-                            onTap: () => context.go('/settings/playback'),
+                            onTap: () => navigateGo(context, AppRoutes.settingsPlayback),
                           ),
                           const SettingsDivider(),
                           SettingsTile(
                             icon: FontAwesomeIcons.music,
                             title: 'Library',
                             subtitle: 'Manage music folders and indexing',
-                            onTap: () => context.go('/settings/library'),
+                            onTap: () => navigateGo(context, AppRoutes.settingsLibrary),
+                          ),
+                          const SettingsDivider(),
+                          SettingsTile(
+                            icon: FontAwesomeIcons.plug,
+                            title: 'Integrations',
+                            subtitle: 'Discord, YouTube Music, and Last.fm',
+                            onTap: () => navigateGo(context, AppRoutes.settingsIntegrations),
                           ),
                           const SettingsDivider(),
                           SettingsTile(
@@ -74,7 +82,7 @@ class SettingsScreen extends StatelessWidget {
                             title: 'About',
                             subtitle:
                                 'Version information and developer links',
-                            onTap: () => context.go('/settings/about'),
+                            onTap: () => navigateGo(context, AppRoutes.settingsAbout),
                           ),
                         ],
                       ),

@@ -36,10 +36,31 @@ class QueueModel {
   /// the file small.
   final List<String> history;
 
+  /// Radio seed videoId (without the `yt:` prefix). Persisted so the app can
+  /// offer to continue radio on restart.
+  final String? radioSeed;
+
+  /// Recent radio seed videoIds. Used for "radio from recent" without re-fetching.
+  final List<String> recentRadioSeeds;
+
+  /// Whether shuffle mode is currently enabled. Drives whether [shuffleOrder]
+  /// or [playbackOrder] is the active play sequence.
+  final bool isShuffleEnabled;
+
+  /// Permutation of indices into [playbackOrder] that defines the shuffled
+  /// play order. `playbackOrder[shuffleOrder[i]]` is the i-th song played
+  /// while shuffle is enabled. Empty when shuffle is off or the queue is
+  /// empty.
+  final List<int> shuffleOrder;
+
   const QueueModel({
     this.playbackOrder = const [],
     this.currentIndex = -1,
     this.history = const [],
+    this.radioSeed,
+    this.recentRadioSeeds = const [],
+    this.isShuffleEnabled = false,
+    this.shuffleOrder = const [],
   });
 
   bool get isEmpty => playbackOrder.isEmpty;
@@ -64,11 +85,19 @@ class QueueModel {
     List<String>? playbackOrder,
     int? currentIndex,
     List<String>? history,
+    String? radioSeed,
+    List<String>? recentRadioSeeds,
+    bool? isShuffleEnabled,
+    List<int>? shuffleOrder,
   }) {
     return QueueModel(
       playbackOrder: playbackOrder ?? this.playbackOrder,
       currentIndex: currentIndex ?? this.currentIndex,
       history: history ?? this.history,
+      radioSeed: radioSeed ?? this.radioSeed,
+      recentRadioSeeds: recentRadioSeeds ?? this.recentRadioSeeds,
+      isShuffleEnabled: isShuffleEnabled ?? this.isShuffleEnabled,
+      shuffleOrder: shuffleOrder ?? this.shuffleOrder,
     );
   }
 
@@ -77,6 +106,10 @@ class QueueModel {
       'playbackOrder': playbackOrder,
       'currentIndex': currentIndex,
       'history': history,
+      'radioSeed': radioSeed,
+      'recentRadioSeeds': recentRadioSeeds,
+      'isShuffleEnabled': isShuffleEnabled,
+      'shuffleOrder': shuffleOrder,
     };
   }
 
@@ -89,6 +122,16 @@ class QueueModel {
       currentIndex: json['currentIndex'] as int? ?? -1,
       history: (json['history'] as List<dynamic>?)
               ?.map((e) => e as String)
+              .toList() ??
+          const [],
+      radioSeed: json['radioSeed'] as String?,
+      recentRadioSeeds: (json['recentRadioSeeds'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
+      isShuffleEnabled: json['isShuffleEnabled'] as bool? ?? false,
+      shuffleOrder: (json['shuffleOrder'] as List<dynamic>?)
+              ?.map((e) => e as int)
               .toList() ??
           const [],
     );

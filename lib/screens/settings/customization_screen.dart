@@ -17,12 +17,13 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/settings_signal.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../theme/app_theme_style.dart';
+import '../../utils/navigation.dart';
+import '../../router/routes.dart';
 import '../../widgets/components/settings_section.dart';
 import '../../widgets/components/spinner_widget.dart';
 import '../../widgets/components/sliver_page_header.dart';
@@ -193,8 +194,9 @@ class CustomizationScreen extends StatelessWidget {
                             title: 'Player Layout',
                             subtitle: 'Customize the action buttons row',
                             showLeading: false,
-                            onTap: () => context.go(
-                              '/settings/customization/player-layout',
+                            onTap: () => navigateGo(
+                              context,
+                              AppRoutes.settingsCustomizationPlayerLayout,
                             ),
                           ),
                           const SettingsDivider(indent: 16),
@@ -202,8 +204,9 @@ class CustomizationScreen extends StatelessWidget {
                             title: 'Context Menu Actions',
                             subtitle: 'Customize the long-press menu actions',
                             showLeading: false,
-                            onTap: () => context.go(
-                              '/settings/customization/actions-layout',
+                            onTap: () => navigateGo(
+                              context,
+                              AppRoutes.settingsCustomizationActionsLayout,
                             ),
                           ),
                           const SettingsDivider(indent: 16),
@@ -211,8 +214,9 @@ class CustomizationScreen extends StatelessWidget {
                             title: 'Lyrics View Layout',
                             subtitle: 'Customize lyrics alignment and fonts',
                             showLeading: false,
-                            onTap: () => context.go(
-                              '/settings/customization/lyrics-layout',
+                            onTap: () => navigateGo(
+                              context,
+                              AppRoutes.settingsCustomizationLyricsLayout,
                             ),
                           ),
                           const SettingsDivider(indent: 16),
@@ -221,8 +225,9 @@ class CustomizationScreen extends StatelessWidget {
                             subtitle:
                                 'Choose which library items appear in sidebar',
                             showLeading: false,
-                            onTap: () => context.go(
-                              '/settings/customization/sidebar-layout',
+                            onTap: () => navigateGo(
+                              context,
+                              AppRoutes.settingsCustomizationSidebarLayout,
                             ),
                           ),
                         ],
@@ -231,31 +236,45 @@ class CustomizationScreen extends StatelessWidget {
 
                     if (_isDesktop) ...[
                       const SizedBox(height: 32),
-                      const SettingsSectionLabel('Discord Rich Presence'),
+                      const SettingsSectionLabel('Window'),
                       SettingsSection(
-                        child: SettingsTile(
-                          title: 'Discord Rich Presence',
-                          subtitle: 'Configure Discord status buttons',
-                          showLeading: false,
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Watch(
+                        child: Column(
+                          children: [
+                            SettingsTile(
+                              title: 'Custom Window Controls',
+                              subtitle: 'Use custom buttons',
+                              showLeading: false,
+                              trailing: Watch(
                                 (context) => Switch(
-                                  value: settingsSignal.enableDiscordRpc.value,
-                                  onChanged: (value) =>
-                                      settingsSignal.updateDiscordRpc(value),
+                                  value: settingsSignal
+                                      .useCustomWindowControls
+                                      .value,
+                                  onChanged: (value) => settingsSignal
+                                      .updateCustomWindowControls(value),
                                   activeThumbColor:
                                       context.colorScheme.secondary,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.chevron_right, size: 20),
-                            ],
-                          ),
-                          onTap: () => context.go(
-                            '/settings/customization/discord-presence',
-                          ),
+                            ),
+                            const SettingsDivider(indent: 16),
+                            SettingsTile(
+                              title: 'Window Transparency',
+                              subtitle:
+                                  'Translucent background (requires restart)',
+                              showLeading: false,
+                              trailing: Watch(
+                                (context) => Switch(
+                                  value: settingsSignal
+                                      .enableWindowTransparency
+                                      .value,
+                                  onChanged: (value) => settingsSignal
+                                      .updateWindowTransparency(value),
+                                  activeThumbColor:
+                                      context.colorScheme.secondary,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],

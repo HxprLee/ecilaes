@@ -33,6 +33,7 @@ class ActionsLayoutSection extends StatelessWidget {
     'go_to_album',
     'go_to_artist',
     'sleep_timer',
+    'speed',
     'info',
     'edit_metadata',
     'share',
@@ -440,6 +441,7 @@ class ActionsLayoutSection extends StatelessWidget {
       case 'go_to_album': return Icons.album_outlined;
       case 'go_to_artist': return Icons.person_outline;
       case 'sleep_timer': return Icons.timer_outlined;
+      case 'speed': return Icons.speed;
       case 'info': return Icons.info_outline;
       case 'edit_metadata': return Icons.edit_outlined;
       case 'share': return Icons.share_outlined;
@@ -461,6 +463,7 @@ class ActionsLayoutSection extends StatelessWidget {
       case 'go_to_album': return 'Go to album';
       case 'go_to_artist': return 'Go to artist';
       case 'sleep_timer': return 'Sleep timer';
+      case 'speed': return 'Playback speed';
       case 'info': return 'Song info';
       case 'edit_metadata': return 'Edit info';
       case 'share': return 'Share';

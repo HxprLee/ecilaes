@@ -16,12 +16,17 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:crypto/crypto.dart';
 import 'package:ytmusicapi_dart/ytmusicapi_dart.dart';
 import 'package:ytmusicapi_dart/enums.dart';
 export 'package:ytmusicapi_dart/enums.dart' show SearchFilter;
+import 'package:ytmusicapi_dart/navigation.dart';
+import 'package:ytmusicapi_dart/parsers/browsing.dart';
+import 'package:ytmusicapi_dart/parsers/songs.dart';
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import '../signals/settings_signal.dart';
@@ -34,7 +39,12 @@ class YoutubeDatasource {
   YoutubeDatasource._internal();
 
   YTMusic? _ytm;
+  String? _cacheDir;
+
+  /// In-memory cache of radio song lists keyed by videoId.
+  final Map<String, List<Song>> _radioCache = {};
   bool _initialized = false;
+  bool _initializing = false;
   String? _cookies;
   Completer<void>? _initCompleter;
 
@@ -58,14 +68,29 @@ class YoutubeDatasource {
 
   // --- Cache Getters ---
   Future<List<Map<String, dynamic>>?> getCachedHomeSections() async {
-    final cached = await YTCacheHelper.readCache('home_sections');
-    if (cached is List) return cached.map((e) => Map<String, dynamic>.from(e)).toList();
-    return null;
+    final cached = await YTCacheHelper.readStampedCache('home_sections', maxAge: const Duration(minutes: 30));
+    if (cached == null) return null;
+    final data = cached.data;
+    if (data is! List) return null;
+    final sections = <Map<String, dynamic>>[];
+    for (final rawSection in data) {
+      final section = Map<String, dynamic>.from(rawSection);
+      final items = section['items'] as List? ?? [];
+      section['items'] = items.map((item) {
+        if (item is Map) {
+          return _normalizeYtmItem(item);
+        }
+        return <String, dynamic>{};
+      }).toList();
+      sections.add(section);
+    }
+    return sections;
   }
 
   Future<Map<String, dynamic>?> getCachedMoodCategories() async {
-    final cached = await YTCacheHelper.readCache('mood_categories');
-    if (cached is Map) return Map<String, dynamic>.from(cached);
+    final cached = await YTCacheHelper.readStampedCache('mood_categories', maxAge: const Duration(minutes: 30));
+    if (cached == null) return null;
+    if (cached.data is Map) return Map<String, dynamic>.from(cached.data);
     return null;
   }
 
@@ -95,21 +120,31 @@ class YoutubeDatasource {
   }
 
   Future<Map<String, dynamic>?> getCachedExplore() async {
-    final cached = await YTCacheHelper.readCache('explore');
-    if (cached is Map) return Map<String, dynamic>.from(cached);
+    final cached = await YTCacheHelper.readStampedCache('explore', maxAge: const Duration(minutes: 30));
+    if (cached == null) return null;
+    if (cached.data is Map) return Map<String, dynamic>.from(cached.data);
     return null;
   }
   // ---------------------
 
   Future<void> init({bool force = false}) async {
     if (_initialized && !force) return;
-    
-    if (_initCompleter != null && !_initCompleter!.isCompleted) {
-      await _initCompleter!.future;
+    if (_initializing) {
+      await _initCompleter?.future;
+      return;
     }
     
     _initialized = false;
     _initCompleter = Completer<void>();
+    _initializing = true;
+
+    // Set up the cache directory for radio persistence.
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      _cacheDir = '${dir.path}/ecilaes_cache';
+      await _loadRadioCache();
+    } catch (_) {}
+
     try {
       debugPrint('YouTube Music Datasource: Starting initialization...');
       
@@ -151,6 +186,9 @@ class YoutubeDatasource {
       ));
 
       if (authCookie != null && authCookie.isNotEmpty) {
+        // Pass authType = browser by including SAPISIDHASH; the interceptor will
+        // overwrite the Authorization header with the properly computed value on each
+        // request so the library's initial sapisidFromCookie(authorization) doesn't matter.
         final authContent = jsonEncode({
           'cookie': authCookie,
           'authorization': 'SAPISIDHASH dummy_value',
@@ -168,6 +206,7 @@ class YoutubeDatasource {
           );
           _cookies = response.headers['set-cookie'];
           if (_cookies != null) {
+             // Same: authType = browser; interceptor computes correct SAPISIDHASH per request.
              final authContent = jsonEncode({
                'cookie': _cookies,
                'authorization': 'SAPISIDHASH dummy_value',
@@ -182,29 +221,45 @@ class YoutubeDatasource {
       }
 
       _initialized = true;
+      _initializing = false;
       debugPrint('YouTube Music Datasource initialized successfully.');
       _initCompleter!.complete();
     } catch (e) {
       debugPrint('YouTube Music Datasource CRITICAL initialization error: $e');
       _initialized = true;
+      _initializing = false;
       _initCompleter!.complete();
     }
   }
 
   String transformThumbnail(String? url) {
     if (url == null || url.isEmpty) return '';
-    
-    // For standard YouTube video thumbnails, the sqp/rs tokens often expire or cause connection resets.
-    // Strip query parameters to get the reliable base image.
+
+    // Fix protocol-relative URLs (e.g. //lh3.googleusercontent.com/...).
+    if (url.startsWith('//')) {
+      url = 'https:$url';
+    }
+
+    // For i.ytimg.com (YouTube CDN), strip only the token parameters that
+    // cause connection resets. Keep the rest of the query string intact so
+    // URLs with encoded sizing tokens still resolve correctly.
     if (url.contains('i.ytimg.com')) {
       final uri = Uri.tryParse(url);
-      if (uri != null) {
-         // Return just the origin + path (e.g., https://i.ytimg.com/vi/.../sddefault.jpg)
-         url = '${uri.scheme}://${uri.host}${uri.path}';
+      if (uri != null && uri.hasQuery) {
+        final params = uri.queryParameters;
+        final safe = params.entries
+            .where((e) => e.key != 'sqp' && e.key != 'rs')
+            .toList();
+        if (safe.isNotEmpty) {
+          final qs = safe.map((e) => '${e.key}=${e.value}').join('&');
+          url = '${uri.scheme}://${uri.host}${uri.path}?$qs';
+        } else {
+          url = '${uri.scheme}://${uri.host}${uri.path}';
+        }
       }
     }
 
-    // Replace size parameters for Google-hosted images (lh3.googleusercontent, etc)
+    // Upgrade Google-hosted image size parameters to high-res.
     return url
         .replaceAll(RegExp(r'w\d+-h\d+'), 'w600-h600')
         .replaceAll('=s60', '=s600')
@@ -341,27 +396,25 @@ class YoutubeDatasource {
   }
 
   Future<List<Map<String, dynamic>>> getHomeSections() async {
-    await init();
-    if (_ytm == null) {
-      debugPrint('YTM getHome error: YTMusic is not initialized.');
-      return [];
-    }
     try {
-      final results = await _ytm!.getHome();
-      final mapped = results.map((section) {
+      final response = await _sendRequest('browse', {'browseId': 'FEmusic_home'});
+      final results = nav(response, [...SINGLE_COLUMN_TAB, ...SECTION_LIST]);
+      final home = parseMixedContent(List<Map<String, dynamic>>.from(results as List));
+
+      final mapped = home.map((section) {
         final contents = section['contents'] as List? ?? [];
-        // Pre-cache thumbnails for all items with videoIds
-        for (final item in contents) {
+        final normalizedContents = contents.map((item) {
           if (item is Map) {
-            cacheThumbnailsFromItem(Map<String, dynamic>.from(item));
+            return _normalizeYtmItem(item);
           }
-        }
+          return <String, dynamic>{};
+        }).toList();
         return <String, dynamic>{
           'title': section['title'],
-          'items': contents,
+          'items': normalizedContents,
         };
       }).toList();
-      YTCacheHelper.writeCache('home_sections', mapped);
+      YTCacheHelper.writeStampedCache('home_sections', mapped);
       return mapped;
     } catch (e) {
       debugPrint('YTM getHome error: $e');
@@ -400,7 +453,7 @@ class YoutubeDatasource {
           sections[title] = categoryList;
         }
       }
-      YTCacheHelper.writeCache('mood_categories', sections);
+      YTCacheHelper.writeStampedCache('mood_categories', sections);
       return sections;
     } catch (e) {
       debugPrint('YTM getMoodCategories error: $e');
@@ -500,7 +553,10 @@ class YoutubeDatasource {
         'gl': 'US',
         'hl': 'en',
       },
-      'user': {},
+      'user': {
+        'enableUsemsg': true,
+        'usemsg': true,
+      },
     };
 
     try {
@@ -595,6 +651,140 @@ class YoutubeDatasource {
     }
   }
 
+  /// Normalize a raw YTM API item (e.g. from getHome) into a flat map with
+  /// videoId, title, artists, album, thumbnail(s), and playlistId at the top
+  /// level — the same shape that mapToSong expects.
+  Map<String, dynamic> _normalizeYtmItem(dynamic item) {
+    if (item is! Map) return {};
+    final Map<String, dynamic> dItem = Map<String, dynamic>.from(item);
+
+    // Already flat (e.g. search results, album tracks)
+    if (dItem.containsKey('videoId') && dItem['videoId'] is String) {
+      return dItem;
+    }
+
+    // musicTwoRowItemRenderer — appears in carousels on home (e.g. "Listen again")
+    final twoRow = dItem['musicTwoRowItemRenderer'];
+    if (twoRow != null && twoRow is Map) {
+      final normalized = <String, dynamic>{};
+      final title = twoRow['title']?['runs']?[0]?['text'] ?? '';
+      if (title.isNotEmpty) normalized['title'] = title;
+
+      String browseId = twoRow['navigationEndpoint']?['browseEndpoint']?['browseId'] ?? '';
+      if (browseId.startsWith('VL')) browseId = browseId.substring(2);
+      if (browseId.isNotEmpty) normalized['browseId'] = browseId;
+
+      // videoId from watchEndpoint or playlistId
+      final watchVid = twoRow['navigationEndpoint']?['watchEndpoint']?['videoId'];
+      if (watchVid != null && watchVid is String && watchVid.isNotEmpty) {
+        normalized['videoId'] = watchVid;
+      }
+
+      // Subtitle -> artists + album
+      final subtitleRuns = twoRow['subtitle']?['runs'];
+      if (subtitleRuns is List && subtitleRuns.isNotEmpty) {
+        final subtitleText = subtitleRuns.map((r) => r['text'] ?? '').join('');
+        _parseSubtitleIntoArtistsAndAlbum(subtitleText, normalized);
+      }
+
+      // Thumbnail
+      final thumbs = twoRow['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'];
+      if (thumbs is List && thumbs.isNotEmpty) {
+        normalized['thumbnails'] = thumbs;
+      }
+
+      return normalized;
+    }
+
+    // musicResponsiveListItemRenderer — used on home song sections
+    final renderer = dItem['musicResponsiveListItemRenderer'];
+    if (renderer != null && renderer is Map) {
+      final normalized = <String, dynamic>{};
+
+      // Thumbnail
+      final thumbData = renderer['thumbnail'];
+      if (thumbData is Map) {
+        final thumbs = thumbData['musicThumbnailRenderer']?['thumbnail']?['thumbnails'];
+        if (thumbs is List && thumbs.isNotEmpty) {
+          normalized['thumbnails'] = thumbs;
+        }
+      }
+
+      // Title — first flex column
+      final flex0 = renderer['flexColumns']?[0]?['musicFlexibleMatrixColumnRenderer'];
+      if (flex0 is Map) {
+        final text = flex0['text']?['runs'];
+        if (text is List && text.isNotEmpty) {
+          normalized['title'] = text[0]['text'] ?? '';
+        }
+      }
+
+      // Subtitle — second flex column (typically "Artist · Album" or just "Artist")
+      String subtitleText = '';
+      final flex1 = renderer['flexColumns']?[1]?['musicFlexibleMatrixColumnRenderer'];
+      if (flex1 is Map) {
+        final text = flex1['text']?['runs'];
+        if (text is List && text.isNotEmpty) {
+          subtitleText = text.map((r) => r['text'] ?? '').join('');
+        }
+      }
+      if (subtitleText.isNotEmpty) {
+        _parseSubtitleIntoArtistsAndAlbum(subtitleText, normalized);
+      }
+
+      // videoId — watch endpoint on the overlay (playlistId for radio)
+      final overlay = renderer['overlay'];
+      if (overlay is Map) {
+        final playBtn = overlay['musicItemThumbnailOverlayRenderer']?['content']?['musicPlayButtonRenderer'];
+        if (playBtn is Map) {
+          final watch = playBtn['playNavigationEndpoint']?['watchPlaylistEndpoint'];
+          if (watch is Map) {
+            final playlistId = watch['playlistId']?.toString() ?? '';
+            final videoId = watch['videoId']?.toString() ?? '';
+            // Prefer videoId if available, otherwise the playlistId (radio queue)
+            normalized['videoId'] = videoId.isNotEmpty ? videoId : playlistId;
+          }
+        }
+      }
+
+      // Fallback: check browse/watch endpoint in nav endpoint
+      if ((normalized['videoId']?.toString() ?? '').isEmpty) {
+        final nav = renderer['navigationEndpoint'];
+        if (nav is Map) {
+          normalized['browseId'] = nav['browseEndpoint']?['browseId'] ?? '';
+          normalized['videoId'] = nav['watchEndpoint']?['videoId']?.toString() ?? '';
+        }
+      }
+
+      // playlistId at top level
+      normalized['playlistId'] = dItem['playlistId'] ?? '';
+
+      return normalized;
+    }
+
+    return dItem;
+  }
+
+  /// Parse a subtitle string like "Artist · Album" or "Artist" into
+  /// the 'artists' list (of maps with 'name') and 'album' string that
+  /// mapToSong expects.
+  void _parseSubtitleIntoArtistsAndAlbum(
+      String subtitle, Map<String, dynamic> out) {
+    final parts = subtitle.split('·');
+    if (parts.length >= 2) {
+      final artistPart = parts[0].trim();
+      final albumPart = parts.sublist(1).join('·').trim();
+      if (artistPart.isNotEmpty) {
+        out['artists'] = [{'name': artistPart}];
+      }
+      if (albumPart.isNotEmpty) {
+        out['album'] = albumPart;
+      }
+    } else if (parts.length == 1 && parts[0].trim().isNotEmpty) {
+      out['artists'] = [{'name': parts[0].trim()}];
+    }
+  }
+
   List<Map<String, dynamic>> _parseTwoRowItems(List<dynamic> items) {
     final List<Map<String, dynamic>> parsed = [];
     for (final item in items) {
@@ -609,10 +799,7 @@ class YoutubeDatasource {
       String thumbnailUrl = '';
       final thumbnails = renderer['thumbnailRenderer']?['musicThumbnailRenderer']?['thumbnail']?['thumbnails'];
       if (thumbnails is List && thumbnails.isNotEmpty) {
-        thumbnailUrl = thumbnails.last['url'] ?? '';
-        if (thumbnailUrl.startsWith('//')) {
-          thumbnailUrl = 'https:$thumbnailUrl';
-        }
+        thumbnailUrl = transformThumbnail(thumbnails.last['url'] ?? '');
       }
 
       String subtitle = '';
@@ -621,11 +808,18 @@ class YoutubeDatasource {
         subtitle = subtitles.map((r) => r['text'] ?? '').join();
       }
 
+      // Build thumbnails list to match what mapToSong expects (checks 'thumbnails')
+      List<Map<String, dynamic>>? parsedThumbs;
+      if (thumbnailUrl.isNotEmpty) {
+        parsedThumbs = [{'url': thumbnailUrl}];
+      }
+
       if (browseId.isNotEmpty) {
         parsed.add({
           'title': title,
           'browseId': browseId,
           'thumbnailUrl': thumbnailUrl,
+          'thumbnails': parsedThumbs,
           'description': subtitle,
         });
       }
@@ -680,7 +874,7 @@ class YoutubeDatasource {
           }
         }
       }
-      YTCacheHelper.writeCache('explore', explore);
+      YTCacheHelper.writeStampedCache('explore', explore);
       return explore;
     } catch (e) {
       debugPrint('YTM getExplore error: $e');
@@ -843,22 +1037,259 @@ class YoutubeDatasource {
   /// Get a radio/auto-play playlist of songs similar to the given video.
   /// Uses YouTube Music's native radio endpoint (getWatchPlaylist with radio=true).
   /// The first track is skipped since it is the seed/current song.
-  /// Fetches multiple pages via continuation until [limit] tracks are collected.
   Future<List<Song>> getRadioSongs(String videoId, {int limit = 25}) async {
     await init();
     if (_ytm == null) return [];
-    try {
-      final result = await _ytm!.getWatchPlaylist(
-        videoId: videoId,
-        limit: limit,
-        radio: true,
-      );
-      final tracks = result['tracks'] as List? ?? [];
-      return tracks.skip(1).map((t) => mapToSong(t)).toList();
-    } catch (e) {
-      debugPrint('YTM getRadioSongs error: $e');
+
+    if (_radioCache.containsKey(videoId)) {
+      return _radioCache[videoId]!;
+    }
+
+    List<Song>? result;
+    for (int attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(Duration(milliseconds: 200 * (1 << attempt)));
+      }
+      try {
+        // Bypass ytmusicapi_dart's parseWatchPlaylist (force-unwraps null
+        // primaryRenderer / counterpart / tabs and throws TypeError on
+        // malformed watch items). We send the same 'next' request ourselves
+        // and parse the raw panel contents locally.
+        final rawContents = await _fetchRadioPanelContents(videoId, limit: limit);
+        if (rawContents.isNotEmpty) {
+          final parsed = _parseWatchPlaylistSafe(rawContents);
+          if (parsed.isNotEmpty) {
+            result = parsed.skip(1).map(mapToSong).toList();
+            break;
+          }
+        }
+      } on TypeError {
+        // Deterministic cast failure — retrying yields the same error.
+        debugPrint(
+          'YTM getRadioSongs: parse error in response, returning empty',
+        );
+        break;
+      } catch (e) {
+        debugPrint('YTM getRadioSongs error (attempt ${attempt + 1}): $e');
+      }
+    }
+
+    if (result == null || result.isEmpty) {
       return [];
     }
+
+    _cacheRadioSongs(videoId, result);
+    return result;
+  }
+
+  /// Sends the same 'next' request as `getWatchPlaylist(radio: true)` and
+  /// returns the raw `playlistPanelRenderer.contents` list. We avoid the
+  /// upstream `parseWatchPlaylist` because it throws on malformed items.
+  /// Continuations are intentionally skipped — the first page is enough
+  /// to seed a radio queue.
+  Future<List<dynamic>> _fetchRadioPanelContents(
+    String videoId, {
+    int limit = 25,
+  }) async {
+    final ytm = _ytm;
+    if (ytm == null) return const [];
+
+    final body = <String, dynamic>{
+      'enablePersistentPlaylistPanel': true,
+      'isAudioOnly': true,
+      'tunerSettingValue': 'AUTOMIX_SETTING_NORMAL',
+      'videoId': videoId,
+      'playlistId': 'RDAMVM$videoId',
+      'params': 'wAEB',
+    };
+
+    final response = await ytm.sendRequest('next', body);
+
+    final watchNextRenderer = nav(response, [
+      'contents',
+      'singleColumnMusicWatchNextResultsRenderer',
+      'tabbedRenderer',
+      'watchNextTabbedResultsRenderer',
+    ]);
+
+    final panel = nav(
+      watchNextRenderer,
+      [...TAB_CONTENT, 'musicQueueRenderer', 'content', 'playlistPanelRenderer'],
+      nullIfAbsent: true,
+    );
+
+    if (panel is! Map) return const [];
+    final contents = panel['contents'];
+    if (contents is List && contents.length >= limit) return contents;
+    return contents is List ? contents : const [];
+  }
+
+  /// Null-safe replacement for `ytmusicapi_dart`'s `parseWatchPlaylist`.
+  /// Each item is parsed in its own try/catch so one malformed entry can't
+  /// poison the whole batch. Returns maps shaped for `mapToSong`:
+  /// `videoId`, `title`, `artists`, `album`, `thumbnail`, `length`.
+  ///
+  /// TODO: Delete this once `ytmusicapi_dart` is fixed upstream and we
+  /// bump the dependency.
+  List<Map<String, dynamic>> _parseWatchPlaylistSafe(List<dynamic> rawContents) {
+    const String ppvwr = 'playlistPanelVideoWrapperRenderer';
+    const String ppvr = 'playlistPanelVideoRenderer';
+    final tracks = <Map<String, dynamic>>[];
+
+    for (final raw in rawContents) {
+      if (raw is! Map) continue;
+      Map result = raw;
+
+      try {
+        Map<String, dynamic>? data;
+
+        if (result.containsKey(ppvwr)) {
+          final wrapper = result[ppvwr];
+          if (wrapper is! Map) continue;
+          final primary = wrapper['primaryRenderer'];
+          if (primary is! Map) continue;
+          result = primary;
+        }
+
+        final ppvrData = result[ppvr];
+        if (ppvrData is! Map) continue;
+        data = Map<String, dynamic>.from(ppvrData);
+
+        if (data.containsKey('unplayableText')) continue;
+
+        final track = <String, dynamic>{
+          'videoId': data['videoId'],
+          'title': nav(data, TITLE_TEXT),
+          'length': nav(
+            data,
+            ['lengthText', 'runs', 0, 'text'],
+            nullIfAbsent: true,
+          ),
+          'thumbnail': nav(data, THUMBNAIL, nullIfAbsent: true),
+        };
+
+        final longByline = data['longBylineText'];
+        if (longByline is Map) {
+          final runs = longByline['runs'];
+          if (runs is List) {
+            try {
+              track.addAll(parseSongRuns(runs));
+            } catch (_) {
+              // Skip artist extraction on parse failure; track is still valid.
+            }
+          }
+        }
+
+        tracks.add(track);
+      } catch (_) {
+        continue;
+      }
+    }
+
+    return tracks;
+  }
+
+  void _cacheRadioSongs(String videoId, List<Song> songs) {
+    _radioCache[videoId] = songs;
+    _persistRadioCache();
+  }
+
+  Future<void> _persistRadioCache() async {
+    if (_cacheDir == null) return;
+    try {
+      final file = File('$_cacheDir/radio_cache.json');
+      final data = <String, List<Map<String, dynamic>>>{};
+      _radioCache.forEach((key, songs) {
+        data[key] = songs.map(_songToJson).toList();
+      });
+      await file.writeAsString(jsonEncode(data));
+    } catch (_) {}
+  }
+
+  Future<void> _loadRadioCache() async {
+    if (_cacheDir == null) return;
+    try {
+      final file = File('$_cacheDir/radio_cache.json');
+      if (!await file.exists()) return;
+      final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      data.forEach((key, value) {
+        final songs = (value as List)
+            .map((e) => _songFromJson(e as Map<String, dynamic>))
+            .toList();
+        _radioCache[key] = songs;
+      });
+    } catch (_) {}
+  }
+
+  Future<String?> getAccountName() async {
+    await init();
+    try {
+      final data = await _sendRequest('account/account_menu', {});
+      // Walk the response looking for a "simpleText" account name.
+      String? found;
+      _walkForSimpleText(data, 'accountName', (v) {
+        if (found == null && v is String && v.isNotEmpty) found = v;
+      });
+      return found;
+    } catch (e) {
+      debugPrint('Failed to get YT account name: $e');
+    }
+    return null;
+  }
+
+  void _walkForSimpleText(
+      dynamic node, String key, void Function(dynamic) onMatch) {
+    if (node is Map) {
+      if (node.containsKey(key)) {
+        final val = node[key];
+        if (val is Map && val.containsKey('simpleText')) {
+          onMatch(val['simpleText']);
+        } else if (val is String) {
+          onMatch(val);
+        }
+      }
+      for (final v in node.values) {
+        _walkForSimpleText(v, key, onMatch);
+      }
+    } else if (node is List) {
+      for (final v in node) {
+        _walkForSimpleText(v, key, onMatch);
+      }
+    }
+  }
+
+  Song _songFromJson(Map<String, dynamic> json) {
+    return Song(
+      path: json['path'] as String? ?? '',
+      title: json['title'] as String? ?? 'Unknown',
+      artist: json['artist'] as String? ?? 'Unknown',
+      album: json['album'] as String?,
+      hasAlbumArt: json['hasAlbumArt'] as bool? ?? true,
+      lyrics: null,
+      duration: json['durationMs'] != null
+          ? Duration(milliseconds: json['durationMs'] as int)
+          : null,
+      bitrate: json['bitrate'] as int?,
+      size: json['size'] as int?,
+      modifiedAt: null,
+      gainDb: 0.0,
+      trackPeak: 1.0,
+      albumGainDb: 0.0,
+      albumPeak: 1.0,
+      thumbnailUrl: json['thumbnailUrl'] as String?,
+    );
+  }
+
+  Map<String, dynamic> _songToJson(Song song) {
+    return {
+      'path': song.path,
+      'title': song.title,
+      'artist': song.artist,
+      'album': song.album,
+      'durationMs': song.duration?.inMilliseconds,
+      'thumbnailUrl': song.thumbnailUrl,
+      'hasAlbumArt': song.hasAlbumArt,
+    };
   }
 }
 

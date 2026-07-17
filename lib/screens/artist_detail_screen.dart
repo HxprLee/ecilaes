@@ -165,10 +165,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                     ),
                     const SizedBox(width: 12),
                     OutlinedButton.icon(
-                      onPressed: () {
-                        final shuffled = List<Song>.from(artist.songs)..shuffle();
-                        audioSignal.playSong(shuffled.first, fromList: shuffled);
-                      },
+                      onPressed: () => audioSignal.playShuffledFromList(artist.songs),
                       icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
                       label: const Text('Shuffle'),
                       style: OutlinedButton.styleFrom(

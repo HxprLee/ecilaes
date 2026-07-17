@@ -33,6 +33,7 @@ class PlayerBarLayoutSection extends StatelessWidget {
     'go_to_album',
     'go_to_artist',
     'sleep_timer',
+    'speed',
     'info',
     'share',
     'shuffle',
@@ -228,8 +229,9 @@ class PlayerBarLayoutSection extends StatelessWidget {
     String targetCollection,
     int targetIndex,
   ) {
-    if (data.sourceCollection == targetCollection && data.index == targetIndex)
+    if (data.sourceCollection == targetCollection && data.index == targetIndex) {
       return;
+    }
 
     final player = List<String>.from(settingsSignal.playerBarActions.value);
 
@@ -385,6 +387,8 @@ class PlayerBarLayoutSection extends StatelessWidget {
         return Icons.person_outline;
       case 'sleep_timer':
         return Icons.timer_outlined;
+      case 'speed':
+        return Icons.speed;
       case 'info':
         return Icons.info_outline;
       case 'share':
@@ -420,6 +424,8 @@ class PlayerBarLayoutSection extends StatelessWidget {
         return 'Go to artist';
       case 'sleep_timer':
         return 'Sleep timer';
+      case 'speed':
+        return 'Playback speed';
       case 'info':
         return 'Song info';
       case 'share':

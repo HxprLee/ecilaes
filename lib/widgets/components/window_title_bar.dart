@@ -17,10 +17,12 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/search_signal.dart';
+import '../../router/routes.dart';
 import '../../widgets/header/desktop/desktop_header_bar.dart';
 import '../../widgets/header/mobile/mobile_header_bar.dart';
 
@@ -49,6 +51,23 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
         _searchController.text = query;
       }
     });
+  }
+
+  String? _lastFocusedRoute;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Capture route changes safely (can't access GoRouterState in initState).
+    final route = GoRouterState.of(context).uri.toString();
+    if (route != _lastFocusedRoute) {
+      _lastFocusedRoute = route;
+      if (route == AppRoutes.search) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          DesktopHeaderBar.current?.focusSearch();
+        });
+      }
+    }
   }
 
   @override

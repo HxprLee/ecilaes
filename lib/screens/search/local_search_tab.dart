@@ -14,15 +14,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../../models/song.dart';
-import '../../../signals/audio_signal.dart';
+import '../../../router/routes.dart';
 import '../../../signals/search_signal.dart';
+import '../../../utils/navigation.dart';
 import '../../../widgets/components/standard_sliver_list.dart';
+import '../../../widgets/components/song_tile.dart';
 
 class LocalResultsTab extends StatelessWidget {
   final LocalSearchFilter filter;
@@ -80,77 +80,19 @@ class LocalResultsTab extends StatelessWidget {
         items: songs,
         isLoading: false,
         emptyMessage: isSearching ? 'No local songs found' : 'Start typing to search',
-        itemBuilder: (context, song, index) {
-          final artPath = artDirPath != null
-              ? '$artDirPath/${song.path.hashCode.abs()}.jpg'
-              : '';
-          final hasArt = song.hasAlbumArt && artPath.isNotEmpty;
-
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 4,
-              horizontal: 24,
+        itemBuilder: (context, song, index) => SongTile(
+          song: song,
+          artDirPath: artDirPath,
+          trailing: Text(
+            song.duration == null || song.duration == Duration.zero
+                ? '--:--'
+                : '${song.duration!.inMinutes}:${song.duration!.inSeconds.remainder(60).toString().padLeft(2, '0')}',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+              fontSize: 12,
             ),
-            leading: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(4),
-                image: hasArt
-                    ? DecorationImage(
-                        image: FileImage(File(artPath)),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              child: !hasArt
-                  ? Center(
-                      child: FaIcon(
-                        FontAwesomeIcons.music,
-                        size: 18,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.24),
-                      ),
-                    )
-                  : null,
-            ),
-            title: Text(
-              song.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.secondary,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
-            subtitle: Text(
-              song.artist,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondary.withValues(alpha: 0.7),
-                fontSize: 12,
-              ),
-            ),
-            trailing: Text(
-              song.duration == null || song.duration == Duration.zero
-                  ? '--:--'
-                  : '${song.duration!.inMinutes}:${song.duration!.inSeconds.remainder(60).toString().padLeft(2, '0')}',
-              style: TextStyle(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.38),
-                fontSize: 12,
-              ),
-            ),
-            onTap: () => audioSignal.playSong(song),
-          );
-        },
+          ),
+        ),
       );
     });
 
@@ -212,7 +154,7 @@ class _LocalPlaylistsList extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                onTap: () => context.go('/playlist/${playlist.id}'),
+                onTap: () => navigateGo(context, '${AppRoutes.playlists}/${playlist.id}'),
               );
             },
             childCount: playlists.length,
@@ -301,7 +243,8 @@ class _LocalAlbumsList extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                onTap: () => context.go(
+                onTap: () => navigateGo(
+                  context,
                   '/albums/${Uri.encodeComponent(album.artist)}/${Uri.encodeComponent(album.name)}',
                 ),
               );
@@ -392,7 +335,8 @@ class _LocalArtistsList extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                onTap: () => context.go(
+                onTap: () => navigateGo(
+                  context,
                   '/artists/${Uri.encodeComponent(artist.name)}',
                 ),
               );
@@ -484,7 +428,7 @@ class _LocalFoldersList extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                onTap: () => context.go('/explorer'),
+                onTap: () => navigateGo(context, AppRoutes.explorer),
               );
             },
             childCount: folders.length,

@@ -20,8 +20,10 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
+import '../router/routes.dart';
 import '../models/song.dart';
 import '../services/album_art_cache.dart';
+import '../utils/navigation.dart';
 import 'package:path/path.dart' as p;
 import '../widgets/playlist_dialogs.dart';
 
@@ -103,7 +105,7 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
               if (context.canPop()) {
                 context.pop();
               } else {
-                context.go('/library');
+                navigateGo(context, AppRoutes.library);
               }
             }
             return;
@@ -112,7 +114,7 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
           // Go up one level
           final parent = Directory(currentPath).parent;
           if (context.mounted) {
-            context.go('/explorer/${Uri.encodeComponent(parent.path)}');
+            navigateGo(context, '${AppRoutes.explorer}/${Uri.encodeComponent(parent.path)}');
           }
         },
         child: Scaffold(
@@ -152,13 +154,14 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
                                   if (context.canPop()) {
                                     context.pop();
                                   } else {
-                                    context.go('/library');
+                                    navigateGo(context, AppRoutes.library);
                                   }
                                 }
                               } else {
                                 final parent = Directory(currentPath).parent;
                                 if (context.mounted) {
-                                  context.go(
+                                  navigateGo(
+                                    context,
                                     '/explorer/${Uri.encodeComponent(parent.path)}',
                                   );
                                 }
@@ -213,7 +216,8 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
                             return _FolderTile(
                               directory: item,
                               onTap: () {
-                                context.push(
+                                navigatePush(
+                                  context,
                                   '/explorer/${Uri.encodeComponent(item.path)}',
                                 );
                               },

@@ -17,11 +17,12 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../models/playlist.dart';
+import '../router/routes.dart';
 import '../models/song.dart';
 import '../signals/audio_signal.dart';
+import '../utils/navigation.dart';
 import '../widgets/components/app_dialog.dart';
 import '../widgets/components/sliver_page_header.dart';
 import '../widgets/components/playlist_cover.dart';
@@ -161,7 +162,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   FilledButton(
                     onPressed: () {
                       Navigator.pop(dialogContext); // Close dialog
-                      context.go('/playlists'); // Go back from screen safely
+                      navigateGo(context, AppRoutes.playlists); // Go back from screen safely
                       audioSignal.deletePlaylist(currentPlaylist.id);
                     },
                     style: FilledButton.styleFrom(

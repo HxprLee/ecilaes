@@ -149,7 +149,7 @@ class _QueueSheetBodyState extends State<QueueSheetBody> {
                     }),
                     const SizedBox(width: 8),
                     Watch((context) {
-                      final isShuffle = audioSignal.isShuffleMode.value;
+                      final isShuffle = q.queueSignal.isShuffleEnabled.value;
                       return IconButton(
                         onPressed: () => audioSignal.toggleShuffle(),
                         icon: Icon(

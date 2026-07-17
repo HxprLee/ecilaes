@@ -23,6 +23,7 @@ import 'screens/playlists_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/search/search_result_screen.dart';
 import 'screens/search/search_screen.dart';
+import 'screens/search/see_more_screen.dart';
 import 'screens/search/mood_screen.dart';
 import 'screens/search/yt_library_screen.dart';
 import 'screens/library_screen.dart';
@@ -41,6 +42,7 @@ import 'screens/yt_playlist_screen.dart';
 import 'widgets/songs_list_content.dart';
 import 'signals/audio_signal.dart';
 import 'signals/navigation_signal.dart';
+import 'router/routes.dart';
 import 'screens/settings/customization_screen.dart';
 import 'screens/settings/playback_section.dart';
 import 'screens/settings/library_section.dart';
@@ -52,10 +54,11 @@ import 'screens/settings/sidebar_layout_section.dart';
 import 'screens/settings/discord_presence_section.dart';
 import 'screens/settings/cache_management_screen.dart';
 import 'screens/settings/yt_login_webview_screen.dart';
+import 'screens/settings/integrations_section.dart';
 
 /// Creates the GoRouter configuration.
 final GoRouter router = GoRouter(
-  initialLocation: '/',
+  initialLocation: AppRoutes.home,
   routes: [
     ShellRoute(
       builder: (context, state, child) {
@@ -64,31 +67,44 @@ final GoRouter router = GoRouter(
       routes: [
         // Home
         GoRoute(
-          path: '/',
+          path: AppRoutes.home,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const HomeScreen()),
         ),
         // Songs list
         GoRoute(
-          path: '/songs',
+          path: AppRoutes.songs,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const SongsListContent()),
         ),
         // Search
         GoRoute(
-          path: '/search',
+          path: AppRoutes.search,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const SearchScreen()),
         ),
         // Search Results
         GoRoute(
-          path: '/search-result',
+          path: AppRoutes.searchResult,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const SearchResultScreen()),
         ),
+        GoRoute(
+          path: AppRoutes.seeMore,
+          pageBuilder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>? ?? {};
+            return _buildPageWithTransition(
+              state,
+              SeeMoreScreen(
+                sectionKey: extra['sectionKey'] ?? '',
+                title: extra['title'] ?? 'More',
+              ),
+            );
+          },
+        ),
         // Mood
         GoRoute(
-          path: '/mood/:params',
+          path: '${AppRoutes.mood}/:params',
           pageBuilder: (context, state) {
             final params = Uri.decodeComponent(state.pathParameters['params'] ?? '');
             final title = state.extra as String? ?? 'Mood';
@@ -100,7 +116,7 @@ final GoRouter router = GoRouter(
         ),
         // YouTube Music
         GoRoute(
-          path: '/youtube',
+          path: AppRoutes.youtube,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const YoutubeMusicScreen()),
           routes: [
@@ -144,47 +160,47 @@ final GoRouter router = GoRouter(
         ),
         // YouTube Music Library
         GoRoute(
-          path: '/yt-library/playlists',
+          path: AppRoutes.ytLibraryPlaylists,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const YtLibraryScreen(type: YTLibraryType.playlists)),
         ),
         GoRoute(
-          path: '/yt-library/albums',
+          path: AppRoutes.ytLibraryAlbums,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const YtLibraryScreen(type: YTLibraryType.albums)),
         ),
         GoRoute(
-          path: '/yt-library/artists',
+          path: AppRoutes.ytLibraryArtists,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const YtLibraryScreen(type: YTLibraryType.artists)),
         ),
         // Library
         GoRoute(
-          path: '/library',
+          path: AppRoutes.library,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const LibraryScreen()),
         ),
         // Recently Played
         GoRoute(
-          path: '/recently-played',
+          path: AppRoutes.recentlyPlayed,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const RecentlyPlayedScreen()),
         ),
         // Most Played
         GoRoute(
-          path: '/most-played',
+          path: AppRoutes.mostPlayed,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const MostPlayedScreen()),
         ),
         // Recently Added
         GoRoute(
-          path: '/recently-added',
+          path: AppRoutes.recentlyAdded,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const RecentlyAddedScreen()),
         ),
         // File Explorer
         GoRoute(
-          path: '/explorer',
+          path: AppRoutes.explorer,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const FileExplorerScreen()),
           routes: [
@@ -203,13 +219,13 @@ final GoRouter router = GoRouter(
         ),
         // Playlists
         GoRoute(
-          path: '/playlists',
+          path: AppRoutes.playlists,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const PlaylistsScreen()),
         ),
         // Artists
         GoRoute(
-          path: '/artists',
+          path: AppRoutes.artists,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const ArtistsScreen()),
           routes: [
@@ -227,7 +243,7 @@ final GoRouter router = GoRouter(
         ),
         // Albums
         GoRoute(
-          path: '/albums',
+          path: AppRoutes.albums,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const AlbumsScreen()),
           routes: [
@@ -247,14 +263,18 @@ final GoRouter router = GoRouter(
         // Playlist
         GoRoute(
           path: '/playlist/:id',
-          pageBuilder: (context, state) {
+          redirect: (context, state) {
             final playlistId = state.pathParameters['id'];
+            if (playlistId == null) return AppRoutes.library;
             final playlists = audioSignal.playlists.value;
             final index = playlists.indexWhere((p) => p.id == playlistId);
-            if (index == -1) {
-              // Playlist was deleted or ID is invalid — redirect to library
-              return _buildPageWithTransition(state, const LibraryScreen());
-            }
+            if (index == -1) return AppRoutes.library;
+            return null;
+          },
+          pageBuilder: (context, state) {
+            final playlistId = state.pathParameters['id']!;
+            final playlists = audioSignal.playlists.value;
+            final index = playlists.indexWhere((p) => p.id == playlistId);
             return _buildPageWithTransition(
               state,
               PlaylistScreen(playlist: playlists[index]),
@@ -263,7 +283,7 @@ final GoRouter router = GoRouter(
         ),
         // Settings
         GoRoute(
-          path: '/settings',
+          path: AppRoutes.settings,
           pageBuilder: (context, state) =>
               _buildPageWithTransition(state, const SettingsScreen()),
           routes: [
@@ -300,11 +320,25 @@ final GoRouter router = GoRouter(
                     const SidebarLayoutSection(),
                   ),
                 ),
+              ],
+            ),
+            GoRoute(
+              path: 'integrations',
+              pageBuilder: (context, state) =>
+                  _buildPageWithTransition(state, const IntegrationsSection()),
+              routes: [
                 GoRoute(
                   path: 'discord-presence',
                   pageBuilder: (context, state) => _buildPageWithTransition(
                     state,
                     const DiscordPresenceSection(),
+                  ),
+                ),
+                GoRoute(
+                  path: 'youtube-login',
+                  pageBuilder: (context, state) => _buildPageWithTransition(
+                    state,
+                    const YtLoginWebViewScreen(),
                   ),
                 ),
               ],
@@ -321,13 +355,10 @@ final GoRouter router = GoRouter(
               routes: [
                 GoRoute(
                   path: 'manage_cache',
-                  pageBuilder: (context, state) =>
-                      _buildPageWithTransition(state, const CacheManagementScreen()),
-                ),
-                GoRoute(
-                  path: 'youtube-login',
-                  pageBuilder: (context, state) =>
-                      _buildPageWithTransition(state, const YtLoginWebViewScreen()),
+                  pageBuilder: (context, state) => _buildPageWithTransition(
+                    state,
+                    const CacheManagementScreen(),
+                  ),
                 ),
               ],
             ),
@@ -382,24 +413,17 @@ CustomTransitionPage _buildPageWithTransition(
   );
 }
 
+/// Resets header state when a new route is first entered.
+/// Called once at startup from main.dart.
 void initNavigationListener() {
-  // Seed initial location
-  final initialLocation = router.routerDelegate.currentConfiguration.uri
-      .toString();
-  if (initialLocation.isNotEmpty) {
-    navigationSignal.onRouteChanged(initialLocation);
-  }
-
-  // Use routeInformationProvider for the most up-to-date URI, since
-  // currentConfiguration.uri can incorrectly report the parent shell
-  // route for nested pages.
+  navigationSignal.clear();
   router.routerDelegate.addListener(() {
-    String location;
-    try {
-      location = router.routeInformationProvider.value.uri.toString();
-    } catch (_) {
-      location = router.routerDelegate.currentConfiguration.uri.toString();
+    final loc = router.routerDelegate.currentConfiguration.uri.toString();
+    if (loc.isNotEmpty) {
+      navigationSignal.recordVisit(loc);
     }
-    navigationSignal.onRouteChanged(location);
   });
+  audioSignal.headerShowBlur.value = false;
+  audioSignal.headerTitleProgress.value = 0.0;
+  audioSignal.headerArtCover.value = null;
 }

@@ -25,6 +25,7 @@ import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 import '../services/album_art_cache.dart';
 import '../signals/audio_signal.dart';
+import '../signals/queue_signal.dart' as q;
 import './playlist_dialogs.dart';
 import './song_info_dialog.dart';
 import '../signals/settings_signal.dart';
@@ -43,6 +44,235 @@ import 'morphing_player/player_layout_calculator.dart';
 
 Color placeholderIconColor(BuildContext context) {
   return context.tokens.placeholderIcon;
+}
+
+class _LyricsQueueShell extends StatefulWidget {
+  final Song? currentSong;
+  final bool isDesktopLayoutMode;
+  final double screenWidth;
+  final dynamic expandedLayout;
+  final double groupLeft;
+  final double maxPaneWidth;
+  final double paneGap;
+  final bool showControls;
+  final AnimationController lyricsController;
+
+  const _LyricsQueueShell({
+    required this.currentSong,
+    required this.isDesktopLayoutMode,
+    required this.screenWidth,
+    required this.expandedLayout,
+    required this.groupLeft,
+    required this.maxPaneWidth,
+    required this.paneGap,
+    required this.showControls,
+    required this.lyricsController,
+  });
+
+  @override
+  State<_LyricsQueueShell> createState() => _LyricsQueueShellState();
+}
+
+class _LyricsQueueShellState extends State<_LyricsQueueShell> {
+  late final ValueNotifier<bool> _showQueueNotifier;
+  bool _showQueue = false;
+  Timer? _localImmersionTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _showQueue = audioSignal.showQueueInPlayer.value;
+    _showQueueNotifier = ValueNotifier(_showQueue);
+  }
+
+  @override
+  void dispose() {
+    _showQueueNotifier.dispose();
+    _localImmersionTimer?.cancel();
+    super.dispose();
+  }
+
+  void _localResetImmersionTimer() {
+    _localImmersionTimer?.cancel();
+    if (!mounted) return;
+
+    final lyrics = audioSignal.currentLyrics.value;
+    final hasSyncedLyrics =
+        lyrics != null && RegExp(r'\[\d{2}:\d{2}').hasMatch(lyrics);
+
+    final isDesktopLayout = MediaQuery.of(context).size.width >= 900;
+
+    if (audioSignal.showLyrics.value &&
+        audioSignal.isPlaying.value &&
+        hasSyncedLyrics &&
+        !isDesktopLayout) {
+      _localImmersionTimer = Timer(const Duration(seconds: 5), () {});
+    }
+  }
+
+  Widget _buildLyricsBodyInline(BuildContext context, double width) {
+    if (widget.currentSong == null) return const SizedBox.shrink();
+
+    final topPadding = widget.isDesktopLayoutMode
+        ? 80.0
+        : (widget.expandedLayout.art.top + 46.0);
+
+    final lyrics = audioSignal.currentLyrics.value;
+
+    final bottomEdge = widget.isDesktopLayoutMode
+        ? MediaQuery.of(context).size.height
+        : (lyrics != null
+              ? (widget.showControls
+                    ? widget.expandedLayout.controls.top
+                    : MediaQuery.of(context).size.height - 24.0)
+              : widget.expandedLayout.seekbar.top);
+
+    final availableHeight = bottomEdge - topPadding;
+
+    Widget content;
+    if (lyrics == null) {
+      final loadingHeight = widget.expandedLayout.seekbar.top - topPadding;
+      content = SizedBox(
+        width: width,
+        height: loadingHeight,
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Theme.of(
+                context,
+              ).colorScheme.secondary.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+      );
+    } else if (lyrics.isEmpty) {
+      content = SizedBox(
+        width: width,
+        height: availableHeight,
+        child: Center(
+          child: Text(
+            'No lyrics available',
+            style: TextStyle(
+              color: Theme.of(
+                context,
+              ).colorScheme.secondary.withValues(alpha: 0.5),
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    } else {
+      final lyricsWidget = MobileLyricsView(
+        lyricsText: lyrics,
+        onUserScrollDown: _localResetImmersionTimer,
+      );
+
+      content = AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        width: width,
+        height: availableHeight,
+        child: lyricsWidget,
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(top: topPadding),
+      child: content,
+    );
+  }
+
+  Widget _buildQueueBodyInline(BuildContext context, double width) {
+    final topPadding = widget.isDesktopLayoutMode
+        ? 80.0
+        : (widget.expandedLayout.art.top + 46.0);
+
+    final bottomEdge = widget.isDesktopLayoutMode
+        ? MediaQuery.of(context).size.height
+        : widget.expandedLayout.controls.top;
+
+    final availableHeight = !widget.showControls
+        ? MediaQuery.of(context).size.height - 24.0 - topPadding
+        : bottomEdge - topPadding;
+
+    return Padding(
+      padding: EdgeInsets.only(top: topPadding),
+      child: SizedBox(
+        height: availableHeight,
+        child: QueueListCore(
+          showNowPlaying: false,
+          showBackToTop: true,
+          tileHorizontalPadding: 32,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(double width) {
+    final lyricsBody = audioSignal.currentLyrics.value != null
+        ? _buildLyricsBodyInline(context, width)
+        : const SizedBox.shrink();
+    final queueBody = _buildQueueBodyInline(context, width);
+    return AnimatedCrossFade(
+      crossFadeState: _showQueue
+          ? CrossFadeState.showSecond
+          : CrossFadeState.showFirst,
+      duration: const Duration(milliseconds: 300),
+      firstChild: KeyedSubtree(
+        key: const ValueKey('lyrics'),
+        child: lyricsBody,
+      ),
+      secondChild: KeyedSubtree(key: const ValueKey('queue'), child: queueBody),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rawLyricsValue = Curves.easeOutCubic.transform(
+      widget.lyricsController.value,
+    );
+    if (rawLyricsValue <= 0) return const SizedBox.shrink();
+
+    if (audioSignal.showQueueInPlayer.value != _showQueue) {
+      _showQueue = audioSignal.showQueueInPlayer.value;
+      _showQueueNotifier.value = _showQueue;
+    }
+
+    final opacity = rawLyricsValue.clamp(0.0, 1.0);
+
+    if (widget.isDesktopLayoutMode) {
+      final left = lerpDouble(
+        widget.screenWidth,
+        widget.groupLeft + widget.maxPaneWidth + widget.paneGap,
+        rawLyricsValue,
+      )!;
+      return Positioned(
+        top: 0,
+        bottom: 0,
+        left: left,
+        width: widget.maxPaneWidth,
+        child: Opacity(
+          opacity: opacity,
+          child: IgnorePointer(
+            ignoring: opacity < 0.8,
+            child: _buildContent(widget.maxPaneWidth),
+          ),
+        ),
+      );
+    }
+
+    return Opacity(
+      opacity: opacity,
+      child: IgnorePointer(
+        ignoring: opacity < 0.8,
+        child: _buildContent(widget.screenWidth),
+      ),
+    );
+  }
 }
 
 class MorphingPlayer extends StatefulWidget {
@@ -731,101 +961,31 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                           Positioned.fill(
                             child: Stack(
                               children: [
-                                // 2. Lyrics / Queue Body
-                                // Mobile: overlay that fades in/out
-                                // Desktop Layout: side-by-side panel on the right half of the group
-                                if (!isDesktopLayoutMode)
-                                  Watch((context) {
-                                    final _ =
-                                        audioSignal.showQueueInPlayer.value;
-                                    if (rawLyricsValue <= 0) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return Opacity(
-                                      opacity: rawLyricsValue.clamp(0.0, 1.0),
-                                      child: IgnorePointer(
-                                        ignoring: rawLyricsValue < 0.8,
-                                        child: AnimatedCrossFade(
-                                          crossFadeState:
-                                              audioSignal
-                                                  .showQueueInPlayer
-                                                  .value
-                                              ? CrossFadeState.showSecond
-                                              : CrossFadeState.showFirst,
-                                          duration: const Duration(
-                                            milliseconds: 300,
-                                          ),
-                                          firstChild: KeyedSubtree(
-                                            key: const ValueKey('lyrics'),
-                                            child: _buildLyricsBody(
-                                              currentSong,
-                                              screenWidth,
-                                              expandedLayout,
-                                              isDesktopLayout: false,
-                                            ),
-                                          ),
-                                          secondChild: KeyedSubtree(
-                                            key: const ValueKey('queue'),
-                                            child: _buildQueueBody(
-                                              screenWidth,
-                                              expandedLayout,
-                                              isDesktopLayout: false,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  }),
-                                if (isDesktopLayoutMode)
-                                  Watch((context) {
-                                    final _ =
-                                        audioSignal.showQueueInPlayer.value;
-                                    if (rawLyricsValue <= 0) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return Positioned(
-                                      top: 0,
-                                      bottom: 0,
-                                      left: lerpDouble(
-                                        screenWidth,
-                                        groupLeft + maxPaneWidth + paneGap,
-                                        rawLyricsValue,
-                                      )!,
-                                      width: maxPaneWidth,
-                                      child: Opacity(
-                                        opacity: rawLyricsValue.clamp(0.0, 1.0),
-                                        child: IgnorePointer(
-                                          ignoring: rawLyricsValue < 0.8,
-                                          child: AnimatedCrossFade(
-                                            crossFadeState:
-                                                audioSignal
-                                                    .showQueueInPlayer
-                                                    .value
-                                                ? CrossFadeState.showSecond
-                                                : CrossFadeState.showFirst,
-                                            duration: const Duration(
-                                              milliseconds: 300,
-                                            ),
-                                            firstChild: KeyedSubtree(
-                                              key: const ValueKey('lyrics'),
-                                              child: _buildLyricsBody(
-                                                currentSong,
-                                                maxPaneWidth,
-                                                expandedLayout,
-                                                isDesktopLayout: true,
-                                              ),
-                                            ),
-                                            secondChild: KeyedSubtree(
-                                              key: const ValueKey('queue'),
-                                              child: _buildQueueBody(
-                                                maxPaneWidth,
-                                                expandedLayout,
-                                                isDesktopLayout: true,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
+                                // 2. Lyrics / Queue Layer
+                                // Lyrics/queue rendering lives in
+                                // `_LyricsQueueShell` so that animation ticks
+                                // don't tear down MobileLyricsView/QueueListCore
+                                // on every frame — the heavy subtrees stay
+                                // mounted under stable KeyedSubtree keys.
+                                // The wrapping Watch is required so the shell
+                                // rebuilds when either flag flips; the local
+                                // `_showQueue` flag inside the shell only
+                                // syncs inside `build`, so we must rebuild
+                                // the shell itself for the crossfade to flip.
+                                if (rawLyricsValue > 0)
+                                  Watch((_) {
+                                    audioSignal.showLyrics.value;
+                                    audioSignal.showQueueInPlayer.value;
+                                    return _LyricsQueueShell(
+                                      currentSong: currentSong,
+                                      isDesktopLayoutMode: isDesktopLayoutMode,
+                                      screenWidth: screenWidth,
+                                      expandedLayout: expandedLayout,
+                                      groupLeft: groupLeft,
+                                      maxPaneWidth: maxPaneWidth,
+                                      paneGap: paneGap,
+                                      showControls: _showControls,
+                                      lyricsController: _lyricsController,
                                     );
                                   }),
 
@@ -875,7 +1035,8 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                                 // 5. Seekbar
                                 Watch((context) {
                                   final position = audioSignal.position.value;
-                                  final lyrics = audioSignal.currentLyrics.value;
+                                  final lyrics =
+                                      audioSignal.currentLyrics.value;
                                   final hasLyrics = lyrics != null;
                                   final showQueue =
                                       audioSignal.showQueueInPlayer.value;
@@ -959,8 +1120,12 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     if (value < 0.9) return const SizedBox.shrink();
 
     // Fade out seekbar if lyrics or queue is showing
-    final effectLyricsOpacity = isDesktopLayoutMode ? 0.0 : (hasLyrics ? lyricsValue : 0.0);
-    final effectQueueOpacity = isDesktopLayoutMode ? 0.0 : (showQueue ? 1.0 : 0.0);
+    final effectLyricsOpacity = isDesktopLayoutMode
+        ? 0.0
+        : (hasLyrics ? lyricsValue : 0.0);
+    final effectQueueOpacity = isDesktopLayoutMode
+        ? 0.0
+        : (showQueue ? 1.0 : 0.0);
     final seekbarOpacity =
         ((value - 0.9) * 10).clamp(0.0, 1.0) *
         (1.0 - effectLyricsOpacity) *
@@ -1081,10 +1246,9 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                         color: Theme.of(context).colorScheme.secondary,
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondary
-                              .withValues(alpha: 0.2),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondary.withValues(alpha: 0.2),
                         ),
                       ),
                       child: Text(
@@ -1381,7 +1545,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
   ) {
     final isYoutube = currentSong?.path.startsWith('yt:') ?? false;
     final ytThumbnailUrl = isYoutube
-        ? youtubeDatasource.getArtworkUrl(currentSong!.path.substring(3))
+        ? youtubeDatasource.getSongArtworkUrl(currentSong!)
         : null;
 
     return IgnorePointer(
@@ -1819,120 +1983,13 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     });
   }
 
-  Widget _buildLyricsBody(
-    Song? currentSong,
-    double screenWidth,
-    dynamic expandedLayout, {
-    bool isDesktopLayout = false,
-  }) {
-    if (currentSong == null) return const SizedBox.shrink();
-
-    // For mobile overlays, lyrics start below the shifted album art.
-    // For desktop side-by-side, lyrics take up the full panel.
-    final topPadding = isDesktopLayout ? 80.0 : (expandedLayout.art.top + 46.0);
-
-    return Watch((context) {
-      final lyrics = audioSignal.currentLyrics.value;
-
-      final bottomEdge = isDesktopLayout
-          ? MediaQuery.of(context).size.height
-          : (lyrics != null
-                ? (_showControls
-                      ? expandedLayout.controls.top
-                      : MediaQuery.of(context).size.height - 24.0)
-                : expandedLayout.seekbar.top);
-
-      final availableHeight = bottomEdge - topPadding;
-
-      Widget content;
-      if (lyrics == null) {
-        final loadingHeight = expandedLayout.seekbar.top - topPadding;
-        content = SizedBox(
-          width: screenWidth,
-          height: loadingHeight,
-          child: Center(
-            child: SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondary.withValues(alpha: 0.5),
-              ),
-            ),
-          ),
-        );
-      } else if (lyrics.isEmpty) {
-        content = SizedBox(
-          width: screenWidth,
-          height: availableHeight,
-          child: Center(
-            child: Text(
-              'No lyrics available',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5),
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        );
-      } else {
-        final alignment = settingsSignal.lyricsAlignment.value;
-        final isCentered = alignment == TextAlign.center;
-
-        final lyricsWidget = MobileLyricsView(
-          lyricsText: lyrics,
-          onUserScrollDown: _resetImmersionTimer,
-        );
-
-        content = AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          width: screenWidth,
-          height: availableHeight,
-          child: lyricsWidget,
-        );
-      }
-
-      return Padding(
-        padding: EdgeInsets.only(top: topPadding),
-        child: content,
-      );
-    });
-  }
-
-  Widget _buildQueueBody(
-    double screenWidth,
-    dynamic expandedLayout, {
-    bool isDesktopLayout = false,
-  }) {
-    final topPadding = isDesktopLayout ? 80.0 : (expandedLayout.art.top + 46.0);
-
-    return Padding(
-      padding: EdgeInsets.only(top: topPadding),
-      child: Watch((context) {
-        final bottomEdge = isDesktopLayout
-            ? MediaQuery.of(context).size.height
-            : expandedLayout.controls.top;
-
-        // If controls are hidden (immersion mode), fill the screen like lyrics does
-        final availableHeight = !_showControls
-            ? MediaQuery.of(context).size.height - 24.0 - topPadding
-            : bottomEdge - topPadding;
-
-        return SizedBox(
-          height: availableHeight,
-          child: QueueListCore(
-            showNowPlaying: false,
-            showBackToTop: true,
-            tileHorizontalPadding: 32,
-          ),
-        );
-      }),
-    );
-  }
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Lyrics / Queue rendering now lives in `_LyricsQueueShell` (top-level, above
+  // `_MorphingPlayerState`). It owns the AnimatedCrossFade + heavy subtrees so
+  // that animation ticks only rebuild the outer Opacity/Positioned layer; the
+  // underlying MobileLyricsView and QueueListCore are element-matched via
+  // KeyedSubtree and survive the crossfade.
+  // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildActionById({
     required BuildContext context,
@@ -1946,7 +2003,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
     switch (id) {
       case 'shuffle':
         return Watch((context) {
-          final isShuffle = audioSignal.isShuffleMode.value;
+          final isShuffle = q.queueSignal.isShuffleEnabled.value;
           return IconButton(
             icon: FaIcon(
               FontAwesomeIcons.shuffle,
@@ -2156,7 +2213,7 @@ class _MorphingPlayerState extends State<MorphingPlayer>
                   Icons.timer_outlined,
                   color: hasTimer
                       ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.secondary,
+                      : Theme.of(context).colorScheme.secondary.withValues(alpha: 0.4),
                   size: iconSize + 4,
                 ),
                 if (formatted.isNotEmpty) ...[
@@ -2173,6 +2230,50 @@ class _MorphingPlayerState extends State<MorphingPlayer>
               ],
             ),
             onPressed: () => showSleepTimerDialog(context),
+          );
+        });
+      case 'speed':
+        return Watch((context) {
+          final speed = settingsSignal.playbackSpeed.value;
+          final pitch = settingsSignal.playbackPitch.value;
+          final isModified = speed != 1.0 || pitch != 1.0;
+          if (isModified) {
+            final numberText = speed
+                .toStringAsFixed(2)
+                .replaceAll(RegExp(r'0+$'), '')
+                .replaceAll(RegExp(r'\.$'), '');
+            return IconButton(
+              icon: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: numberText,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const TextSpan(
+                      text: 'x',
+                      style: TextStyle(fontWeight: FontWeight.w400),
+                    ),
+                  ],
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.secondary,
+                    fontSize: 16,
+                    letterSpacing: -1.25,
+                  ),
+                ),
+              ),
+              onPressed: () => showPlaybackSpeedDialog(context),
+            );
+          }
+          return IconButton(
+            icon: Icon(
+              Icons.speed,
+              color: Theme.of(
+                context,
+              ).colorScheme.secondary.withValues(alpha: 0.4),
+              size: iconSize + 4,
+            ),
+            onPressed: () => showPlaybackSpeedDialog(context),
           );
         });
       case 'remove_from_playlist':
@@ -2262,9 +2363,7 @@ class _PlayerBackground extends StatelessWidget {
   Widget _buildBackgroundImage(BuildContext context) {
     final isYoutube = song.path.startsWith('yt:');
     if (isYoutube) {
-      final ytThumbnailUrl = youtubeDatasource.getArtworkUrl(
-        song.path.substring(3),
-      );
+      final ytThumbnailUrl = youtubeDatasource.getSongArtworkUrl(song);
       return Image.network(
         ytThumbnailUrl,
         fit: BoxFit.cover,

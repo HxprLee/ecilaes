@@ -42,6 +42,7 @@ class SearchSignal {
 
   // YouTube search state
   final youtubeSearchResults = listSignal<Song>([]);
+  final ytBrowseResults = listSignal<Song>([]);
   final ytSearchResults = listSignal<Map<String, dynamic>>([]);
   final ytSearchFilter = signal<SearchFilter?>(SearchFilter.songs);
   final isSearchingYoutube = signal<bool>(false);
@@ -66,10 +67,6 @@ class SearchSignal {
   Timer? _suggestionsDebounce;
 
   final _effectDisposals = <EffectCleanup>[];
-
-  late final searchResults = computed(() {
-    return [...localSearchResults.value, ...youtubeSearchResults.value];
-  });
 
   void _initEffects() {
     // Search suggestions effect
@@ -248,21 +245,26 @@ class SearchSignal {
     await prefs.remove('recentSearches');
   }
 
-  Future<void> loadExploreData() async {
-    if (exploreData.value.isNotEmpty || isLoadingExplore.value) return;
-    
-    // 1. Try cache first
-    try {
-      final cachedExplore = await youtubeDatasource.getCachedExplore();
-      final cachedMoods = await youtubeDatasource.getCachedMoodCategories();
-      
-      if (cachedExplore != null && cachedMoods != null) {
-        exploreData.value = cachedExplore;
-        moodCategories.value = cachedMoods;
-      } else {
+  Future<void> loadExploreData({bool force = false}) async {
+    if (!force && (exploreData.value.isNotEmpty || isLoadingExplore.value)) return;
+    if (force && isLoadingExplore.value) return;
+
+    if (!force) {
+      // 1. Try cache first
+      try {
+        final cachedExplore = await youtubeDatasource.getCachedExplore();
+        final cachedMoods = await youtubeDatasource.getCachedMoodCategories();
+
+        if (cachedExplore != null && cachedMoods != null) {
+          exploreData.value = cachedExplore;
+          moodCategories.value = cachedMoods;
+        } else {
+          isLoadingExplore.value = true;
+        }
+      } catch (_) {
         isLoadingExplore.value = true;
       }
-    } catch (_) {
+    } else {
       isLoadingExplore.value = true;
     }
 
@@ -272,8 +274,8 @@ class SearchSignal {
         youtubeDatasource.getExplore(),
         youtubeDatasource.getMoodCategories(),
       ]);
-      exploreData.value = results[0] as Map<String, dynamic>;
-      moodCategories.value = results[1] as Map<String, dynamic>;
+      exploreData.value = results[0];
+      moodCategories.value = results[1];
     } catch (e) {
       debugPrint('Error loading explore data: $e');
     } finally {
@@ -290,13 +292,6 @@ class SearchSignal {
     _suggestionsDebounce = null;
   }
 
-  void dispose() {
-    cancelSearches();
-    for (final cleanup in _effectDisposals) {
-      cleanup();
-    }
-    _effectDisposals.clear();
-  }
 }
 
 final searchSignal = SearchSignal();

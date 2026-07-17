@@ -120,58 +120,55 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
       );
     }
 
-    return Watch((context) {
-      final position = audioSignal.position.value;
+    final alignment = settingsSignal.lyricsAlignment.value;
+    final horizontalPadding = alignment == TextAlign.center ? 24.0 : 32.0;
+    final activeFontSize = settingsSignal.lyricsActiveFontSize.value;
+    final inactiveFontSize = settingsSignal.lyricsInactiveFontSize.value;
+    final plainFontSize = settingsSignal.plainLyricsFontSize.value;
+    final showRomanized = settingsSignal.showRomanizedLyrics.value;
+    final isCentered = alignment == TextAlign.center;
 
-      // Find current line index using binary search (O(log n) vs O(n))
-      int currentIndex = -1;
-      if (_isSynced) {
-        int low = 0, high = _lines.length - 1;
-        while (low <= high) {
-          final mid = (low + high) ~/ 2;
-          final cmp = _lines[mid].time.compareTo(position);
-          if (cmp <= 0) {
-            currentIndex = mid;
-            low = mid + 1;
-          } else {
-            high = mid - 1;
-          }
-        }
-      }
+    return Stack(
+      children: [
+        // Lyrics list. The auto-scroll trigger lives in a separate Watch so
+        // the heavy ListView+ShaderMask subtree only repaints when the
+        // active line index actually changes (1-2/s, not 8-20/s).
+        _LyricsAutoScrollDriver(
+          isSynced: _isSynced,
+          controller: _controller,
+          lastScrolledIndex: _lastScrolledIndex,
+          onAutoScroll: (index) {
+            _lastScrolledIndex = index;
+            if (!_isSynced || _userScrolling) return;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!_controller.hasClients) return;
+              _isAutoScrolling = true;
+              _controller
+                  .scrollToIndex(
+                    index,
+                    preferPosition: AutoScrollPosition.begin,
+                    duration: const Duration(milliseconds: 300),
+                  )
+                  .then((_) {
+                    _isAutoScrolling = false;
+                    if (_controller.hasClients) {
+                      _lastScrollOffset = _controller.offset;
+                    }
+                  });
+            });
+          },
+        ),
 
-      // Auto-scroll to current line if it changed and user is not manually scrolling
-      if (_isSynced && !_userScrolling && currentIndex != _lastScrolledIndex) {
-        _lastScrolledIndex = currentIndex;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_controller.hasClients) {
-            _isAutoScrolling = true;
-            _controller
-                .scrollToIndex(
-                  currentIndex,
-                  preferPosition: AutoScrollPosition.begin,
-                  duration: const Duration(milliseconds: 300),
-                )
-                .then((_) {
-                  _isAutoScrolling = false;
-                  if (_controller.hasClients) {
-                    _lastScrollOffset = _controller.offset;
-                  }
-                });
-          }
-        });
-      }
-
-      return Stack(
-        children: [
-          // Lyrics list
-          NotificationListener<ScrollStartNotification>(
-            onNotification: (notification) {
-              // Detect user-initiated drags (not programmatic scrolls)
-              if (notification.dragDetails != null && !_isAutoScrolling) {
-                // User started dragging
-              }
-              return false;
-            },
+        // Lyrics list
+        NotificationListener<ScrollStartNotification>(
+          onNotification: (notification) {
+            // Detect user-initiated drags (not programmatic scrolls)
+            if (notification.dragDetails != null && !_isAutoScrolling) {
+              // User started dragging
+            }
+            return false;
+          },
+          child: RepaintBoundary(
             child: ShaderMask(
               shaderCallback: (Rect bounds) {
                 return const LinearGradient(
@@ -190,141 +187,183 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
               child: ListView.separated(
                 controller: _controller,
                 padding: EdgeInsets.symmetric(
-                  horizontal:
-                      settingsSignal.lyricsAlignment.value == TextAlign.center
-                      ? 24
-                      : 32,
-                  vertical: _isSynced ? 200 : 24,
+                  horizontal: horizontalPadding,
+                  vertical: _isSynced ? 80 : 24,
                 ),
                 itemCount: _lines.length,
                 separatorBuilder: (context, index) =>
                     SizedBox(height: _isSynced ? 32 : 16),
                 itemBuilder: (context, index) {
                   final line = _lines[index];
-                  final isActive = index == currentIndex;
 
                   return AutoScrollTag(
                     key: ValueKey(index),
                     controller: _controller,
                     index: index,
-                    child: GestureDetector(
+                    child: _LyricLineTile(
+                      line: line,
+                      index: index,
+                      isSynced: _isSynced,
+                      alignment: alignment,
+                      activeFontSize: activeFontSize,
+                      inactiveFontSize: inactiveFontSize,
+                      plainFontSize: plainFontSize,
+                      showRomanized: showRomanized,
+                      isCentered: isCentered,
                       onTap: _isSynced
                           ? () {
                               audioSignal.seek(line.time);
-                              // Resume auto-scroll when user taps a lyric line
                               if (_userScrolling) {
                                 _resumeAutoScroll();
                               }
                             }
                           : null,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: double.infinity,
-                            child: AnimatedDefaultTextStyle(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOut,
-                              style: Theme.of(context).textTheme.bodyMedium!
-                                  .copyWith(
-                                    color: (isActive || !_isSynced)
-                                        ? Theme.of(
-                                            context,
-                                          ).colorScheme.secondary
-                                        : Theme.of(context)
-                                              .colorScheme
-                                              .secondary
-                                              .withValues(alpha: 0.3),
-                                    fontSize: (isActive || !_isSynced)
-                                        ? (_isSynced
-                                              ? settingsSignal
-                                                    .lyricsActiveFontSize
-                                                    .value
-                                              : settingsSignal
-                                                    .plainLyricsFontSize
-                                                    .value)
-                                        : settingsSignal
-                                              .lyricsInactiveFontSize
-                                              .value,
-                                    fontWeight: isActive
-                                        ? FontWeight.w900
-                                        : FontWeight.w600,
-                                  ),
-                              child: Text(
-                                line.content,
-                                textAlign: settingsSignal.lyricsAlignment.value,
-                                maxLines: 4,
-                              ),
-                            ),
-                          ),
-                          if (settingsSignal.showRomanizedLyrics.value &&
-                              line.romanizedContent != null) ...[
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: AnimatedDefaultTextStyle(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeOut,
-                                style: Theme.of(context).textTheme.bodyMedium!
-                                    .copyWith(
-                                      color: (isActive || !_isSynced)
-                                          ? Theme.of(context)
-                                                .colorScheme
-                                                .secondary
-                                                .withValues(alpha: 0.8)
-                                          : Theme.of(context)
-                                                .colorScheme
-                                                .secondary
-                                                .withValues(alpha: 0.2),
-                                      fontSize:
-                                          ((isActive || !_isSynced)
-                                              ? (_isSynced
-                                                    ? settingsSignal
-                                                          .lyricsActiveFontSize
-                                                          .value
-                                                    : settingsSignal
-                                                          .plainLyricsFontSize
-                                                          .value)
-                                              : settingsSignal
-                                                    .lyricsInactiveFontSize
-                                                    .value) *
-                                          0.7,
-                                      fontWeight: (isActive || !_isSynced)
-                                          ? FontWeight.w700
-                                          : FontWeight.w500,
-                                    ),
-                                child: Text(
-                                  line.romanizedContent!,
-                                  textAlign:
-                                      settingsSignal.lyricsAlignment.value,
-                                  maxLines: 4,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
                     ),
                   );
                 },
               ),
             ),
           ),
+        ),
 
-          // Floating "return to current lyric" button
-          if (_userScrolling)
-            Positioned(
-              bottom: 16,
-              right: 16,
-              child: FloatingActionButton.small(
-                onPressed: _resumeAutoScroll,
-                backgroundColor: Theme.of(context).colorScheme.secondary,
-                foregroundColor: Theme.of(context).colorScheme.surface,
-                elevation: 4,
-                child: const Icon(Icons.lyrics, size: 20),
+        // Floating "return to current lyric" button
+        if (_userScrolling)
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: FloatingActionButton.small(
+              onPressed: _resumeAutoScroll,
+              backgroundColor: Theme.of(context).colorScheme.secondary,
+              foregroundColor: Theme.of(context).colorScheme.surface,
+              elevation: 4,
+              child: const Icon(Icons.lyrics, size: 20),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Invisible watcher that subscribes to [audioSignal.lyricsActiveIndex] and
+/// triggers programmatic scrolls when the active line changes. Lives outside
+/// the heavy ListView/ShaderMask subtree so per-tick position changes don't
+/// repaint lyrics content.
+class _LyricsAutoScrollDriver extends StatelessWidget {
+  final bool isSynced;
+  final AutoScrollController controller;
+  final int lastScrolledIndex;
+  final void Function(int index) onAutoScroll;
+
+  const _LyricsAutoScrollDriver({
+    required this.isSynced,
+    required this.controller,
+    required this.lastScrolledIndex,
+    required this.onAutoScroll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isSynced) return const SizedBox.shrink();
+    return Watch((context) {
+      final idx = audioSignal.lyricsActiveIndex.value;
+      if (idx >= 0 && idx != lastScrolledIndex) {
+        onAutoScroll(idx);
+      }
+      return const SizedBox.shrink();
+    });
+  }
+}
+
+class _LyricLineTile extends StatelessWidget {
+  final LyricLine line;
+  final int index;
+  final bool isSynced;
+  final TextAlign alignment;
+  final double activeFontSize;
+  final double inactiveFontSize;
+  final double plainFontSize;
+  final bool showRomanized;
+  final bool isCentered;
+  final VoidCallback? onTap;
+
+  const _LyricLineTile({
+    required this.line,
+    required this.index,
+    required this.isSynced,
+    required this.alignment,
+    required this.activeFontSize,
+    required this.inactiveFontSize,
+    required this.plainFontSize,
+    required this.showRomanized,
+    required this.isCentered,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final base = Theme.of(context).textTheme.bodyMedium!;
+    final showRomanizedLine = showRomanized && line.romanizedContent != null;
+    return Watch((context) {
+      final activeIndex = isSynced ? audioSignal.lyricsActiveIndex.value : -1;
+      final isActive = isSynced ? activeIndex == index : true;
+      final isHighlighted = isActive || !isSynced;
+    final mainFontSize = isHighlighted
+        ? (isSynced ? activeFontSize : plainFontSize)
+        : inactiveFontSize;
+      final mainColor = isHighlighted
+          ? colorScheme.secondary
+          : colorScheme.secondary.withValues(alpha: 0.3);
+      final mainWeight = isActive ? FontWeight.w900 : FontWeight.w600;
+
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+                style: base.copyWith(
+                  color: mainColor,
+                  fontSize: mainFontSize,
+                  fontWeight: mainWeight,
+                ),
+                child: Text(
+                  line.content,
+                  textAlign: alignment,
+                  maxLines: 4,
+                ),
               ),
             ),
-        ],
+            if (showRomanizedLine) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  style: base.copyWith(
+                    color: isHighlighted
+                        ? colorScheme.secondary.withValues(alpha: 0.8)
+                        : colorScheme.secondary.withValues(alpha: 0.2),
+                    fontSize: mainFontSize * 0.7,
+                    fontWeight:
+                        isHighlighted ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                  child: Text(
+                    line.romanizedContent!,
+                    textAlign: alignment,
+                    maxLines: 4,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       );
     });
   }

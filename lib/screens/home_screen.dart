@@ -18,12 +18,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../router/routes.dart';
 import '../signals/audio_signal.dart';
 import '../services/song_cache.dart';
 import '../models/song.dart';
 import '../widgets/components/sliver_page_header.dart';
 import '../theme/app_theme_tokens.dart';
-import 'package:go_router/go_router.dart';
+import '../utils/navigation.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -79,19 +80,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     _QuickAccessCard(
                       title: 'Favorites',
                       icon: FontAwesomeIcons.solidHeart,
-                      onTap: () => context.go('/playlist/favorites'),
+                      onTap: () => navigateGo(context, '${AppRoutes.playlists}/favorites'),
                     ),
                     const SizedBox(width: 8),
                     _QuickAccessCard(
                       title: 'Recently played',
                       icon: FontAwesomeIcons.clockRotateLeft,
-                      onTap: () => context.go('/recently-played'),
+                      onTap: () => navigateGo(context, AppRoutes.recentlyPlayed),
                     ),
                     const SizedBox(width: 8),
                     _QuickAccessCard(
                       title: 'Recently added',
                       icon: FontAwesomeIcons.bolt,
-                      onTap: () => context.go('/recently-added'),
+                      onTap: () => navigateGo(context, AppRoutes.recentlyAdded),
                     ),
                     const SizedBox(width: 8),
                     _QuickAccessCard(
@@ -103,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _QuickAccessCard(
                       title: 'Playlists',
                       icon: FontAwesomeIcons.list,
-                      onTap: () => context.go('/playlists'),
+                      onTap: () => navigateGo(context, AppRoutes.playlists),
                     ),
                     const SizedBox(width: 8),
                     _QuickAccessCard(
@@ -134,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     IconButton(
-                      onPressed: () => context.go('/recently-added'),
+                      onPressed: () => navigateGo(context, AppRoutes.recentlyAdded),
                       icon: FaIcon(
                         FontAwesomeIcons.chevronRight,
                         color: Theme.of(context).colorScheme.secondary,
@@ -181,7 +182,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     IconButton(
-                      onPressed: () => context.go('/recently-played'),
+                      onPressed: () => navigateGo(context, AppRoutes.recentlyPlayed),
                       icon: FaIcon(
                         FontAwesomeIcons.chevronRight,
                         color: Theme.of(context).colorScheme.secondary,

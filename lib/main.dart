@@ -28,6 +28,7 @@ import 'router.dart';
 import 'package:audio_service/audio_service.dart';
 import 'services/audio_handler.dart';
 import 'services/platform_service.dart';
+import 'services/mpris_helper.dart';
 import 'package:ecilaes/theme/app_theme_builder.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'utils/platform_utils.dart';
@@ -71,7 +72,8 @@ Future<void> main() async {
   await PlatformService().init();
 
   print('APP_START: Initializing AudioService');
-  // Initialize AudioService
+  // Register MPRIS on Linux before AudioService init so the platform is wired up
+  registerMprisService();
   _audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: const AudioServiceConfig(

@@ -16,10 +16,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
+import '../router/routes.dart';
 import '../signals/audio_signal.dart';
 import '../signals/settings_signal.dart';
+import '../utils/navigation.dart';
 import '../widgets/components/sliver_page_header.dart';
 
 class LibraryScreen extends StatelessWidget {
@@ -49,47 +50,47 @@ class LibraryScreen extends StatelessWidget {
                   _CategoryCard(
                     title: 'Favorites',
                     icon: FontAwesomeIcons.solidHeart,
-                    onTap: () => context.go('/playlist/favorites'),
+                    onTap: () => navigateGo(context, '${AppRoutes.playlists}/favorites'),
                   ),
                   _CategoryCard(
                     title: 'Most Played',
                     icon: FontAwesomeIcons.fireFlameCurved,
-                    onTap: () => context.go('/most-played'),
+                    onTap: () => navigateGo(context, AppRoutes.mostPlayed),
                   ),
                   _CategoryCard(
                     title: 'Recently Played',
                     icon: FontAwesomeIcons.clockRotateLeft,
-                    onTap: () => context.go('/recently-played'),
+                    onTap: () => navigateGo(context, AppRoutes.recentlyPlayed),
                   ),
                   _CategoryCard(
                     title: 'Albums',
                     icon: FontAwesomeIcons.compactDisc,
-                    onTap: () => context.go('/albums'),
+                    onTap: () => navigateGo(context, AppRoutes.albums),
                   ),
                   _CategoryCard(
                     title: 'Songs',
                     icon: FontAwesomeIcons.music,
-                    onTap: () => context.go('/songs'),
+                    onTap: () => navigateGo(context, AppRoutes.songs),
                   ),
                   _CategoryCard(
                     title: 'Playlists',
                     icon: FontAwesomeIcons.list,
-                    onTap: () => context.go('/playlists'),
+                    onTap: () => navigateGo(context, AppRoutes.playlists),
                   ),
                   _CategoryCard(
                     title: 'Artists',
                     icon: FontAwesomeIcons.user,
-                    onTap: () => context.go('/artists'),
+                    onTap: () => navigateGo(context, AppRoutes.artists),
                   ),
                   _CategoryCard(
                     title: 'Downloaded',
                     icon: FontAwesomeIcons.circleCheck,
-                    onTap: () {}, // TODO
+                    onTap: () => navigateGo(context, AppRoutes.explorer),
                   ),
                   _CategoryCard(
                     title: 'Folders',
                     icon: FontAwesomeIcons.solidFolder,
-                    onTap: () => context.go('/explorer'),
+                    onTap: () => navigateGo(context, AppRoutes.explorer),
                   ),
                 ]),
               ),
@@ -124,7 +125,7 @@ class LibraryScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 16),
                           FilledButton(
-                            onPressed: () => context.go('/settings/library'),
+                            onPressed: () => navigateGo(context, AppRoutes.library),
                             child: const Text('Go to Settings'),
                           ),
                         ],
@@ -147,22 +148,22 @@ class LibraryScreen extends StatelessWidget {
                     _CategoryCard(
                       title: 'Liked Songs',
                       icon: FontAwesomeIcons.solidThumbsUp,
-                      onTap: () => context.go('/youtube/playlist/LM'),
+                      onTap: () => navigateGo(context, AppRoutes.ytPlaylistLM),
                     ),
                     _CategoryCard(
                       title: 'Playlists',
                       icon: FontAwesomeIcons.list,
-                      onTap: () => context.go('/yt-library/playlists'),
+                      onTap: () => navigateGo(context, AppRoutes.ytLibraryPlaylists),
                     ),
                     _CategoryCard(
                       title: 'Albums',
                       icon: FontAwesomeIcons.compactDisc,
-                      onTap: () => context.go('/yt-library/albums'),
+                      onTap: () => navigateGo(context, AppRoutes.ytLibraryAlbums),
                     ),
                     _CategoryCard(
                       title: 'Artists',
                       icon: FontAwesomeIcons.user,
-                      onTap: () => context.go('/yt-library/artists'),
+                      onTap: () => navigateGo(context, AppRoutes.ytLibraryArtists),
                     ),
                   ]),
                 ),

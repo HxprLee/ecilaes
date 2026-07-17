@@ -15,14 +15,21 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:go_router/go_router.dart';
-import 'package:signals/signals_flutter.dart';
+import 'package:signals_flutter/signals_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../router/routes.dart';
+import '../../services/yt_login_coordinator.dart';
 import '../../signals/audio_signal.dart';
-import '../../signals/settings_signal.dart';
-import '../../widgets/components/window_title_bar.dart';
+import '../../utils/navigation.dart';
+import '../../widgets/components/app_dialog.dart';
+import '../../widgets/components/sliver_page_header.dart';
 
 class YtLoginWebViewScreen extends StatefulWidget {
   const YtLoginWebViewScreen({super.key});
@@ -32,112 +39,474 @@ class YtLoginWebViewScreen extends StatefulWidget {
 }
 
 class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
-  final GlobalKey webViewKey = GlobalKey();
-  InAppWebViewController? webViewController;
+  final GlobalKey _webViewKey = GlobalKey();
+  InAppWebViewController? _webViewController;
+  final TextEditingController _manualCookieController = TextEditingController();
+
+  /// `flutter_inappwebview` has no Linux native implementation; calling
+  /// `InAppWebView` there surfaces `MissingPluginException`. We detect this
+  /// at runtime and swap to a paste-from-clipboard flow.
+  late final bool _linux;
+
   bool _isLoading = true;
+  String _statusMessage = '';
 
   @override
   void initState() {
     super.initState();
-    // Clear cookies before starting to ensure a clean login state
-    CookieManager.instance().deleteAllCookies();
-  }
+    _linux = !kIsWeb && Platform.isLinux;
 
-  Future<void> _checkCookies() async {
-    try {
-      final cookies = await CookieManager.instance().getCookies(url: WebUri("https://music.youtube.com"));
-      
-      final cookieString = cookies.map((c) => '${c.name}=${c.value}').join('; ');
-      
-      // If we see YouTube authentication cookies, we consider it a success
-      if (cookieString.contains('SAPISID') || cookieString.contains('__Secure-1PAPISID') || cookieString.contains('__Secure-3PAPISID')) {
-        await settingsSignal.updateYtAuthCookie(cookieString);
-        audioSignal.reindexLibrary();
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('YouTube Music Account connected successfully!')),
-          );
-          if (context.canPop()) {
-            context.pop();
-          } else {
-            context.go('/settings/library');
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Error checking cookies: $e');
+    if (!_linux) {
+      CookieManager.instance().deleteAllCookies();
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final bool isDesktop = !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
+  void dispose() {
+    _manualCookieController.dispose();
+    super.dispose();
+  }
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Column(
-        children: [
-          if (isDesktop) const WindowTitleBar(),
-          AppBar(
-            title: const Text('Sign in to YouTube Music'),
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () {
-                if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go('/settings/library');
-                }
-              },
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: () {
-                  webViewController?.reload();
-                },
+  String get _userAgent => _linux
+      ? 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      : 'Mozilla/5.0 (Linux; Android 10; Pixel 6) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
+  Future<void> _handleResult(YtLoginResult result) async {
+    if (!mounted) return;
+    if (result.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.username != null
+                ? 'Connected as ${result.username}'
+                : 'YouTube Music Account connected successfully!',
+          ),
+        ),
+      );
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        navigateGo(context, AppRoutes.settingsIntegrations);
+      }
+      return;
+    }
+    setState(() {
+      _isLoading = false;
+      _statusMessage = result.error ?? 'Sign-in failed. Please try again.';
+    });
+  }
+
+  Future<void> _verifyNow() async {
+    final result = await ytLoginCoordinator.finalizeFromCookies();
+    if (!mounted) return;
+    if (result == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No sign-in cookies detected yet. Please complete sign-in first.',
+          ),
+        ),
+      );
+      return;
+    }
+    await _handleResult(result);
+  }
+
+  Future<void> _pasteFromClipboard() async {
+    final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = clipboardData?.text ?? '';
+    if (text.isEmpty) {
+      _showInstructions();
+      return;
+    }
+    if (!text.contains('=') || text.contains('<') || text.contains('>')) {
+      _showInstructions();
+      return;
+    }
+    final sanitized = text.trim().replaceAll(RegExp(r'[^\x20-\x7E]'), '');
+    await _submitCookie(sanitized: sanitized, fromClipboard: true);
+  }
+
+  Future<void> _submitManualEntry() async {
+    final raw = _manualCookieController.text.trim();
+    if (raw.isEmpty) {
+      _showInstructions();
+      return;
+    }
+    final sanitized = raw.replaceAll(RegExp(r'[^\x20-\x7E]'), '');
+    await _submitCookie(sanitized: sanitized, fromClipboard: false);
+  }
+
+  Future<void> _submitCookie({
+    required String sanitized,
+    required bool fromClipboard,
+  }) async {
+    final result = await ytLoginCoordinator.acceptManualCookie(sanitized);
+    if (!mounted) return;
+    if (result.success) {
+      await _handleResult(result);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.error ??
+              (fromClipboard
+                  ? 'Clipboard does not contain a YouTube cookie.'
+                  : 'Cookie string invalid.'),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openYtmInBrowser() async {
+    final uri = YtLoginCoordinator.signInUri;
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the system browser.')),
+      );
+    }
+  }
+
+  void _showInstructions() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      builder: (dialogContext) => AppDialog(
+        titleIcon: Icon(
+          Icons.help_outline,
+          color: Theme.of(dialogContext).colorScheme.secondary,
+        ),
+        title: 'How to get your YouTube Music cookie',
+        maxWidth: 480,
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('1. Open your browser and go to music.youtube.com'),
+              const SizedBox(height: 8),
+              const Text('2. Sign in to your Google account'),
+              const SizedBox(height: 8),
+              const Text(
+                '3a. On desktop: open Developer Tools (F12) -> Network tab, '
+                'refresh, click any request to music.youtube.com, and copy '
+                'the entire value of the "cookie" request header.',
               ),
-              IconButton(
-                icon: const Icon(Icons.check),
-                tooltip: 'I have signed in',
-                onPressed: _checkCookies,
+              const SizedBox(height: 8),
+              const Text(
+                '3b. On mobile (Chrome): tap the lock icon in the address '
+                'bar -> Cookies -> music.youtube.com, then find and copy '
+                'the value of "SAPISID".',
+              ),
+              const SizedBox(height: 8),
+              const Text('4. Tap the paste button above to save the cookie.'),
+              const SizedBox(height: 16),
+              Text(
+                'The cookie string should look like:\n'
+                'SAPISID=abc123...; __Secure-1PAPISID=def456...; __Secure-3PAPISID=ghi789...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(
+                    dialogContext,
+                  ).colorScheme.secondary.withValues(alpha: 0.6),
+                  fontFamily: 'monospace',
+                ),
               ),
             ],
           ),
-          if (_isLoading) 
-            LinearProgressIndicator(
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-              color: Theme.of(context).colorScheme.secondary,
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext)
+                  .colorScheme
+                  .secondary
+                  .withValues(alpha: 0.8),
+              foregroundColor:
+                  Theme.of(dialogContext).colorScheme.surface,
+              shape: const StadiumBorder(),
             ),
-          Expanded(
-            child: InAppWebView(
-              key: webViewKey,
-              initialUrlRequest: URLRequest(url: WebUri("https://music.youtube.com/")),
-              initialSettings: InAppWebViewSettings(
-                userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                transparentBackground: true,
-              ),
-              onWebViewCreated: (controller) {
-                webViewController = controller;
-              },
-              onLoadStart: (controller, url) {
-                setState(() {
-                  _isLoading = true;
-                });
-              },
-              onLoadStop: (controller, url) async {
-                setState(() {
-                  _isLoading = false;
-                });
-                await _checkCookies();
-              },
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final body = _linux ? _buildLinuxBody() : _buildWebViewBody();
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: CustomScrollView(
+        slivers: [
+          SliverPageHeader(
+            title: 'YouTube Music Login',
+            maxWidth: 600,
+            actions: _linux
+                ? null
+                : [
+                    IconButton(
+                      icon: const Icon(Icons.help_outline),
+                      tooltip: 'How to get cookie',
+                      onPressed: _showInstructions,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.content_paste),
+                      tooltip: 'Paste cookie string',
+                      onPressed: _pasteFromClipboard,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Reload',
+                      onPressed: () => _webViewController?.reload(),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.check),
+                      tooltip: 'I have signed in',
+                      onPressed: _verifyNow,
+                    ),
+                  ],
+            bottom: _StatusBanner(
+              isLoading: _isLoading,
+              isLinux: _linux,
+              statusMessage: _statusMessage,
+            ),
+          ),
+          SliverFillRemaining(hasScrollBody: _linux, child: body),
+          SliverToBoxAdapter(
+            child: Watch(
+              (context) => SizedBox(height: audioSignal.reservedHeight.value),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildLinuxBody() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Icon(
+                Icons.computer,
+                size: 56,
+                color: Theme.of(context).colorScheme.secondary,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Manual sign-in for Linux',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Flutter cannot display an embedded webview on Linux yet. '
+                'Open YouTube Music in your browser, get the cookie string, '
+                'then paste the cookie string below.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: _openYtmInBrowser,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context)
+                      .colorScheme
+                      .secondary
+                      .withValues(alpha: 0.8),
+                  foregroundColor: Theme.of(context).colorScheme.surface,
+                  shape: const StadiumBorder(),
+                ),
+                icon: const Icon(Icons.open_in_browser),
+                label: const Text('Open music.youtube.com/signin'),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Paste your cookie string:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _manualCookieController,
+                minLines: 3,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                  hintText:
+                      'SAPISID=…; __Secure-1PAPISID=…; __Secure-3PAPISID=…',
+                ),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pasteFromClipboard,
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .secondary
+                              .withValues(alpha: 0.2),
+                        ),
+                        foregroundColor:
+                            Theme.of(context).colorScheme.secondary,
+                        shape: const StadiumBorder(),
+                      ),
+                      icon: const Icon(Icons.content_paste),
+                      label: const Text('Paste from clipboard'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _submitManualEntry,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .secondary
+                            .withValues(alpha: 0.8),
+                        foregroundColor: Theme.of(context).colorScheme.surface,
+                        shape: const StadiumBorder(),
+                      ),
+                      icon: const Icon(Icons.check),
+                      label: const Text('Save'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Center(
+                child: TextButton.icon(
+                  onPressed: _showInstructions,
+                  style: TextButton.styleFrom(
+                    foregroundColor:
+                        Theme.of(context).colorScheme.secondary,
+                  ),
+                  icon: const Icon(Icons.help_outline, size: 16),
+                  label: const Text('How do I get the cookie string?'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWebViewBody() {
+    return InAppWebView(
+      key: _webViewKey,
+      initialUrlRequest: URLRequest(
+        url: WebUri(YtLoginCoordinator.signInUri.toString()),
+      ),
+      initialSettings: InAppWebViewSettings(
+        userAgent: _userAgent,
+        transparentBackground: true,
+      ),
+      onWebViewCreated: (controller) {
+        _webViewController = controller;
+      },
+      onLoadStart: (controller, url) {
+        if (mounted) {
+          setState(() {
+            _isLoading = true;
+            if (_statusMessage.isNotEmpty) _statusMessage = '';
+          });
+        }
+      },
+      onLoadStop: (controller, url) async {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        final result = await ytLoginCoordinator.finalizeFromCookies();
+        if (result == null || !mounted) return;
+        await _handleResult(result);
+      },
+      onReceivedError: (controller, request, error) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _statusMessage =
+              'Page failed to load (${error.description}). Try again or paste a cookie manually.';
+        });
+      },
+    );
+  }
+}
+
+/// Pinned banner that lives in [SliverPageHeader.bottom] and shows either a
+/// loading bar or an error message under the page title.
+class _StatusBanner extends StatelessWidget implements PreferredSizeWidget {
+  const _StatusBanner({
+    required this.isLoading,
+    required this.isLinux,
+    required this.statusMessage,
+  });
+
+  final bool isLoading;
+  final bool isLinux;
+  final String statusMessage;
+
+  @override
+  Size get preferredSize {
+    if (isLinux) return Size.zero;
+    if (isLoading) return const Size.fromHeight(4);
+    if (statusMessage.isNotEmpty) return const Size.fromHeight(40);
+    return Size.zero;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLinux) return const SizedBox.shrink();
+    if (isLoading) {
+      return LinearProgressIndicator(
+        backgroundColor:
+            Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: Theme.of(context).colorScheme.secondary,
+      );
+    }
+    if (statusMessage.isNotEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        color: Theme.of(context)
+            .colorScheme
+            .errorContainer
+            .withValues(alpha: 0.4),
+        child: Row(
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 16,
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                statusMessage,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }

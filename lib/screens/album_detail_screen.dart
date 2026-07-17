@@ -160,10 +160,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     ),
                     const SizedBox(width: 12),
                     OutlinedButton.icon(
-                      onPressed: () {
-                        final shuffled = List<Song>.from(album.songs)..shuffle();
-                        audioSignal.playSong(shuffled.first, fromList: shuffled);
-                      },
+                      onPressed: () => audioSignal.playShuffledFromList(album.songs),
                       icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
                       label: const Text('Shuffle'),
                       style: OutlinedButton.styleFrom(

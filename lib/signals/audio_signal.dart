@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
 import 'dart:isolate';
@@ -41,17 +42,15 @@ import '../services/album_art_service.dart';
 import '../services/playlist_service.dart';
 import '../services/palette_cache_service.dart';
 import '../services/playback_history_service.dart';
-import '../services/youtube_service.dart';
 import '../services/YoutubeDatasource.dart';
 import '../models/history_entry.dart';
 import '../services/metadata_service.dart';
 import '../services/album_art_cache.dart';
+import '../services/audio_cache_service.dart';
 import '../services/lyrics_service.dart';
 import '../signals/queue_signal.dart' as q;
 import '../models/library_models.dart';
 import '../services/artist_art_cache.dart';
-
-
 
 class AudioSignal {
   static final AudioSignal _instance = AudioSignal._internal();
@@ -72,7 +71,6 @@ class AudioSignal {
   final allSongs = listSignal<Song>([]);
   final playlists = listSignal<Playlist>([]);
   final historySongs = listSignal<HistoryEntry>([]);
-  final queue = listSignal<MediaItem>([]);
   final isHistoryGridView = signal<bool>(false);
   final isArtistsGridView = signal<bool>(false);
   final isAlbumsGridView = signal<bool>(true); // Default albums to grid
@@ -86,9 +84,9 @@ class AudioSignal {
   final isRadioMode = signal<bool>(false);
   final isScanning = signal<bool>(false);
   final scanProgress = signal<double>(0.0);
-  final isShuffleMode = signal<bool>(false);
-  final repeatMode = signal<AudioServiceRepeatMode>(AudioServiceRepeatMode.none);
-  final shuffledIndices = listSignal<int>([]);
+  final repeatMode = signal<AudioServiceRepeatMode>(
+    AudioServiceRepeatMode.none,
+  );
   final playerExpansion = signal<double>(0.0);
   final headerShowBlur = signal<bool>(false);
   final headerTitleProgress = signal<double>(0.0);
@@ -115,6 +113,28 @@ class AudioSignal {
   ); // artistName -> localPath
   final artistArtCache = ArtistArtCache();
 
+  List<LyricLine> _lyricsLines = const [];
+  bool _lyricsSynced = false;
+
+  late final lyricsActiveIndex = computed<int>(() {
+    final lines = _lyricsLines;
+    if (!_lyricsSynced || lines.isEmpty) return -1;
+    final pos = position.value;
+    int low = 0;
+    int high = lines.length - 1;
+    int idx = -1;
+    while (low <= high) {
+      final mid = (low + high) ~/ 2;
+      if (lines[mid].time.compareTo(pos) <= 0) {
+        idx = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return idx;
+  });
+
   bool _hasScrobbledCurrentSong = false;
   int _currentSongStartTime = 0;
   bool _hasUpdatedNowPlaying = false;
@@ -124,16 +144,30 @@ class AudioSignal {
   });
 
   /// Resolve a song path to a Song object.
-  /// Checks: local library (songMap) → YouTube radio cache → YouTube search results (yt: paths) → Song.fromPath fallback.
+  /// Checks: local library (songMap) → YouTube radio cache → YouTube browse/search results (yt: paths) → Song.fromPath fallback.
   Song resolveSong(String path) {
     return songMap.value[path] ??
         (path.startsWith('yt:')
             ? [
                 ...ytRadioSongs.value,
+                ...searchSignal.ytBrowseResults.value,
                 ...searchSignal.youtubeSearchResults.value,
               ].firstWhere(
                 (s) => s.path == path,
-                orElse: () => Song.fromPath(path),
+                orElse: () {
+                  // Try restoring from the persisted YouTube cache so queue
+                  // entries survive app restarts.
+                  final json = q.queueSignal.service.getYtSongJson(path);
+                  if (json != null) {
+                    try {
+                      return _songFromJson(
+                        path,
+                        jsonDecode(json) as Map<String, dynamic>,
+                      );
+                    } catch (_) {}
+                  }
+                  return Song.fromPath(path);
+                },
               )
             : Song.fromPath(path));
   }
@@ -161,22 +195,21 @@ class AudioSignal {
   // Caches
   final Map<String, Song> _explorerSongCache = {};
 
-
-
   /// Cache of all songs fetched from YouTube radio/playlists — indexed by path.
   /// Used by [resolveSong] so queue items show proper title/artist/artwork.
   final ytRadioSongs = listSignal<Song>([]);
 
+  /// Prefetch buffer for radio: the next batch of songs fetched ahead of the queue.
+  /// When the queue runs low, the prefetch batch is drained first before hitting the API.
+  final radioPrefetchBatch = listSignal<Song>([]);
+
   // Computed for backward compatibility or simple checks
-  late final isPlayerExpanded = computed(() => playerExpansion.value > 0.1);
-
-
 
   late final recentlyAdded = computed(() {
     final start = DateTime.now();
     final songs = allSongs.value;
     if (songs.isEmpty) return <Song>[];
-    
+
     final sorted = List<Song>.from(songs);
     sorted.sort((a, b) {
       final aDate = a.modifiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -184,27 +217,33 @@ class AudioSignal {
       return bDate.compareTo(aDate);
     });
     final result = sorted.take(50).toList();
-    
+
     final elapsed = DateTime.now().difference(start).inMilliseconds;
     if (elapsed > 50) {
-      debugPrint('PERF: recentlyAdded recomputed in ${elapsed}ms for ${songs.length} songs');
+      debugPrint(
+        'PERF: recentlyAdded recomputed in ${elapsed}ms for ${songs.length} songs',
+      );
     }
     return result;
   });
 
   late final recentlyPlayed = computed(() {
     final map = songMap.value;
-    return historySongs.value.take(10).map((h) => map[h.songPath]).whereType<Song>().toList();
+    return historySongs.value
+        .take(10)
+        .map((h) => map[h.songPath])
+        .whereType<Song>()
+        .toList();
   });
 
   late final artists = computed(() {
     final start = DateTime.now();
     final map = <String, List<Song>>{};
     final songs = allSongs.value;
-    
+
     for (final song in songs) {
       if (song.path.startsWith('yt:')) continue;
-      
+
       final parts = song.artist.split(RegExp(r'[,&]'));
       for (final part in parts) {
         final name = part.trim();
@@ -215,19 +254,19 @@ class AudioSignal {
     }
 
     final pics = artistPictures.value;
-    final result = map.entries.map((e) {
-      final name = e.key;
-      return Artist(
-        name: name,
-        songs: e.value,
-        picturePath: pics[name],
-      );
-    }).toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-    
+    final result =
+        map.entries.map((e) {
+          final name = e.key;
+          return Artist(name: name, songs: e.value, picturePath: pics[name]);
+        }).toList()..sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
+
     final elapsed = DateTime.now().difference(start).inMilliseconds;
     if (elapsed > 50) {
-      debugPrint('PERF: artists recomputed in ${elapsed}ms for ${songs.length} songs');
+      debugPrint(
+        'PERF: artists recomputed in ${elapsed}ms for ${songs.length} songs',
+      );
     }
     return result;
   });
@@ -243,60 +282,49 @@ class AudioSignal {
       map.putIfAbsent(key, () => []).add(song);
     }
 
-    final result = map.entries.map((e) {
-      final songs = e.value;
-      return Album(
-        name: songs.first.album ?? 'Unknown Album',
-        artist: songs.first.artist,
-        songs: songs,
-      );
-    }).toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final result =
+        map.entries.map((e) {
+          final songs = e.value;
+          return Album(
+            name: songs.first.album ?? 'Unknown Album',
+            artist: songs.first.artist,
+            songs: songs,
+          );
+        }).toList()..sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
 
     final elapsed = DateTime.now().difference(start).inMilliseconds;
     if (elapsed > 50) {
-      debugPrint('PERF: albums recomputed in ${elapsed}ms for ${songs.length} songs');
+      debugPrint(
+        'PERF: albums recomputed in ${elapsed}ms for ${songs.length} songs',
+      );
     }
     return result;
-  });
-
-  late final effectiveQueue = computed(() {
-    final q = queue.value;
-    final indices = shuffledIndices.value;
-
-    if (indices.isNotEmpty && q.isNotEmpty && indices.length == q.length) {
-      try {
-        return indices.map((i) => q[i]).toList();
-      } catch (_) {
-        return q;
-      }
-    }
-    return q;
-  });
-
-  late final currentQueueIndex = computed(() {
-    final q = effectiveQueue.value;
-    final current = currentSong.value;
-    if (current == null || q.isEmpty) return -1;
-    return q.indexWhere((item) => item.id == current.path);
   });
 
   Future<void> init(AudioHandler handler) async {
     // Cleanup any existing state if called again
     dispose();
-    
+
     _audioHandler = handler;
 
     if (isDesktop) {
       unawaited(_updateDiscordPresence(force: true));
     }
     // Initialize album art directory
-    unawaited(SongCache.artDir.then((path) {
-      albumArtDir.value = path;
-    }));
+    unawaited(
+      SongCache.artDir.then((path) {
+        albumArtDir.value = path;
+      }),
+    );
 
     // Initialize queue service
-    unawaited(q.queueSignal.init());
+    await q.queueSignal.init();
+    _loadCachedYtSongs();
+    // Remove YouTube queue entries that cannot be resolved (e.g., from a
+    // previous session whose radio cache is gone).
+    _clearOrphanedYtEntries();
 
     // Refresh Discord presence when buttons/toggle change
     settingsSignal.onDiscordRpcChanged = () {
@@ -304,103 +332,152 @@ class AudioSignal {
     };
 
     // Listen to streams
-    _subscriptions.add(_audioHandler.playbackState.listen((state) {
-      isPlaying.value = state.playing;
-      isShuffleMode.value = state.shuffleMode == AudioServiceShuffleMode.all;
-      repeatMode.value = state.repeatMode;
-      isBuffering.value = state.processingState == AudioProcessingState.buffering;
-    }));
-    _subscriptions.add(_audioHandler.mediaItem.listen((item) {
-      if (item != null) {
-        duration.value = item.duration ?? Duration.zero;
-        try {
-          // First try local song map
-          Song? song = songMap.value[item.id];
+    _subscriptions.add(
+      _audioHandler.playbackState.listen((state) {
+        isPlaying.value = state.playing;
+        repeatMode.value = state.repeatMode;
+        isBuffering.value =
+            state.processingState == AudioProcessingState.buffering;
+      }),
+    );
+    _subscriptions.add(
+      _audioHandler.mediaItem.listen((item) {
+        if (item != null) {
+          duration.value = item.duration ?? Duration.zero;
+          try {
+            // Resolve the canonical Song via the same lookup the queue UI
+            // uses so the player's artwork matches the queue item's
+            // artwork. Without this, songs that aren't currently in
+            // `youtubeSearchResults` (e.g. after navigating away from the
+            // search screen) get reconstructed as a Song with no
+            // `thumbnailUrl`, which makes the expanded player fall back
+            // to a generic YouTube CDN thumbnail while the queue item
+            // keeps the YT Music square art from the cached Song.
+            var song = resolveSong(item.id);
 
-          // For YouTube songs (yt: prefix), look up in youtubeSearchResults
-          if (song == null && item.id.startsWith('yt:')) {
-            song = searchSignal.youtubeSearchResults.value.firstWhere(
-              (s) => s.path == item.id,
-              orElse: () => Song(
-                path: item.id,
-                title: item.title,
-                artist: item.artist ?? 'YouTube',
-                duration: item.duration,
-                hasAlbumArt: true,
-              ),
-            );
-          }
+            // If the resolved Song is the empty fallback (no cached
+            // metadata), overlay the MediaItem's title/artist/album so
+            // the player UI doesn't show "yt:<id>" as the title.
+            final looksLikeFallback = song.title == song.path ||
+                song.artist == 'Unknown Artist';
+            if (looksLikeFallback) {
+              song = song.copyWith(
+                title: item.title.isNotEmpty ? item.title : song.title,
+                artist: (item.artist != null && item.artist!.isNotEmpty)
+                    ? item.artist
+                    : song.artist,
+                album: item.album,
+              );
+            }
 
-          if (song != null) {
-            final isSameSong = currentSong.value?.path == song.path;
-            currentSong.value = song;
+            if (song.path.isNotEmpty) {
+              final isSameSong = currentSong.value?.path == song.path;
+              currentSong.value = song;
 
-            if (!isSameSong) {
-              _hasScrobbledCurrentSong = false;
-              _hasUpdatedNowPlaying = false;
-              _currentSongStartTime = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-              _updateDynamicTheme(song);
-              _loadLyricsForSong(song);
-              if (isDesktop) unawaited(_updateDiscordPresence(force: true));
-
-              // Lazy metadata fix for untagged local songs
-              if (!song.path.startsWith('yt:') &&
-                  (song.artist == 'Unknown Artist' || song.album == null)) {
-                unawaited(_refreshMetadata(song));
-              }
-            } else {
-              // If it's the same song but duration was just resolved and we still have no lyrics, try again
-              if ((currentLyrics.value == null || currentLyrics.value == '') && 
-                  song.duration != null && song.duration!.inSeconds > 0) {
+              if (!isSameSong) {
+                _hasScrobbledCurrentSong = false;
+                _hasUpdatedNowPlaying = false;
+                _currentSongStartTime =
+                    DateTime.now().millisecondsSinceEpoch ~/ 1000;
+                _updateDynamicTheme(song);
                 _loadLyricsForSong(song);
+                if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+
+                // Lazy metadata fix for untagged local songs
+                if (!song.path.startsWith('yt:') &&
+                    (song.artist == 'Unknown Artist' || song.album == null)) {
+                  unawaited(_refreshMetadata(song));
+                }
+              } else {
+                // If it's the same song but duration was just resolved and we still have no lyrics, try again
+                if ((currentLyrics.value == null ||
+                        currentLyrics.value == '') &&
+                    song.duration != null &&
+                    song.duration!.inSeconds > 0) {
+                  _loadLyricsForSong(song);
+                }
               }
             }
-          }
-        } catch (_) {}
-      }
-    }));
-
-    _subscriptions.add(_audioHandler.queue.listen((items) {
-      queue.value = items;
-    }));
+          } catch (_) {}
+        }
+      }),
+    );
 
     if (_audioHandler is MyAudioHandler) {
       final myHandler = _audioHandler;
-      _subscriptions.add(myHandler.player.positionStream.listen((pos) {
-        position.value = pos;
-        
-        final sessionKey = settingsSignal.lastFmSessionKey.value;
-        if (sessionKey != null && sessionKey.isNotEmpty) {
-          final song = currentSong.value;
-          if (song != null && !_hasScrobbledCurrentSong && isPlaying.value) {
-            final dur = duration.value.inSeconds;
-            final played = pos.inSeconds;
-            if (played > 0 && dur > 0) {
-              if (!_hasUpdatedNowPlaying) {
-                _hasUpdatedNowPlaying = true;
-                scrobbleService.updateNowPlaying(sessionKey, song.title, song.artist, album: song.album);
-              }
-              if (played >= dur / 2 || played >= 240) {
-                _hasScrobbledCurrentSong = true;
-                scrobbleService.scrobble(sessionKey, song.title, song.artist, _currentSongStartTime, album: song.album);
+      _subscriptions.add(
+        myHandler.player.positionStream.listen((pos) {
+          position.value = pos;
+
+          final sessionKey = settingsSignal.lastFmSessionKey.value;
+          if (sessionKey != null && sessionKey.isNotEmpty) {
+            final song = currentSong.value;
+            if (song != null && !_hasScrobbledCurrentSong && isPlaying.value) {
+              final dur = duration.value.inSeconds;
+              final played = pos.inSeconds;
+              if (played > 0 && dur > 0) {
+                if (!_hasUpdatedNowPlaying) {
+                  _hasUpdatedNowPlaying = true;
+                  scrobbleService.updateNowPlaying(
+                    sessionKey,
+                    song.title,
+                    song.artist,
+                    album: song.album,
+                  );
+                }
+                if (played >= dur / 2 || played >= 240) {
+                  _hasScrobbledCurrentSong = true;
+                  scrobbleService.scrobble(
+                    sessionKey,
+                    song.title,
+                    song.artist,
+                    _currentSongStartTime,
+                    album: song.album,
+                  );
+                }
               }
             }
           }
-        }
-      }));
-      _subscriptions.add(myHandler.shuffleIndicesStream.listen((indices) {
-        shuffledIndices.value = indices;
-      }));
+        }),
+      );
     }
 
+    // Recompute parsed lyric lines only when the lyrics text changes —
+    // the per-tick `lyricsActiveIndex` computed reuses the cached list.
+    _effectDisposals.add(
+      effect(() {
+        final lyrics = currentLyrics.value;
+        if (lyrics == null || lyrics.isEmpty) {
+          _lyricsLines = const [];
+          _lyricsSynced = false;
+        } else {
+          _lyricsLines = parseLyrics(lyrics);
+          _lyricsSynced = _lyricsLines.any((l) => l.time != Duration.zero);
+        }
+      }),
+    );
+
+    // Push settings → audio handler whenever the user changes speed/pitch.
+    _effectDisposals.add(
+      effect(() {
+        final s = settingsSignal.playbackSpeed.value;
+        audioHandler.setPlaybackSpeed(s);
+      }),
+    );
+    _effectDisposals.add(
+      effect(() {
+        final p = settingsSignal.playbackPitch.value;
+        audioHandler.setPlaybackPitch(p);
+      }),
+    );
 
     // 1. Initial Load (Delayed to allow UI and Debugger to settle)
     Future.delayed(const Duration(seconds: 1), () async {
       final start = DateTime.now();
-      
+
       // Batch initialization tasks
       await Future.wait([
-        _loadCacheAndScanOnly(), 
+        _loadCacheAndScanOnly(),
         _loadPlaylists(),
         _loadHistory(),
       ]);
@@ -412,7 +489,7 @@ class AudioSignal {
       Future.delayed(const Duration(seconds: 2), () {
         unawaited(scanMusicDirectory());
       });
-      
+
       // 3. Trigger artist art fetching (deferred even further)
       unawaited(_fetchArtistPictures());
     });
@@ -422,12 +499,12 @@ class AudioSignal {
     // Wait for allSongs to be populated and for UI to settle fully
     // Increased delay to avoid competing with launch frames
     await Future.delayed(const Duration(seconds: 5));
-    
+
     if (allSongs.value.isEmpty) return;
 
     final uniqueArtists = artists.peek().map((a) => a.name).toSet();
     final Map<String, String> results = {};
-    
+
     // 1. Check local cache in parallel (fast)
     final cacheChecks = uniqueArtists.map((name) async {
       final path = await artistArtCache.getArtPath(name);
@@ -564,12 +641,15 @@ class AudioSignal {
       start = DateTime.now().millisecondsSinceEpoch - posMs;
 
       final currentMediaItem = audioHandler.mediaItem.value;
-      final durationMs = currentMediaItem?.duration?.inMilliseconds ??
+      final durationMs =
+          currentMediaItem?.duration?.inMilliseconds ??
           song.duration?.inMilliseconds;
       end = durationMs != null ? start + durationMs : null;
     }
 
-    if (!force && _lastDiscordSongPath == song.path && _lastDiscordIsPlaying == playing) {
+    if (!force &&
+        _lastDiscordSongPath == song.path &&
+        _lastDiscordIsPlaying == playing) {
       return;
     }
 
@@ -740,7 +820,7 @@ class AudioSignal {
 
   Future<void> clearMissingFiles() async {
     if (isScanning.value) return;
-    
+
     final currentSongs = List<Song>.from(allSongs.value);
     final List<Song> existingSongs = [];
     bool changed = false;
@@ -767,14 +847,17 @@ class AudioSignal {
     await _audioHandler.play();
     if (isDesktop) unawaited(_updateDiscordPresence(force: true));
   }
+
   Future<void> pause() async {
     await _audioHandler.pause();
     if (isDesktop) unawaited(_updateDiscordPresence(force: true));
   }
+
   Future<void> seek(Duration pos) async {
     await _audioHandler.seek(pos);
     if (isDesktop) unawaited(_updateDiscordPresence(force: true));
   }
+
   Future<void> skipNext() => _audioHandler.skipToNext();
   Future<void> skipPrevious() => _audioHandler.skipToPrevious();
   Future<void> stop() async {
@@ -812,6 +895,7 @@ class AudioSignal {
     // Decide the queue contents: explicit fromList > current queue
     // containing the song > full library > single song.
     List<String> paths;
+    bool fromListSupplied = fromList != null;
     if (fromList != null) {
       paths = fromList.map((s) => s.path).toList();
     } else if (handler.queue.value.any((item) => item.id == song.path)) {
@@ -827,46 +911,64 @@ class AudioSignal {
     // the Song.fromPath fallback.
     final songs = paths.map(resolveSong).toList();
 
-    // Push to the queue signal (single source of truth) and jump the
-    // handler to the requested song.
-    q.queueSignal.setPlaylist(paths, playPath: song.path);
-    await handler.setPlaylist(songs);
-    await handler.playSong(song);
+    if (fromListSupplied) {
+      // An explicit list was supplied. If shuffle is on, shuffle that list
+      // and put the tapped song at shuffle-position 0; otherwise play
+      // the list sequentially from the tapped song.
+      if (q.queueSignal.isShuffleEnabled.value) {
+        q.queueSignal.shuffleFrom(paths, playPath: song.path);
+        final shuffledSongs = paths.map(resolveSong).toList()..shuffle();
+        // Re-order so the tapped song is first.
+        shuffledSongs.remove(song);
+        shuffledSongs.insert(0, song);
+        await handler.setPlaylist(shuffledSongs);
+        await handler.playSong(song);
+      } else {
+        q.queueSignal.setPlaylist(paths, playPath: song.path);
+        await handler.setPlaylist(songs);
+        await handler.playSong(song);
+      }
+    } else {
+      // No explicit list — reuse the existing queue but jump to the song.
+      q.queueSignal.setPlaylist(paths, playPath: song.path);
+      await handler.setPlaylist(songs);
+      await handler.playSong(song);
+    }
     _updateDynamicTheme(song);
     if (isDesktop) unawaited(_updateDiscordPresence(force: true));
   }
 
-  /// Reorder the playback queue to match the given path order.
-  /// Used by the queue view's drag-to-reorder after the service updates.
-  /// `currentQueueIndex` is the current song's position in the queue before the reorder.
-  void reorderQueueFromPaths(List<String> orderedPaths, int currentQueueIndex) {
-    final currentQueue = queue.value;
-    if (currentQueue.isEmpty) return;
+  /// Play [songs] as a freshly shuffled queue. The first song is the one
+  /// at index 0 after shuffling; pass [start] to bias the start of the
+  /// shuffle (the song at [start] is placed at shuffle-position 0).
+  Future<void> playShuffledFromList(List<Song> songs, {Song? start}) async {
+    if (_audioHandler is! MyAudioHandler || songs.isEmpty) return;
+    final handler = _audioHandler;
 
-    final currentPath = currentSong.value?.path;
+    cacheRadioSongs(songs);
 
-    final pathToItem = {for (var item in currentQueue) item.id: item};
+    final paths = songs.map((s) => s.path).toList();
+    final playPath = start?.path ?? paths.first;
 
-    final reordered = <MediaItem>[];
-    for (final path in orderedPaths) {
-      final item = pathToItem[path];
-      if (item != null) reordered.add(item);
+    // Stop any active radio when playing local / non-yt sources via this
+    // entry point.
+    if (!playPath.startsWith('yt:') && isRadioMode.value) {
+      stopRadio();
+    }
+    if (playPath.startsWith('yt:') && !isRadioMode.value) {
+      await startRadio(resolveSong(playPath));
     }
 
-    final orderedSet = orderedPaths.toSet();
-    for (final item in currentQueue) {
-      if (!orderedSet.contains(item.id)) reordered.add(item);
-    }
-
-    audioHandler.queue.add(reordered);
-
-    // Restore _currentIndex to point to the now-playing song in its new position
-    if (currentPath != null) {
-      final newIndex = reordered.indexWhere((item) => item.id == currentPath);
-      if (newIndex >= 0) {
-        audioHandler.updateQueueIndex(newIndex);
-      }
-    }
+    q.queueSignal.shuffleFrom(paths, playPath: playPath);
+    // Build the actual play order for the handler.
+    final shuffled = List<String>.from(paths)..shuffle();
+    shuffled.remove(playPath);
+    shuffled.insert(0, playPath);
+    final resolvedSongs = shuffled.map(resolveSong).toList();
+    await handler.setPlaylist(resolvedSongs);
+    await handler.playSong(resolveSong(playPath));
+    _updateDynamicTheme(resolveSong(playPath));
+    if (isDesktop) unawaited(_updateDiscordPresence(force: true));
   }
 
   // ─── Playback control ────────────────────────────────────────────────────
@@ -932,70 +1034,210 @@ class AudioSignal {
     await handler.addQueueItem(mediaItem);
   }
 
-  Future<void> removeFromUpNext(int indexInUpNext, String songPath) async {
-    if (_audioHandler is! MyAudioHandler) return;
-    final handler = _audioHandler;
-    
-    q.queueSignal.removeFromUpNext(songPath);
-    
-    // Convert upNext index to full queue index
-    final queueIndex = q.queueSignal.currentIndex.value + 1 + indexInUpNext;
-    await handler.removeQueueItemAt(queueIndex);
+  Future<void> removeFromUpNext(int activeIndex) async {
+    // activeIndex is a position in the active play sequence (shuffled or
+    // unshuffled). Translate it to the underlying playbackOrder index for
+    // QueueSignal (which owns the canonical order) and pass the active
+    // index to the handler (whose queue is in active order).
+    final playbackIdx = q.queueSignal.playbackOrderIndexForActive(activeIndex);
+    q.queueSignal.removeAt(playbackIdx);
+    if (_audioHandler is MyAudioHandler && activeIndex >= 0) {
+      _audioHandler.removeQueueItemAt(activeIndex);
+    }
   }
 
-  Future<void> reorderUpNext(int oldIndexInUpNext, int newIndexInUpNext) async {
-    if (_audioHandler is! MyAudioHandler) return;
-    final handler = _audioHandler;
-
-    q.queueSignal.reorderUpNext(oldIndexInUpNext, newIndexInUpNext);
-
-    final currentIndex = q.queueSignal.currentIndex.value;
-    final oldQueueIndex = currentIndex + 1 + oldIndexInUpNext;
-    final newQueueIndex = currentIndex + 1 + newIndexInUpNext;
-
-    await handler.moveQueueItem(oldQueueIndex, newQueueIndex);
+  Future<void> reorderUpNext(int oldActiveIndex, int newActiveIndex) async {
+    final oldPlaybackIdx = q.queueSignal.playbackOrderIndexForActive(
+      oldActiveIndex,
+    );
+    final newPlaybackIdx = q.queueSignal.playbackOrderIndexForActive(
+      newActiveIndex,
+    );
+    q.queueSignal.reorderByQueueIndex(oldPlaybackIdx, newPlaybackIdx);
+    if (_audioHandler is MyAudioHandler &&
+        oldActiveIndex >= 0 &&
+        newActiveIndex >= 0) {
+      _audioHandler.moveQueueItem(oldActiveIndex, newActiveIndex);
+    }
   }
 
   /// Start radio mode for the given song, fetching a batch of similar songs
-  /// from YouTube Music's radio endpoint and adding them to the queue.
+  /// from YouTube Music's radio endpoint and seeding the prefetch buffer.
   Future<void> startRadio(Song seedSong) async {
     if (!seedSong.path.startsWith('yt:')) return;
     final videoId = seedSong.path.substring(3);
 
     isRadioMode.value = true;
-    print('RADIO_DEBUG: Starting radio mode for videoId=$videoId');
+    q.queueSignal.updateRadioSeed(videoId);
 
+    // Fetch initial batch from YTM API and seed the prefetch buffer.
     final songs = await youtubeDatasource.getRadioSongs(videoId);
-    if (songs.isEmpty) {
-      print('RADIO_DEBUG: No radio songs returned for $videoId');
-      return;
-    }
+    if (songs.isEmpty) return;
 
-    print('RADIO_DEBUG: Fetched ${songs.length} radio songs');
-
-    // Cache all fetched songs for queue metadata resolution
+    radioPrefetchBatch.addAll(songs);
     ytRadioSongs.addAll(songs);
+    audioCacheService.prefetchRadioSongs(songs, limit: 5);
 
-    // Append radio songs to end of queue
-    for (final song in songs) {
-      await addToQueue(song);
-    }
+    // Add the batch to the queue in one operation.
+    await _addRadioBatch(songs);
+  }
+
+  /// Add a list of songs to the playback queue as a batch.
+  Future<void> _addRadioBatch(List<Song> songs) async {
+    if (_audioHandler is! MyAudioHandler) return;
+    final handler = _audioHandler;
+
+    final items = songs.map((song) {
+      Uri? artUri;
+      final cachedPath = albumArtCache.getArtPathSync(song.path);
+      if (cachedPath != null) {
+        artUri = Uri.file(cachedPath);
+      } else if (song.path.startsWith('yt:')) {
+        artUri = Uri.parse(
+          youtubeDatasource.getArtworkUrl(song.path.substring(3)),
+        );
+      }
+      return MediaItem(
+        id: song.path,
+        album: song.album ?? 'YouTube Music',
+        title: song.title,
+        artist: song.artist,
+        duration: song.duration,
+        artUri: artUri,
+        extras: {'path': song.path, 'hasAlbumArt': song.hasAlbumArt},
+      );
+    }).toList();
+
+    await handler.addRadioBatch(items);
+  }
+
+  /// Advance the radio seed to a new videoId and prefetch the next batch.
+  /// Called when a radio song finishes playing so the continuation chain stays fresh.
+  void advanceRadioSeed(String videoId) {
+    if (!isRadioMode.value) return;
+    q.queueSignal.updateRadioSeed(videoId);
+    // Kick off a background prefetch of the next batch from the new seed.
+    unawaited(_prefetchRadioBatch(videoId));
+  }
+
+  Future<void> _prefetchRadioBatch(String videoId) async {
+    final songs = await youtubeDatasource.getRadioSongs(videoId);
+    if (songs.isEmpty) return;
+    radioPrefetchBatch.addAll(songs);
+    ytRadioSongs.addAll(songs);
+    audioCacheService.prefetchRadioSongs(songs, limit: 5);
   }
 
   /// Stop radio mode — no more auto-filling will occur.
   void stopRadio() {
     isRadioMode.value = false;
+    q.queueSignal.clearRadioSeed();
   }
 
   /// Cache songs from radio/fill operations so [resolveSong] can find them for queue display.
+  /// Load cached YouTube songs from disk into ytRadioSongs so queue entries
+  /// resolve on restart without re-fetching.
+  void _loadCachedYtSongs() {
+    final cached = q.queueSignal.service.getAllCachedYtSongs();
+    for (final json in cached) {
+      try {
+        final song = _songFromJson(
+          null,
+          jsonDecode(json) as Map<String, dynamic>,
+        );
+        if (!ytRadioSongs.value.any((s) => s.path == song.path)) {
+          ytRadioSongs.add(song);
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Remove YouTube queue entries that cannot be resolved and are not in any
+  /// cached source. This prevents stale YouTube entries from blocking playback.
+  void _clearOrphanedYtEntries() {
+    bool isResolvable(String path) {
+      if (!path.startsWith('yt:')) return true;
+      if (songMap.value.containsKey(path)) return true;
+      if (ytRadioSongs.value.any((s) => s.path == path)) return true;
+      if (searchSignal.youtubeSearchResults.value.any((s) => s.path == path)) {
+        return true;
+      }
+      if (q.queueSignal.service.getYtSongJson(path) != null) return true;
+      return false;
+    }
+
+    final order = List<String>.from(q.queueSignal.playbackOrder.value);
+    final orphans = order
+        .where((p) => p.startsWith('yt:') && !isResolvable(p))
+        .toList();
+    if (orphans.isEmpty) return;
+
+    final cleaned = order.where((p) => !orphans.contains(p)).toList();
+    final cleanedHist = q.queueSignal.history.value
+        .where((p) => !p.startsWith('yt:') || isResolvable(p))
+        .toList();
+
+    // Update signal state directly then persist.
+    q.queueSignal.playbackOrder.value = cleaned;
+    q.queueSignal.history.value = cleanedHist;
+    q.queueSignal.service.replace(
+      q.queueSignal.service.model.copyWith(
+        playbackOrder: cleaned,
+        history: cleanedHist,
+      ),
+    );
+  }
+
+  /// Reconstruct a Song from persisted JSON. [path] may be null if the JSON
+  /// already contains a path field.
+  Song _songFromJson(String? path, Map<String, dynamic> json) {
+    return Song(
+      path: path ?? json['path'] as String? ?? '',
+      title: json['title'] as String? ?? 'Unknown',
+      artist: json['artist'] as String? ?? 'Unknown',
+      album: json['album'] as String?,
+      hasAlbumArt: json['hasAlbumArt'] as bool? ?? true,
+      lyrics: null,
+      duration: json['durationMs'] != null
+          ? Duration(milliseconds: json['durationMs'] as int)
+          : null,
+      bitrate: json['bitrate'] as int?,
+      size: json['size'] as int?,
+      modifiedAt: null,
+      gainDb: 0.0,
+      trackPeak: 1.0,
+      albumGainDb: 0.0,
+      albumPeak: 1.0,
+      thumbnailUrl: json['thumbnailUrl'] as String?,
+    );
+  }
+
   void cacheRadioSongs(List<Song> songs) {
     for (final song in songs) {
       if (!ytRadioSongs.value.any((s) => s.path == song.path)) {
         ytRadioSongs.add(song);
+        // Persist so YouTube queue entries survive restarts.
+        q.queueSignal.service.cacheYtSong(
+          song.path,
+          jsonEncode(_songToJson(song)),
+        );
       }
     }
   }
 
+  Map<String, dynamic> _songToJson(Song song) {
+    return {
+      'path': song.path,
+      'title': song.title,
+      'artist': song.artist,
+      'album': song.album,
+      'durationMs': song.duration?.inMilliseconds,
+      'thumbnailUrl': song.thumbnailUrl,
+      'hasAlbumArt': song.hasAlbumArt,
+      'bitrate': song.bitrate,
+      'size': song.size,
+    };
+  }
 
   Future<void> _updateDynamicTheme(Song song) async {
     if (settingsSignal.themeStyle.value == AppThemeStyle.signature) return;
@@ -1021,9 +1263,7 @@ class AudioSignal {
       if (song.path.startsWith('yt:')) {
         // Use YouTube Music thumbnail for palette generation (square, hi-res)
         final videoId = song.path.substring(3);
-        imageProvider = NetworkImage(
-          youtubeDatasource.getArtworkUrl(videoId),
-        );
+        imageProvider = NetworkImage(youtubeDatasource.getArtworkUrl(videoId));
       } else {
         // Use AlbumArtCache to get the file (handles extraction if needed)
         final file = await AlbumArtCache().getArt(song.path);
@@ -1129,7 +1369,8 @@ class AudioSignal {
     if (bestColor != null) return _boostSaturation(bestColor);
 
     // Fallback chain: vibrant -> muted -> darkMuted
-    final fallback = palette.vibrantColor?.color ??
+    final fallback =
+        palette.vibrantColor?.color ??
         palette.mutedColor?.color ??
         palette.darkMutedColor?.color;
     if (fallback != null) return _boostSaturation(fallback);
@@ -1141,11 +1382,12 @@ class AudioSignal {
     final hsl = HSLColor.fromColor(color);
     // If saturation is low but not gray, boost it for a more vibrant theme
     if (hsl.saturation > 0.1 && hsl.saturation < 0.4) {
-      return hsl.withSaturation((hsl.saturation * 1.5).clamp(0.0, 1.0)).toColor();
+      return hsl
+          .withSaturation((hsl.saturation * 1.5).clamp(0.0, 1.0))
+          .toColor();
     }
     return color;
   }
-
 
   Future<void> playFile(File file) async {
     try {
@@ -1158,11 +1400,27 @@ class AudioSignal {
   }
 
   Future<void> toggleShuffle() async {
-    final currentMode = _audioHandler.playbackState.value.shuffleMode;
-    final newMode = currentMode == AudioServiceShuffleMode.all
-        ? AudioServiceShuffleMode.none
-        : AudioServiceShuffleMode.all;
-    await _audioHandler.setShuffleMode(newMode);
+    if (_audioHandler is! MyAudioHandler) return;
+    final handler = _audioHandler;
+
+    // Flip the signal state. QueueSignal handles the stable re-shuffle.
+    q.queueSignal.toggleShuffle();
+
+    // After the toggle, the handler's queue must reflect the new active
+    // order (so the OS lock-screen and notification surfaces show the
+    // correct next/previous). Reorder in place so playback is not
+    // interrupted — the currently playing song stays playing from its
+    // current position.
+    final activePaths = <String>[];
+    final n = q.queueSignal.activeLength;
+    for (int i = 0; i < n; i++) {
+      final p = q.queueSignal.pathAtActiveIndex(i);
+      if (p != null) activePaths.add(p);
+    }
+    if (activePaths.isEmpty) return;
+
+    final songs = activePaths.map(resolveSong).toList();
+    await handler.reorderQueue(songs);
   }
 
   Future<void> toggleRepeat() async {
@@ -1331,15 +1589,19 @@ class AudioSignal {
         )
         .toList();
 
-    if (songs.isNotEmpty && _audioHandler is MyAudioHandler) {
-      if (shuffle) {
-        await _audioHandler.setShuffleMode(AudioServiceShuffleMode.all);
-      } else {
-        await _audioHandler.setShuffleMode(AudioServiceShuffleMode.none);
-      }
-      await _audioHandler.setPlaylist(songs);
-      await _audioHandler.playSong(songs.first);
+    if (songs.isEmpty || _audioHandler is! MyAudioHandler) return;
+    final handler = _audioHandler;
+
+    if (shuffle) {
+      await playShuffledFromList(songs);
+      return;
     }
+
+    // Sequential play through the playlist.
+    final paths = songs.map((s) => s.path).toList();
+    q.queueSignal.setPlaylist(paths, playPath: paths.first);
+    await handler.setPlaylist(songs);
+    await handler.playSong(songs.first);
   }
 
   // File Explorer Helpers
@@ -1494,7 +1756,7 @@ class AudioSignal {
   void dispose() {
     _sleepInternalTimer?.cancel();
     _sleepInternalTimer = null;
-    
+
     for (final sub in _subscriptions) {
       sub.cancel();
     }
@@ -1524,7 +1786,9 @@ class AudioSignal {
         final imageFile = File(imagePath);
         if (await imageFile.exists()) {
           imageBytes = await imageFile.readAsBytes();
-          mimeType = imagePath.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+          mimeType = imagePath.toLowerCase().endsWith('.png')
+              ? 'image/png'
+              : 'image/jpeg';
         }
       }
 
@@ -1533,10 +1797,10 @@ class AudioSignal {
         if (title != null) metadata.setTitle(title);
         if (artist != null) metadata.setArtist(artist);
         if (album != null) metadata.setAlbum(album);
-        
+
         if (imageBytes != null) {
           final newPic = Picture(imageBytes, mimeType!, PictureType.coverFront);
-          
+
           if (metadata is Mp3Metadata) {
             final pics = List<Picture>.from(metadata.pictures);
             pics.removeWhere((p) => p.pictureType == PictureType.coverFront);
@@ -1581,7 +1845,7 @@ class AudioSignal {
           album: album ?? oldSong.album,
           hasAlbumArt: imagePath != null ? true : oldSong.hasAlbumArt,
         );
-        
+
         final newList = List<Song>.from(allSongs.value);
         newList[index] = updatedSong;
         allSongs.value = newList;
@@ -1696,7 +1960,7 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
             // print('ISOLATE_DEBUG: Skipping restricted folder/file: $e');
           })) {
         final path = entity.path;
-        
+
         // Check exclusions
         bool isExcluded = false;
         for (final excluded in excludedPaths) {
@@ -1753,30 +2017,52 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
           try {
             // Check if it's ID3 (covers v2.2, v2.3, v2.4)
             if (ID3v2Parser.canUserParser(reader)) {
-              // ID3v2Parser.parse will close the reader on success, 
+              // ID3v2Parser.parse will close the reader on success,
               // but we wrap it in a try-finally just in case it throws before/after.
               final mp3Meta = ID3v2Parser(fetchImage: true).parse(reader);
               metadata = AppAudioMetadata(
                 file: File(path),
                 album: (mp3Meta as dynamic).album,
-                artist: (mp3Meta as dynamic).bandOrOrchestra ?? (mp3Meta as dynamic).leadPerformer ?? (mp3Meta as dynamic).originalArtist,
+                artist:
+                    (mp3Meta as dynamic).bandOrOrchestra ??
+                    (mp3Meta as dynamic).leadPerformer ??
+                    (mp3Meta as dynamic).originalArtist,
                 bitrate: (mp3Meta as dynamic).bitrate,
                 duration: (mp3Meta as dynamic).duration,
                 title: (mp3Meta as dynamic).songName,
                 trackNumber: (mp3Meta as dynamic).trackNumber,
                 trackTotal: (mp3Meta as dynamic).trackTotal,
-                year: DateTime((mp3Meta as dynamic).originalReleaseYear ?? (mp3Meta as dynamic).year ?? 0),
+                year: DateTime(
+                  (mp3Meta as dynamic).originalReleaseYear ??
+                      (mp3Meta as dynamic).year ??
+                      0,
+                ),
                 discNumber: (mp3Meta as dynamic).discNumber,
               );
-              metadata.pictures = List<Picture>.from((mp3Meta as dynamic).pictures);
+              metadata.pictures = List<Picture>.from(
+                (mp3Meta as dynamic).pictures,
+              );
               // Extract ReplayGain from TXXX frames
               try {
-                final customMeta = (mp3Meta as dynamic).customMetadata as Map<String, String>?;
+                final customMeta =
+                    (mp3Meta as dynamic).customMetadata as Map<String, String>?;
                 if (customMeta != null) {
-                  metadata.gainDb = _parseGain(customMeta['REPLAYGAIN_TRACK_GAIN'] ?? customMeta['replaygain_track_gain']);
-                  metadata.trackPeak = _parsePeak(customMeta['REPLAYGAIN_TRACK_PEAK'] ?? customMeta['replaygain_track_peak']);
-                  metadata.albumGainDb = _parseGain(customMeta['REPLAYGAIN_ALBUM_GAIN'] ?? customMeta['replaygain_album_gain']);
-                  metadata.albumPeak = _parsePeak(customMeta['REPLAYGAIN_ALBUM_PEAK'] ?? customMeta['replaygain_album_peak']);
+                  metadata.gainDb = _parseGain(
+                    customMeta['REPLAYGAIN_TRACK_GAIN'] ??
+                        customMeta['replaygain_track_gain'],
+                  );
+                  metadata.trackPeak = _parsePeak(
+                    customMeta['REPLAYGAIN_TRACK_PEAK'] ??
+                        customMeta['replaygain_track_peak'],
+                  );
+                  metadata.albumGainDb = _parseGain(
+                    customMeta['REPLAYGAIN_ALBUM_GAIN'] ??
+                        customMeta['replaygain_album_gain'],
+                  );
+                  metadata.albumPeak = _parsePeak(
+                    customMeta['REPLAYGAIN_ALBUM_PEAK'] ??
+                        customMeta['replaygain_album_peak'],
+                  );
                 }
               } catch (_) {}
 
@@ -1785,15 +2071,19 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
                 try {
                   reader.setPositionSync(0);
                   final header = reader.readSync(10);
-                  if (header[3] == 2) { // ID3v2.2
+                  if (header[3] == 2) {
+                    // ID3v2.2
                     // Brute force search for PIC frame in the first 128KB
-                    final bytes = reader.lengthSync() < 128000 
+                    final bytes = reader.lengthSync() < 128000
                         ? reader.readSync(reader.lengthSync())
                         : reader.readSync(128000);
-                    
+
                     int picIndex = -1;
                     for (int j = 0; j < bytes.length - 3; j++) {
-                      if (bytes[j] == 80 && bytes[j+1] == 73 && bytes[j+2] == 67) { // "PIC"
+                      if (bytes[j] == 80 &&
+                          bytes[j + 1] == 73 &&
+                          bytes[j + 2] == 67) {
+                        // "PIC"
                         picIndex = j;
                         break;
                       }
@@ -1801,18 +2091,26 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
 
                     if (picIndex != -1) {
                       // PIC frame header is 6 bytes: ID(3), Size(3)
-                      final size = (bytes[picIndex+3] << 16) | (bytes[picIndex+4] << 8) | bytes[picIndex+5];
+                      final size =
+                          (bytes[picIndex + 3] << 16) |
+                          (bytes[picIndex + 4] << 8) |
+                          bytes[picIndex + 5];
                       if (size > 0 && picIndex + 6 + size <= bytes.length) {
-                        final frameData = bytes.sublist(picIndex + 6, picIndex + 6 + size);
+                        final frameData = bytes.sublist(
+                          picIndex + 6,
+                          picIndex + 6 + size,
+                        );
                         // Skip encoding(1) and fixed format(3) and picture type(1) and description(var)
                         // This is a rough estimation, but usually the image data follows a null terminator or fixed offset
                         int imgOffset = 5; // encoding(1) + format(3) + type(1)
                         if (imgOffset < frameData.length) {
-                          metadata.pictures.add(Picture(
-                            frameData.sublist(imgOffset),
-                            'image/jpeg',
-                            PictureType.coverFront,
-                          ));
+                          metadata.pictures.add(
+                            Picture(
+                              frameData.sublist(imgOffset),
+                              'image/jpeg',
+                              PictureType.coverFront,
+                            ),
+                          );
                         }
                       }
                     }
@@ -1828,18 +2126,36 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
                 bitrate: (vorbisMeta as dynamic).bitrate,
                 duration: (vorbisMeta as dynamic).duration,
                 title: (vorbisMeta as dynamic).title.firstOrNull,
-                trackNumber: int.tryParse((vorbisMeta as dynamic).trackNumber.firstOrNull ?? ''),
-                trackTotal: int.tryParse((vorbisMeta as dynamic).trackTotal.firstOrNull ?? ''),
+                trackNumber: int.tryParse(
+                  (vorbisMeta as dynamic).trackNumber.firstOrNull ?? '',
+                ),
+                trackTotal: int.tryParse(
+                  (vorbisMeta as dynamic).trackTotal.firstOrNull ?? '',
+                ),
                 year: (vorbisMeta as dynamic).date.firstOrNull,
                 discNumber: (vorbisMeta as dynamic).discNumber,
               );
-              metadata.pictures = List<Picture>.from((vorbisMeta as dynamic).pictures);
+              metadata.pictures = List<Picture>.from(
+                (vorbisMeta as dynamic).pictures,
+              );
               // Extract ReplayGain from Vorbis comments
               try {
-                metadata.gainDb = _parseGain(((vorbisMeta as dynamic).replayGainTrackGain as List?)?.firstOrNull);
-                metadata.trackPeak = _parsePeak(((vorbisMeta as dynamic).replayGainTrackPeak as List?)?.firstOrNull);
-                metadata.albumGainDb = _parseGain(((vorbisMeta as dynamic).replayGainAlbumGain as List?)?.firstOrNull);
-                metadata.albumPeak = _parsePeak(((vorbisMeta as dynamic).replayGainAlbumPeak as List?)?.firstOrNull);
+                metadata.gainDb = _parseGain(
+                  ((vorbisMeta as dynamic).replayGainTrackGain as List?)
+                      ?.firstOrNull,
+                );
+                metadata.trackPeak = _parsePeak(
+                  ((vorbisMeta as dynamic).replayGainTrackPeak as List?)
+                      ?.firstOrNull,
+                );
+                metadata.albumGainDb = _parseGain(
+                  ((vorbisMeta as dynamic).replayGainAlbumGain as List?)
+                      ?.firstOrNull,
+                );
+                metadata.albumPeak = _parsePeak(
+                  ((vorbisMeta as dynamic).replayGainAlbumPeak as List?)
+                      ?.firstOrNull,
+                );
               } catch (_) {}
             } else if (MP4Parser.canUserParser(reader)) {
               final mp4Meta = MP4Parser(fetchImage: true).parse(reader);
@@ -1855,7 +2171,9 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
                 year: (mp4Meta as dynamic).year,
                 discNumber: (mp4Meta as dynamic).discNumber,
               );
-              if ((mp4Meta as dynamic).picture != null) metadata.pictures.add((mp4Meta as dynamic).picture!);
+              if ((mp4Meta as dynamic).picture != null) {
+                metadata.pictures.add((mp4Meta as dynamic).picture!);
+              }
             } else if (OGGParser.canUserParser(reader)) {
               final oggMeta = OGGParser(fetchImage: true).parse(reader);
               metadata = AppAudioMetadata(
@@ -1865,18 +2183,34 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
                 bitrate: (oggMeta as dynamic).bitrate,
                 duration: (oggMeta as dynamic).duration,
                 title: (oggMeta as dynamic).title.firstOrNull,
-                trackNumber: int.tryParse((oggMeta as dynamic).trackNumber.firstOrNull ?? ''),
-                trackTotal: int.tryParse((oggMeta as dynamic).trackTotal.firstOrNull ?? ''),
+                trackNumber: int.tryParse(
+                  (oggMeta as dynamic).trackNumber.firstOrNull ?? '',
+                ),
+                trackTotal: int.tryParse(
+                  (oggMeta as dynamic).trackTotal.firstOrNull ?? '',
+                ),
                 year: (oggMeta as dynamic).date.firstOrNull,
                 discNumber: (oggMeta as dynamic).discNumber,
               );
               metadata.pictures.addAll((oggMeta as dynamic).pictures);
               // Extract ReplayGain from Vorbis comments (OGG)
               try {
-                metadata.gainDb = _parseGain(((oggMeta as dynamic).replayGainTrackGain as List?)?.firstOrNull);
-                metadata.trackPeak = _parsePeak(((oggMeta as dynamic).replayGainTrackPeak as List?)?.firstOrNull);
-                metadata.albumGainDb = _parseGain(((oggMeta as dynamic).replayGainAlbumGain as List?)?.firstOrNull);
-                metadata.albumPeak = _parsePeak(((oggMeta as dynamic).replayGainAlbumPeak as List?)?.firstOrNull);
+                metadata.gainDb = _parseGain(
+                  ((oggMeta as dynamic).replayGainTrackGain as List?)
+                      ?.firstOrNull,
+                );
+                metadata.trackPeak = _parsePeak(
+                  ((oggMeta as dynamic).replayGainTrackPeak as List?)
+                      ?.firstOrNull,
+                );
+                metadata.albumGainDb = _parseGain(
+                  ((oggMeta as dynamic).replayGainAlbumGain as List?)
+                      ?.firstOrNull,
+                );
+                metadata.albumPeak = _parsePeak(
+                  ((oggMeta as dynamic).replayGainAlbumPeak as List?)
+                      ?.firstOrNull,
+                );
               } catch (_) {}
             } else {
               // Fallback to the package's default readMetadata which might leak on error
@@ -1946,19 +2280,24 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
               } catch (_) {
                 selectedPic = metadata.pictures.first;
               }
-              
+
               // Robust check: find the real start of image data (Magic Bytes)
               // The library often skips too many or too few bytes for the description offset.
               Uint8List bytes = selectedPic.bytes;
               int imageStart = -1;
               for (int j = 0; j < bytes.length - 8; j++) {
                 // JPEG: FF D8 FF
-                if (bytes[j] == 0xFF && bytes[j+1] == 0xD8 && bytes[j+2] == 0xFF) {
+                if (bytes[j] == 0xFF &&
+                    bytes[j + 1] == 0xD8 &&
+                    bytes[j + 2] == 0xFF) {
                   imageStart = j;
                   break;
                 }
                 // PNG: 89 50 4E 47
-                if (bytes[j] == 0x89 && bytes[j+1] == 0x50 && bytes[j+2] == 0x4E && bytes[j+3] == 0x47) {
+                if (bytes[j] == 0x89 &&
+                    bytes[j + 1] == 0x50 &&
+                    bytes[j + 2] == 0x4E &&
+                    bytes[j + 3] == 0x47) {
                   imageStart = j;
                   break;
                 }
@@ -1995,15 +2334,21 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
         final modifiedAt = file.lastModifiedSync();
 
         // Use bitrate from metadata if available, otherwise calculate from file size
-        int? bitrate = metadata.bitrate != null ? (metadata.bitrate! / 1000).round() : null;
-        if (bitrate == null && metadata.duration != null && metadata.duration!.inSeconds > 0) {
+        int? bitrate = metadata.bitrate != null
+            ? (metadata.bitrate! / 1000).round()
+            : null;
+        if (bitrate == null &&
+            metadata.duration != null &&
+            metadata.duration!.inSeconds > 0) {
           final durationSeconds = metadata.duration!.inSeconds;
           bitrate = ((fileSizeBytes * 8) / durationSeconds / 1000).round();
         }
 
         final parsed = MetadataService().parseFromFilename(path);
-        final hasTitle = metadata.title != null && metadata.title!.trim().isNotEmpty;
-        final hasArtist = metadata.artist != null && metadata.artist != 'Unknown Artist';
+        final hasTitle =
+            metadata.title != null && metadata.title!.trim().isNotEmpty;
+        final hasArtist =
+            metadata.artist != null && metadata.artist != 'Unknown Artist';
 
         final song = Song(
           path: path,

@@ -50,7 +50,7 @@ APP_NAME="Ecilaes"
 BINARY_NAME="ecilaes"
 APPLICATION_ID="com.example.ecilaes"
 VERSION="$(cd "$PROJECT_ROOT" && grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d ' ')"
-    if [[ -z "$VERSION" ]]; then VERSION="0.5.1"; fi
+    if [[ -z "$VERSION" ]]; then VERSION="0.5.4"; fi
 ARCH="x86_64"
 
 OUTPUT_DIR="$PROJECT_ROOT/build/release"

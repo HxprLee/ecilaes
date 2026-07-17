@@ -15,10 +15,10 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../../signals/audio_signal.dart';
 import '../../../services/YoutubeDatasource.dart';
+import '../../../utils/navigation.dart';
 import '../../../widgets/components/sliver_page_header.dart';
 
 class MoodScreen extends StatefulWidget {
@@ -149,7 +149,8 @@ class _MoodScreenState extends State<MoodScreen> {
                   child: InkWell(
                     onTap: () {
                       if (browseId != null) {
-                        context.go(
+                        navigateGo(
+                          context,
                           '/youtube/playlist/${Uri.encodeComponent(browseId)}',
                           extra: {
                             'title': itemTitle,

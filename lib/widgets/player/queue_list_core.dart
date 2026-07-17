@@ -21,6 +21,7 @@ import 'package:signals/signals_flutter.dart';
 import '../../models/song.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/queue_signal.dart' as q;
+import '../../services/album_art_cache.dart';
 import '../../services/YoutubeDatasource.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../components/flyout_sheet.dart';
@@ -82,6 +83,10 @@ class _QueueListCoreState extends State<QueueListCore> {
   bool _isDragging = false;
   ScrollController? _localScrollController;
 
+  /// Cached lowercase filter text. Refreshed in [didUpdateWidget] so child
+  /// sections don't need [findAncestorStateOfType] on every build.
+  String? _filterTextLower;
+
   ScrollController get _scrollController =>
       widget.scrollController ??
       (_localScrollController ??= ScrollController());
@@ -89,8 +94,17 @@ class _QueueListCoreState extends State<QueueListCore> {
   @override
   void initState() {
     super.initState();
+    _filterTextLower = widget.filterText?.trim().toLowerCase();
     if (widget.showBackToTop) {
       _scrollController.addListener(_handleScroll);
+    }
+  }
+
+  @override
+  void didUpdateWidget(QueueListCore oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.filterText != widget.filterText) {
+      _filterTextLower = widget.filterText?.trim().toLowerCase();
     }
   }
 
@@ -120,127 +134,76 @@ class _QueueListCoreState extends State<QueueListCore> {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
-      final upNextPaths = q.queueSignal.upNextPaths;
-      final historyPaths = q.queueSignal.history.value;
-      final currentSong = audioSignal.currentSong.value;
-      // While a song is playing, it is the "now playing" anchor rendered by
-      // the parent. Drop it from the Played list so the same song doesn't
-      // appear twice (once as "Played", once as "Now playing").
-      final currentPath = currentSong?.path;
-      final upNextSongs = upNextPaths
-          .map((p) => audioSignal.resolveSong(p))
-          .toList();
-      final historySongs = historyPaths
-          .where((p) => p != currentPath)
-          .map((p) => audioSignal.resolveSong(p))
-          .toList();
+    // Collapsed state is local — no Watch needed for it.
+    final body = _buildBody();
 
-      // Apply client-side filter (FlyoutSheet-owned search field).
-      final filter = widget.filterText?.trim().toLowerCase();
-      if (filter != null && filter.isNotEmpty) {
-        bool matches(Song s) =>
-            s.title.toLowerCase().contains(filter) ||
-            s.artist.toLowerCase().contains(filter);
-        upNextSongs.removeWhere((s) => !matches(s));
-        historySongs.removeWhere((s) => !matches(s));
-      }
-      final isEmpty = upNextSongs.isEmpty && historySongs.isEmpty;
-      // NowPlayingRow is now rendered by the parent wrapper (above the
-      // search bar). The `showNowPlaying` widget flag still controls FAB
-      // offset, since the parent decides whether the row is visible.
-      final hasNowPlaying = widget.showNowPlaying && currentSong != null;
+    if (!widget.showBackToTop || _isDragging) {
+      return widget.maxHeight != null
+          ? SizedBox(height: widget.maxHeight, child: body)
+          : body;
+    }
 
-      Widget body;
-      if (isEmpty) {
-        body = const _EmptyQueueState();
-      } else {
-        body = SingleChildScrollView(
-          controller: _scrollController,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (historySongs.isNotEmpty)
-                _CollapsibleSection(
-                  title: 'Played',
-                  count: historySongs.length,
-                  expanded: _playedExpanded,
-                  onToggle: () =>
-                      setState(() => _playedExpanded = !_playedExpanded),
-                  trailing: _ClearButton(
-                    label: 'Clear',
-                    onTap: () => _confirmClearHistory(context),
-                  ),
-                  children: historySongs.isEmpty
-                      ? [_SectionEmpty(text: 'No played songs')]
-                      : [
-                          _AnimatedHistoryList(
-                            songs: historySongs,
-                            horizontalPadding: widget.tileHorizontalPadding,
-                            onPlay: (path) {
-                              final song = q.queueSignal.playFromHistory(path);
-                              if (song != null) {
-                                audioSignal.playSong(song);
-                              }
-                            },
-                            onDismiss: (path) {
-                              q.queueSignal.removeFromHistory(path);
-                            },
-                          ),
-                        ],
-                ),
-              _CollapsibleSection(
-                title: 'Up Next',
-                count: upNextSongs.length,
-                expanded: _upNextExpanded,
-                onToggle: () =>
-                    setState(() => _upNextExpanded = !_upNextExpanded),
-                trailing: upNextSongs.isNotEmpty
-                    ? _ClearButton(
-                        label: 'Clear',
-                        onTap: () => _confirmClearUpNext(context),
-                      )
-                    : null,
-                children: upNextSongs.isEmpty
-                    ? [
-                        _SectionEmpty(
-                          text: 'Queue is empty — add songs to start listening',
-                        ),
-                      ]
-                    : [
-                        _AnimatedUpNextList(
-                          songs: upNextSongs,
-                          horizontalPadding: widget.tileHorizontalPadding,
-                          onDraggingChanged: widget.onDraggingChanged,
-                          onDragStateChanged: (isDragging) {
-                            setState(() => _isDragging = isDragging);
-                          },
-                        ),
-                      ],
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        );
-      }
-
-      if (!widget.showBackToTop || _isDragging) {
-        return widget.maxHeight != null
+    return Stack(
+      children: [
+        widget.maxHeight != null
             ? SizedBox(height: widget.maxHeight, child: body)
-            : body;
+            : body,
+        // Back-to-top FAB is the only signal-derived UI outside the scoped
+        // sections. Reading _showBackToTop (set by scroll listener) is safe
+        // here — it drives a conditional Positioned, not a Watch.
+        Watch((context) {
+          final visible = _showBackToTop;
+          if (!visible) return const SizedBox.shrink();
+          final hasNowPlaying =
+              widget.showNowPlaying && audioSignal.currentSong.value != null;
+          return Positioned(
+            bottom: hasNowPlaying ? 96 : 24,
+            left: 24,
+            child: _BackToTopButton(onTap: _scrollToTop),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildBody() {
+    // Top-level Watch gates the whole body so an empty queue short-circuits
+    // before allocating any section widgets. Children use their own Watch
+    // blocks so they rebuild independently.
+    return Watch((context) {
+      final upNextCount = q.queueSignal.upNextCount;
+      final historyCount = q.queueSignal.historyCount;
+
+      if (upNextCount == 0 && historyCount == 0) {
+        // QueueListCore is hosted by box parents (SizedBox / Expanded), never
+        // a CustomScrollView, so an empty queue renders as a Centered box
+        // rather than a SliverFillRemaining.
+        return const _EmptyQueueState();
       }
 
-      return Stack(
-        children: [
-          widget.maxHeight != null
-              ? SizedBox(height: widget.maxHeight, child: body)
-              : body,
-          if (_showBackToTop)
-            Positioned(
-              bottom: hasNowPlaying ? 96 : 24,
-              left: 24,
-              child: _BackToTopButton(onTap: _scrollToTop),
-            ),
+      return CustomScrollView(
+        controller: _scrollController,
+        slivers: [
+          _HistorySection(
+            horizontalPadding: widget.tileHorizontalPadding,
+            expanded: _playedExpanded,
+            filterTextLower: _filterTextLower,
+            onToggle: () =>
+                setState(() => _playedExpanded = !_playedExpanded),
+            onClear: () => _confirmClearHistory(context),
+          ),
+          _UpNextSection(
+            horizontalPadding: widget.tileHorizontalPadding,
+            expanded: _upNextExpanded,
+            filterTextLower: _filterTextLower,
+            onToggle: () =>
+                setState(() => _upNextExpanded = !_upNextExpanded),
+            onDraggingChanged: widget.onDraggingChanged,
+            onDragStateChanged: (isDragging) {
+              setState(() => _isDragging = isDragging);
+            },
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 24)),
         ],
       );
     });
@@ -269,27 +232,155 @@ class _QueueListCoreState extends State<QueueListCore> {
     );
   }
 
-  void _confirmClearUpNext(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear Up Next?'),
-        content: const Text('This will remove all songs from the queue.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              q.queueSignal.clearUpNext();
-            },
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
-    );
+}
+
+// ─── History Section ──────────────────────────────────────────────────────────
+
+/// Owns its own Watch block so history changes don't rebuild the Up Next
+/// section.
+class _HistorySection extends StatelessWidget {
+  final double horizontalPadding;
+  final bool expanded;
+  final String? filterTextLower;
+  final VoidCallback onToggle;
+  final VoidCallback onClear;
+
+  const _HistorySection({
+    required this.horizontalPadding,
+    required this.expanded,
+    required this.filterTextLower,
+    required this.onToggle,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Watch((context) {
+      final historyPaths = q.queueSignal.history.value;
+      final currentPath = audioSignal.currentSong.value?.path;
+      final songMap = audioSignal.songMap.value;
+
+      // Pre-filter with cheap path comparison; only resolve a Song when
+      // the filter text is set, and even then prefer the O(1) songMap
+      // lookup over resolveSong's multi-list scan.
+      var items = historyPaths.where((p) => p != currentPath).toList();
+      final filter = filterTextLower;
+      if (filter != null && filter.isNotEmpty) {
+        items = items.where((p) {
+          final s = songMap[p] ?? audioSignal.resolveSong(p);
+          return s.title.toLowerCase().contains(filter) ||
+              s.artist.toLowerCase().contains(filter);
+        }).toList();
+      }
+      if (historyPaths.isEmpty) {
+        return const SliverToBoxAdapter(child: SizedBox.shrink());
+      }
+      return _CollapsibleSection(
+        title: 'Played',
+        count: items.length,
+        expanded: expanded,
+        onToggle: onToggle,
+        trailing: items.isNotEmpty
+            ? _ClearButton(
+                label: 'Clear',
+                onTap: onClear,
+              )
+            : null,
+        contentSlivers: items.isNotEmpty
+            ? [
+                _AnimatedHistoryList(
+                  songPaths: items,
+                  horizontalPadding: horizontalPadding,
+                ),
+              ]
+            : [_SliverSectionEmpty(text: 'No played songs')],
+      );
+    });
+  }
+}
+
+// ─── Up Next Section ─────────────────────────────────────────────────────────
+
+/// Owns its own Watch block so Up Next changes don't rebuild the History
+/// section.
+class _UpNextSection extends StatelessWidget {
+  final double horizontalPadding;
+  final bool expanded;
+  final String? filterTextLower;
+  final VoidCallback onToggle;
+  final void Function(int? draggingIndex)? onDraggingChanged;
+  final void Function(bool isDragging)? onDragStateChanged;
+
+  const _UpNextSection({
+    required this.horizontalPadding,
+    required this.expanded,
+    required this.filterTextLower,
+    required this.onToggle,
+    this.onDraggingChanged,
+    this.onDragStateChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Watch((context) {
+      final currentIdx = q.queueSignal.currentIndex.value;
+      final activeLen = q.queueSignal.activeLength;
+      // Read shuffleOrder + playbackOrder so the Watch subscribes to
+      // them — pathAtActiveIndex() reads them internally but the
+      // dependency wouldn't otherwise be visible to the analyzer.
+      // ignore: unused_local_variable
+      final shuffleOrder = q.queueSignal.shuffleOrder.value;
+      // ignore: unused_local_variable
+      final playbackOrder = q.queueSignal.playbackOrder.value;
+
+      List<(String, int)> items;
+      if (currentIdx >= 0 && currentIdx < activeLen - 1) {
+        items = [
+          for (int i = currentIdx + 1; i < activeLen; i++)
+            (
+              q.queueSignal.pathAtActiveIndex(i) ?? '',
+              i,
+            ),
+        ];
+      } else {
+        items = [];
+      }
+      items = items.where((e) => e.$1.isNotEmpty).toList();
+
+      final filter = filterTextLower;
+      if (filter != null && filter.isNotEmpty) {
+        final songMap = audioSignal.songMap.value;
+        items = items.where((e) {
+          final s = songMap[e.$1] ?? audioSignal.resolveSong(e.$1);
+          return s.title.toLowerCase().contains(filter) ||
+              s.artist.toLowerCase().contains(filter);
+        }).toList();
+      }
+
+      return _CollapsibleSection(
+        title: 'Up Next',
+        count: items.length,
+        expanded: expanded,
+        onToggle: onToggle,
+        trailing: items.isNotEmpty
+            ? _ClearButton(label: 'Clear', onTap: () => q.queueSignal.clearUpNext())
+            : null,
+        contentSlivers: items.isNotEmpty
+            ? [
+                _AnimatedUpNextList(
+                  items: items,
+                  horizontalPadding: horizontalPadding,
+                  onDraggingChanged: onDraggingChanged,
+                  onDragStateChanged: onDragStateChanged,
+                ),
+              ]
+            : [
+                _SliverSectionEmpty(
+                  text: 'Queue is empty — add songs to start listening',
+                ),
+              ],
+      );
+    });
   }
 }
 
@@ -332,15 +423,18 @@ class _CollapsibleSection extends StatelessWidget {
   final bool expanded;
   final VoidCallback onToggle;
   final Widget? trailing;
-  final List<Widget> children;
+
+  /// Slivers rendered when [expanded] is true. When collapsed, an empty
+  /// sliver replaces them so the header still anchors to the same place.
+  final List<Widget> contentSlivers;
 
   const _CollapsibleSection({
     required this.title,
     required this.count,
     required this.expanded,
     required this.onToggle,
-    required this.trailing,
-    required this.children,
+    this.trailing,
+    required this.contentSlivers,
   });
 
   @override
@@ -348,54 +442,62 @@ class _CollapsibleSection extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: onToggle,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 24, 8),
-            child: Row(
-              children: [
-                AnimatedRotation(
-                  turns: expanded ? 0.25 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    Icons.chevron_right,
-                    size: 18,
-                    color: colorScheme.secondary.withValues(alpha: 0.45),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: colorScheme.secondary.withValues(alpha: 0.6),
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '($count)',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: colorScheme.secondary.withValues(alpha: 0.35),
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-                const Spacer(),
-                ?trailing,
-              ],
+    final header = InkWell(
+      onTap: onToggle,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 24, 8),
+        child: Row(
+          children: [
+            AnimatedRotation(
+              turns: expanded ? 0.25 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: colorScheme.secondary.withValues(alpha: 0.45),
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: colorScheme.secondary.withValues(alpha: 0.6),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '($count)',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: colorScheme.secondary.withValues(alpha: 0.35),
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const Spacer(),
+            trailing ?? const SizedBox.shrink(),
+          ],
         ),
-        AnimatedCrossFade(
-          firstChild: Column(children: children),
-          secondChild: const SizedBox.shrink(),
-          crossFadeState: expanded
-              ? CrossFadeState.showFirst
-              : CrossFadeState.showSecond,
+      ),
+    );
+
+    // SliverMainAxisGroup is required so the header and content slivers
+    // share a single sliver context. SliverAnimatedOpacity provides the
+    // fade that AnimatedCrossFade previously delivered; the cross-axis
+    // geometry still snaps instantly because slivers can't be smoothly
+    // height-animated, but content stays visible long enough that the
+    // chevron + count animating give the collapse a clean feel.
+    final content = expanded
+        ? SliverMainAxisGroup(slivers: contentSlivers)
+        : const SliverToBoxAdapter(child: SizedBox.shrink());
+
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverToBoxAdapter(child: header),
+        SliverAnimatedOpacity(
           duration: const Duration(milliseconds: 200),
+          opacity: expanded ? 1.0 : 0.0,
+          sliver: content,
         ),
       ],
     );
@@ -405,13 +507,14 @@ class _CollapsibleSection extends StatelessWidget {
 // ─── Animated Up Next List (reorderable) ─────────────────────────────────────
 
 class _AnimatedUpNextList extends StatefulWidget {
-  final List<Song> songs;
+  /// Pairs of (song path, queue index in playbackOrder).
+  final List<(String path, int queueIndex)> items;
   final double horizontalPadding;
   final void Function(int? draggingIndex)? onDraggingChanged;
   final void Function(bool isDragging)? onDragStateChanged;
 
   const _AnimatedUpNextList({
-    required this.songs,
+    required this.items,
     required this.horizontalPadding,
     this.onDraggingChanged,
     this.onDragStateChanged,
@@ -426,15 +529,12 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
 
   /// Stable keys so Dismissible state is retained across rebuilds.
   final List<Key> _itemKeys = [];
-  List<Song> _displayedSongs = [];
+  List<(String path, int queueIndex)> _displayedItems = [];
 
   @override
   void initState() {
     super.initState();
-    _displayedSongs = List.from(widget.songs);
-    for (int i = 0; i < widget.songs.length; i++) {
-      _itemKeys.add(UniqueKey());
-    }
+    _syncFromSignal();
   }
 
   @override
@@ -445,30 +545,30 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
 
   void _syncFromSignal() {
     final newKeys = <Key>[];
-    // Try to preserve keys for songs that haven't changed position
-    for (int i = 0; i < widget.songs.length; i++) {
-      if (i < _displayedSongs.length && _displayedSongs[i].path == widget.songs[i].path) {
+    for (int i = 0; i < widget.items.length; i++) {
+      if (i < _displayedItems.length &&
+          _displayedItems[i].$1 == widget.items[i].$1) {
         newKeys.add(_itemKeys[i]);
       } else {
         newKeys.add(UniqueKey());
       }
     }
-    _displayedSongs = List.from(widget.songs);
+    _displayedItems = List<(String, int)>.from(widget.items);
     _itemKeys
       ..clear()
       ..addAll(newKeys);
   }
 
-  void _dismissItem(int index) {
-    if (index < 0 || index >= _displayedSongs.length) return;
-    final song = _displayedSongs[index];
-    _displayedSongs.removeAt(index);
-    _itemKeys.removeAt(index);
+  void _dismissItem(int displayIndex) {
+    if (displayIndex < 0 || displayIndex >= _displayedItems.length) return;
+    final (_, queueIndex) = _displayedItems[displayIndex];
+    _displayedItems.removeAt(displayIndex);
+    _itemKeys.removeAt(displayIndex);
     setState(() {});
-    audioSignal.removeFromUpNext(index, song.path);
+    audioSignal.removeFromUpNext(queueIndex);
   }
 
-  void _showActions(BuildContext context, Song song) {
+  void _showActions(BuildContext context, Song song, int queueIndex) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -492,10 +592,7 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
               label: 'Move to top',
               onTap: () {
                 Navigator.pop(ctx);
-                final idx = _displayedSongs.indexWhere((s) => s.path == song.path);
-                if (idx >= 0) {
-                  audioSignal.reorderUpNext(idx, 0);
-                }
+                q.queueSignal.moveToTop(song.path);
               },
             ),
             _ActionTile(
@@ -503,10 +600,7 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
               label: 'Remove from queue',
               onTap: () {
                 Navigator.pop(ctx);
-                final idx = _displayedSongs.indexWhere((s) => s.path == song.path);
-                if (idx >= 0) {
-                  audioSignal.removeFromUpNext(idx, song.path);
-                }
+                audioSignal.removeFromUpNext(queueIndex);
               },
             ),
             _ActionTile(
@@ -534,16 +628,15 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _displayedSongs.length,
+    return SliverList.builder(
+      itemCount: _displayedItems.length,
       itemBuilder: (context, index) {
-        if (index >= _displayedSongs.length) {
+        if (index >= _displayedItems.length) {
           return const SizedBox.shrink();
         }
-        final song = _displayedSongs[index];
+        final (path, queueIndex) = _displayedItems[index];
         final itemKey = _itemKeys[index];
+        final song = audioSignal.resolveSong(path);
 
         return LongPressDraggable<int>(
           data: index,
@@ -582,9 +675,11 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
           child: DragTarget<int>(
             onWillAcceptWithDetails: (details) => details.data != index,
             onAcceptWithDetails: (details) {
-              final oldIdx = details.data;
-              if (oldIdx < 0 || oldIdx == index) return;
-              audioSignal.reorderUpNext(oldIdx, index);
+              final oldDisplayIndex = details.data;
+              if (oldDisplayIndex < 0 || oldDisplayIndex == index) return;
+              final oldQueueIdx = _displayedItems[oldDisplayIndex].$2;
+              final newQueueIdx = _displayedItems[index].$2;
+              audioSignal.reorderUpNext(oldQueueIdx, newQueueIdx);
             },
             builder: (context, candidateData, rejectedData) {
               return _AnimatedTile(
@@ -598,7 +693,7 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
                   song: song,
                   horizontalPadding: widget.horizontalPadding,
                   onTap: () => audioSignal.playSong(song),
-                  onMore: () => _showActions(context, song),
+                  onMore: () => _showActions(context, song, queueIndex),
                 ),
               );
             },
@@ -612,16 +707,12 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
 // ─── Animated History List (non-reorderable) ─────────────────────────────────
 
 class _AnimatedHistoryList extends StatefulWidget {
-  final List<Song> songs;
+  final List<String> songPaths;
   final double horizontalPadding;
-  final void Function(String songPath) onPlay;
-  final void Function(String songPath) onDismiss;
 
   const _AnimatedHistoryList({
-    required this.songs,
+    required this.songPaths,
     required this.horizontalPadding,
-    required this.onPlay,
-    required this.onDismiss,
   });
 
   @override
@@ -631,17 +722,14 @@ class _AnimatedHistoryList extends StatefulWidget {
 class _AnimatedHistoryListState extends State<_AnimatedHistoryList> {
   static const _identityAnimation = AlwaysStoppedAnimation(1.0);
 
-  /// Stable keys so Dismissible state is retained across rebuilds.
   final List<Key> _itemKeys = [];
-  List<Song> _displayedSongs = [];
+  List<String> _displayedPaths = [];
+  int _expandedLimit = 100;
 
   @override
   void initState() {
     super.initState();
-    _displayedSongs = List.from(widget.songs);
-    for (int i = 0; i < widget.songs.length; i++) {
-      _itemKeys.add(UniqueKey());
-    }
+    _syncFromSignal();
   }
 
   @override
@@ -652,56 +740,93 @@ class _AnimatedHistoryListState extends State<_AnimatedHistoryList> {
 
   void _syncFromSignal() {
     final newKeys = <Key>[];
-    for (int i = 0; i < widget.songs.length; i++) {
-      if (i < _displayedSongs.length && _displayedSongs[i].path == widget.songs[i].path) {
+    final limit = _expandedLimit.clamp(0, widget.songPaths.length);
+    for (int i = 0; i < limit; i++) {
+      if (i < _displayedPaths.length &&
+          _displayedPaths[i] == widget.songPaths[i]) {
         newKeys.add(_itemKeys[i]);
       } else {
         newKeys.add(UniqueKey());
       }
     }
-    _displayedSongs = List.from(widget.songs);
+    _displayedPaths = widget.songPaths.take(limit).toList();
     _itemKeys
       ..clear()
       ..addAll(newKeys);
   }
 
+  void _loadMore() {
+    if (!mounted) return;
+    final nextLimit = (_expandedLimit + 100)
+        .clamp(0, widget.songPaths.length);
+    if (nextLimit == _expandedLimit) return;
+    setState(() => _expandedLimit = nextLimit);
+  }
+
   void _dismissItem(int index) {
-    if (index < 0 || index >= _displayedSongs.length) return;
-    final song = _displayedSongs[index];
-    _displayedSongs.removeAt(index);
+    if (index < 0 || index >= _displayedPaths.length) return;
+    final path = _displayedPaths[index];
+    _displayedPaths.removeAt(index);
     _itemKeys.removeAt(index);
     setState(() {});
-    widget.onDismiss(song.path);
+    q.queueSignal.removeFromHistory(path);
+  }
+
+  void _playFromHistory(String path) {
+    final song = q.queueSignal.playFromHistory(path);
+    if (song != null) {
+      audioSignal.playSong(song);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _displayedSongs.length,
-      itemBuilder: (context, index) {
-        if (index >= _displayedSongs.length) {
-          return const SizedBox.shrink();
-        }
-        final song = _displayedSongs[index];
-        final itemKey = _itemKeys[index];
-        return _AnimatedTile(
-          song: song,
-          itemKey: itemKey,
-          animation: _identityAnimation,
-          isRemoval: false,
-          onDismissed: () => _dismissItem(index),
-          childBuilder: (context) => _HistoryTileContent(
-            song: song,
-            horizontalPadding: widget.horizontalPadding,
-            onTap: () {
-              widget.onPlay(song.path);
-              audioSignal.playSong(song);
-            },
+    final remaining = widget.songPaths.length - _displayedPaths.length;
+    final showLoadMore = remaining > 0;
+
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverList.builder(
+          itemCount: _displayedPaths.length,
+          itemBuilder: (context, index) {
+            if (index >= _displayedPaths.length) {
+              return const SizedBox.shrink();
+            }
+            final path = _displayedPaths[index];
+            final itemKey = _itemKeys[index];
+            final song = audioSignal.resolveSong(path);
+
+            return _AnimatedTile(
+              song: song,
+              itemKey: itemKey,
+              animation: _identityAnimation,
+              isRemoval: false,
+              onDismissed: () => _dismissItem(index),
+              childBuilder: (context) => _HistoryTileContent(
+                song: song,
+                horizontalPadding: widget.horizontalPadding,
+                onTap: () => _playFromHistory(path),
+              ),
+            );
+          },
+        ),
+        if (showLoadMore)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: TextButton(
+                onPressed: _loadMore,
+                child: Text(
+                  'Load $remaining more',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
           ),
-        );
-      },
+      ],
     );
   }
 }
@@ -732,18 +857,15 @@ class _AnimatedTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final slideAnim =
-        Tween<Offset>(
-          begin: Offset(isRemoval ? -0.15 : 0.15, 0),
-          end: Offset.zero,
-        ).animate(
-          CurvedAnimation(
-            parent: animation,
-            curve: isRemoval ? Curves.easeIn : Curves.easeOut,
-          ),
-        );
-
-    final child = childBuilder?.call(context) ?? const SizedBox.shrink();
+    final slideAnim = Tween<Offset>(
+      begin: Offset(isRemoval ? -0.15 : 0.15, 0),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: animation,
+        curve: isRemoval ? Curves.easeIn : Curves.easeOut,
+      ),
+    );
 
     return SlideTransition(
       position: slideAnim,
@@ -761,25 +883,29 @@ class _AnimatedTile extends StatelessWidget {
                   ),
                 )
               : null,
-          child: Dismissible(
-            key: itemKey,
-            direction: DismissDirection.endToStart,
-            background: Container(
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 24),
-              color: colorScheme.error.withValues(alpha: 0.15),
-              child: Icon(
-                Icons.remove_circle_outline,
-                color: colorScheme.error,
-                size: 22,
+          // RepaintBoundary isolates this tile from its siblings — a
+          // re-render of one row (e.g. drag-feedback) no longer dirties
+          // the others. Dismissible handles the swipe gesture and key
+          // stability. The thin Material wrapper gives ListTile's
+          // onTap an InkWell ancestor for the ripple.
+          child: RepaintBoundary(
+            child: Dismissible(
+              key: itemKey,
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 24),
+                color: colorScheme.error.withValues(alpha: 0.15),
+                child: Icon(
+                  Icons.remove_circle_outline,
+                  color: colorScheme.error,
+                  size: 22,
+                ),
               ),
-            ),
-            onDismissed: (_) => onDismissed?.call(),
-            child: Material(
-              color: Colors.transparent,
-              child: Ink(
-                color: Colors.transparent,
-                child: child is SizedBox ? const SizedBox.shrink() : child,
+              onDismissed: (_) => onDismissed?.call(),
+              child: Material(
+                type: MaterialType.transparency,
+                child: childBuilder?.call(context) ?? const SizedBox.shrink(),
               ),
             ),
           ),
@@ -809,76 +935,48 @@ class _UpNextTileContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      switchInCurve: Curves.easeOut,
-      switchOutCurve: Curves.easeIn,
-      child: Material(
-        key: ValueKey('upnext-${song.path}'),
-        color: Colors.transparent,
-        child: Ink(
-          color: Colors.transparent,
-          child: ListTile(
-            contentPadding: EdgeInsets.only(
-              left: horizontalPadding,
-              right: horizontalPadding,
-              top: 4,
-              bottom: 4,
-            ),
-            leading: SizedBox(
-              width: 56,
-              height: 48,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(left: 0, top: 0, child: _Artwork(song: song, size: 48)),
-                  Positioned(
-                    left: 28,
-                    top: 14,
-                    child: Icon(
-                      Icons.drag_handle,
-                      color: colorScheme.secondary.withValues(alpha: 0.35),
-                      size: 20,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            title: Text(
-              song.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colorScheme.secondary,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
-            subtitle: Text(
-              song.artist,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colorScheme.secondary.withValues(alpha: 0.65),
-                fontSize: 12,
-              ),
-            ),
-            trailing: isDragFeedback
-                ? null
-                : IconButton(
-                    visualDensity: VisualDensity.compact,
-                    onPressed: onMore,
-                    icon: Icon(
-                      Icons.more_horiz,
-                      color: colorScheme.secondary.withValues(alpha: 0.45),
-                      size: 20,
-                    ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-            onTap: onTap,
+    return RepaintBoundary(
+      child: ListTile(
+        contentPadding: EdgeInsets.only(
+          left: horizontalPadding,
+          right: horizontalPadding,
+          top: 4,
+          bottom: 4,
+        ),
+        leading: _Artwork(song: song, size: 48),
+        title: Text(
+          song.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: colorScheme.secondary,
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
           ),
         ),
+        subtitle: Text(
+          song.artist,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: colorScheme.secondary.withValues(alpha: 0.65),
+            fontSize: 12,
+          ),
+        ),
+        trailing: isDragFeedback
+            ? null
+            : IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: onMore,
+                icon: Icon(
+                  Icons.more_horiz,
+                  color: colorScheme.secondary.withValues(alpha: 0.45),
+                  size: 20,
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+        onTap: onTap,
       ),
     );
   }
@@ -900,37 +998,33 @@ class _HistoryTileContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      child: Ink(
-        color: Colors.transparent,
-        child: ListTile(
-          contentPadding: EdgeInsets.symmetric(
-            horizontal: horizontalPadding,
-            vertical: 4,
-          ),
-          leading: _Artwork(song: song, size: 48),
-          title: Text(
-            song.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: colorScheme.secondary.withValues(alpha: 0.8),
-              fontWeight: FontWeight.w500,
-              fontSize: 14,
-            ),
-          ),
-          subtitle: Text(
-            song.artist,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: colorScheme.secondary.withValues(alpha: 0.5),
-              fontSize: 12,
-            ),
-          ),
-          onTap: onTap,
+    return RepaintBoundary(
+      child: ListTile(
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: 4,
         ),
+        leading: _Artwork(song: song, size: 48),
+        title: Text(
+          song.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: colorScheme.secondary.withValues(alpha: 0.8),
+            fontWeight: FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+        subtitle: Text(
+          song.artist,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: colorScheme.secondary.withValues(alpha: 0.5),
+            fontSize: 12,
+          ),
+        ),
+        onTap: onTap,
       ),
     );
   }
@@ -1003,22 +1097,25 @@ class _ClearButton extends StatelessWidget {
 
 // ─── Section Empty ───────────────────────────────────────────────────────────
 
-class _SectionEmpty extends StatelessWidget {
+class _SliverSectionEmpty extends StatelessWidget {
   final String text;
 
-  const _SectionEmpty({required this.text});
+  const _SliverSectionEmpty({required this.text});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: Theme.of(
-            context,
-          ).colorScheme.secondary.withValues(alpha: 0.35),
-          fontSize: 13,
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: Theme.of(context)
+                .colorScheme
+                .secondary
+                .withValues(alpha: 0.35),
+            fontSize: 13,
+          ),
         ),
       ),
     );
@@ -1069,22 +1166,32 @@ class _Artwork extends StatelessWidget {
       );
     }
 
-    return Watch((context) {
-      final artDir = audioSignal.albumArtDir.value;
-      if (artDir == null) return fallbackIcon;
-      final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
-      final file = File(artPath);
-      if (file.existsSync()) {
-        return Image.file(
-          file,
-          fit: BoxFit.cover,
-          cacheWidth: (size * 2).toInt(),
-          cacheHeight: (size * 2).toInt(),
-          errorBuilder: (_, _, _) => fallbackIcon,
-        );
-      }
-      return fallbackIcon;
-    });
+    // For local songs, prefer the in-memory songMap's `hasAlbumArt` flag
+    // (no I/O). Fall back to a synchronous AlbumArtCache lookup only when
+    // the song isn't in the library (e.g. cold start before scan).
+    final known = audioSignal.songMap.value[song.path];
+    if (known == null) {
+      final cachedPath = AlbumArtCache().getArtPathSync(song.path);
+      if (cachedPath == null) return fallbackIcon;
+      return Image.file(
+        File(cachedPath),
+        fit: BoxFit.cover,
+        cacheWidth: (size * 2).toInt(),
+        cacheHeight: (size * 2).toInt(),
+        errorBuilder: (_, _, _) => fallbackIcon,
+      );
+    }
+
+    final artDir = audioSignal.albumArtDir.value;
+    if (artDir == null) return fallbackIcon;
+    final artPath = '$artDir/${song.path.hashCode.abs()}.jpg';
+    return Image.file(
+      File(artPath),
+      fit: BoxFit.cover,
+      cacheWidth: (size * 2).toInt(),
+      cacheHeight: (size * 2).toInt(),
+      errorBuilder: (_, _, _) => fallbackIcon,
+    );
   }
 }
 
@@ -1102,27 +1209,30 @@ class _EmptyQueueState extends StatelessWidget {
           FaIcon(
             FontAwesomeIcons.music,
             size: 48,
-            color: Theme.of(
-              context,
-            ).colorScheme.secondary.withValues(alpha: 0.2),
+            color: Theme.of(context)
+                .colorScheme
+                .secondary
+                .withValues(alpha: 0.2),
           ),
           const SizedBox(height: 16),
           Text(
             'Queue is empty',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.secondary.withValues(alpha: 0.5),
-            ),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .secondary
+                      .withValues(alpha: 0.5),
+                ),
           ),
           const SizedBox(height: 4),
           Text(
             'Add songs to start listening',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.secondary.withValues(alpha: 0.35),
-            ),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .secondary
+                      .withValues(alpha: 0.35),
+                ),
           ),
         ],
       ),

@@ -56,7 +56,10 @@ class SettingsSection extends StatelessWidget {
                 border: Border.all(color: context.accentBorder(0.15)),
               ),
               clipBehavior: Clip.antiAlias,
-              child: child,
+              child: Material(
+                type: MaterialType.transparency,
+                child: child,
+              ),
             ),
           ),
         ),

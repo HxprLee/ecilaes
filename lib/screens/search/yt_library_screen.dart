@@ -16,10 +16,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../../signals/audio_signal.dart';
 import '../../../services/YoutubeDatasource.dart';
+import '../../../utils/navigation.dart';
 import '../../../widgets/components/sliver_page_header.dart';
 import '../../../widgets/components/standard_sliver_list.dart';
 import '../../../widgets/components/standard_sliver_grid.dart';
@@ -189,7 +189,8 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                     onTap: () {
                       if (browseId != null) {
                         if (widget.type == YTLibraryType.artists) {
-                          context.go(
+                          navigateGo(
+                            context,
                             '/youtube/artist/${Uri.encodeComponent(browseId)}',
                             extra: {
                               'name': itemTitle,
@@ -197,7 +198,8 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                             },
                           );
                         } else if (widget.type == YTLibraryType.albums) {
-                          context.go(
+                          navigateGo(
+                            context,
                             '/youtube/album/${Uri.encodeComponent(browseId)}',
                             extra: {
                               'title': itemTitle,
@@ -205,7 +207,8 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                             },
                           );
                         } else {
-                          context.go(
+                          navigateGo(
+                            context,
                             '/youtube/playlist/${Uri.encodeComponent(browseId)}',
                             extra: {
                               'title': itemTitle,
@@ -279,7 +282,8 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                     onTap: () {
                       if (browseId != null) {
                         if (widget.type == YTLibraryType.artists) {
-                          context.go(
+                          navigateGo(
+                            context,
                             '/youtube/artist/${Uri.encodeComponent(browseId)}',
                             extra: {
                               'name': itemTitle,
@@ -287,7 +291,8 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                             },
                           );
                         } else if (widget.type == YTLibraryType.albums) {
-                          context.go(
+                          navigateGo(
+                            context,
                             '/youtube/album/${Uri.encodeComponent(browseId)}',
                             extra: {
                               'title': itemTitle,
@@ -295,7 +300,8 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                             },
                           );
                         } else {
-                          context.go(
+                          navigateGo(
+                            context,
                             '/youtube/playlist/${Uri.encodeComponent(browseId)}',
                             extra: {
                               'title': itemTitle,

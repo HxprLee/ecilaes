@@ -18,7 +18,6 @@ import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../signals/audio_signal.dart';
-import '../signals/queue_signal.dart' as q;
 import '../services/song_cache.dart';
 import '../models/song.dart';
 import '../models/history_entry.dart';
@@ -73,14 +72,11 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Watch((context) {
-        // Order from QueueSignal (the single source of truth for played
-        // songs) merged with play-count analytics from PlaybackHistoryService
-        // so each row can still show "N plays" and a relative timestamp.
-        final historyPaths = q.queueSignal.history.value;
-        final historyStats = {
-          for (final e in audioSignal.historySongs.value) e.songPath: e,
-        };
+        // Use audioSignal.historySongs — the same source as Home screen's
+        // "Recently played" section. History is ordered most-recent-first.
+        final historyEntries = audioSignal.historySongs.value;
         final songs = audioSignal.allSongs.value;
+        final songMap = {for (final s in songs) s.path: s};
         final isGrid = audioSignal.isHistoryGridView.value;
 
         return CustomScrollView(
@@ -101,7 +97,7 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                 ),
               ],
             ),
-            if (historyPaths.isEmpty)
+            if (historyEntries.isEmpty)
               SliverFillRemaining(
                 child: Center(
                   child: Text(
@@ -116,21 +112,11 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
               )
             else if (isGrid)
               StandardSliverGrid<HistoryEntry>(
-                items: historyPaths
-                    .map((p) =>
-                        historyStats[p] ??
-                        HistoryEntry(
-                          songPath: p,
-                          playCount: 1,
-                          lastPlayed: DateTime.now(),
-                        ))
-                    .toList(),
+                items: historyEntries,
                 childAspectRatio: 0.75,
                 itemBuilder: (context, entry, index) {
-                  final song = songs.firstWhere(
-                    (s) => s.path == entry.songPath,
-                    orElse: () => Song.fromPath(entry.songPath),
-                  );
+                  final song = songMap[entry.songPath] ??
+                      Song.fromPath(entry.songPath);
 
                   return SongGridCard(
                     song: song,
@@ -142,21 +128,14 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
               )
             else
               SongListView(
-                songs: historyPaths
-                    .map(
-                      (p) => songs.firstWhere(
-                        (s) => s.path == p,
-                        orElse: () => Song.fromPath(p),
-                      ),
-                    )
+                songs: historyEntries
+                    .map((e) => songMap[e.songPath] ?? Song.fromPath(e.songPath))
                     .toList(),
                 emptyMessage: 'No songs played yet',
                 trailingBuilder: (context, song, index) {
-                  final entry = historyStats[song.path];
+                  final entry = historyEntries[index];
                   return Text(
-                    entry != null
-                        ? _formatRelativeTime(entry.lastPlayed)
-                        : '',
+                    _formatRelativeTime(entry.lastPlayed),
                     style: TextStyle(
                       color: Theme.of(
                         context,

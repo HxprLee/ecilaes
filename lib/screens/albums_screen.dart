@@ -16,11 +16,11 @@
 
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../signals/audio_signal.dart';
 import '../models/library_models.dart';
+import '../utils/navigation.dart';
 import '../widgets/components/standard_sliver_list.dart';
 import '../widgets/components/standard_sliver_grid.dart';
 import '../widgets/components/song_tile.dart';
@@ -61,7 +61,8 @@ class AlbumsScreen extends StatelessWidget {
                 itemBuilder: (context, album, index) {
                   final artPath = SongTile.getArtPath(album.firstSongPath, artDir);
                   return GestureDetector(
-                    onTap: () => context.go(
+                    onTap: () => navigateGo(
+                      context,
                       '/albums/${Uri.encodeComponent(album.artist)}/${Uri.encodeComponent(album.name)}',
                     ),
                     child: Column(
@@ -173,7 +174,8 @@ class AlbumsScreen extends StatelessWidget {
                       size: 20,
                       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                     ),
-                    onTap: () => context.go(
+                    onTap: () => navigateGo(
+                      context,
                       '/albums/${Uri.encodeComponent(album.artist)}/${Uri.encodeComponent(album.name)}',
                     ),
                   );

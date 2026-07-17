@@ -16,11 +16,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../../signals/audio_signal.dart';
 import '../../../signals/search_signal.dart';
 import '../../../services/YoutubeDatasource.dart';
+import '../../../utils/navigation.dart';
 import '../../../widgets/components/standard_sliver_list.dart';
 
 class RawResultsList {
@@ -118,16 +118,23 @@ class RawResultsList {
             onTap: () {
               if (filterType == SearchFilter.videos &&
                   item['videoId'] != null) {
-                audioSignal.playSong(youtubeDatasource.mapToSong(item));
+                final song = youtubeDatasource.mapToSong(item);
+                searchSignal.ytBrowseResults.value = [
+                  ...searchSignal.ytBrowseResults.value,
+                  song,
+                ];
+                audioSignal.playSong(song);
               } else if (filterType == SearchFilter.albums &&
                   item['browseId'] != null) {
-                context.go(
+                navigateGo(
+                  context,
                   '/youtube/album/${Uri.encodeComponent(item['browseId'])}',
                   extra: {'title': title, 'thumbnailUrl': thumbnailUrl},
                 );
               } else if (filterType == SearchFilter.artists &&
                   (item['browseId'] != null)) {
-                context.go(
+                navigateGo(
+                  context,
                   '/youtube/artist/${Uri.encodeComponent(item['browseId'])}',
                   extra: {'name': title, 'thumbnailUrl': thumbnailUrl},
                 );
@@ -139,12 +146,18 @@ class RawResultsList {
                 if (playlistId.startsWith('VL')) {
                   playlistId = playlistId.substring(2);
                 }
-                context.go(
+                navigateGo(
+                  context,
                   '/youtube/playlist/${Uri.encodeComponent(playlistId)}',
                   extra: {'title': title, 'thumbnailUrl': thumbnailUrl},
                 );
               } else if (item['videoId'] != null) {
-                audioSignal.playSong(youtubeDatasource.mapToSong(item));
+                final song = youtubeDatasource.mapToSong(item);
+                searchSignal.ytBrowseResults.value = [
+                  ...searchSignal.ytBrowseResults.value,
+                  song,
+                ];
+                audioSignal.playSong(song);
               }
             },
           );

@@ -18,6 +18,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import '../models/song.dart';
 import 'youtube_service.dart';
 
 /// Manages persistent disk caching of YouTube audio streams.
@@ -168,7 +169,7 @@ class AudioCacheService {
     await init();
     final dir = Directory(_cacheDirPath!);
     if (!await dir.exists()) return [];
-    
+
     final List<String> ids = [];
     try {
       await for (final entity in dir.list()) {
@@ -181,6 +182,25 @@ class AudioCacheService {
       debugPrint('Error listing downloads: $e');
     }
     return ids;
+  }
+
+  /// Pre-fetch audio streams for a batch of songs. Only processes YouTube songs
+  /// and skips songs that are already cached or in-flight. Uses [unawaited]
+  /// internally so it never blocks the caller.
+  ///
+  /// Set [limit] to control how many songs to prefetch (default 5 to avoid
+  /// wasting bandwidth on a large radio batch).
+  void prefetchRadioSongs(List<Song> songs, {int limit = 5}) {
+    int fetched = 0;
+    for (final song in songs) {
+      if (!song.path.startsWith('yt:')) continue;
+      if (fetched >= limit) break;
+      final videoId = song.path.substring(3);
+      if (getCachedPath(videoId) != null) continue;
+      if (isCaching(videoId)) continue;
+      unawaited(cacheStream(videoId));
+      fetched++;
+    }
   }
 }
 
