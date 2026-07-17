@@ -66,7 +66,7 @@ class AboutSection extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Version 0.5.3',
+                            'Version 0.5.4',
                             style: TextStyle(
                               color: Theme.of(
                                 context,

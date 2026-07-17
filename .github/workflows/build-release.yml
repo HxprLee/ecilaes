@@ -7,7 +7,7 @@
 # Produces:
 #   - Android: universal APK + ABI-split APKs (arm64-v8a, armeabi-v7a, x86_64)
 #   - Linux:   AppImage
-#   - Windows: ZIP (exe + DLLs)
+#   - Windows: Inno Setup installer
 #
 # Signing note: APKs are signed with debug keystore by default.
 # For production, add key.properties + ANDROID_KEYSTORE_* secrets.
@@ -129,10 +129,31 @@ jobs:
       - name: Build Windows release
         run: flutter build windows --release
 
+      - name: Derive version
+        id: version
+        shell: pwsh
+        run: |
+          if ("$env:GITHUB_EVENT_NAME" -eq "push") {
+            $tag = "$env:GITHUB_REF_NAME"
+            $ver = $tag -replace "^v", ""
+          } elseif ("${{ inputs.version }}" -ne "") {
+            $ver = "${{ inputs.version }}"
+          } else {
+            $content = Get-Content pubspec.yaml -Raw
+            $ver = [regex]::Match($content, '^version:\s*(\S+)').Groups[1].Value
+          }
+          echo "version=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress
+
+      - name: Build installer
+        run: iscc packaging/windows/setup.iss "/DMyAppVersion=${{ steps.version.outputs.version }}"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-release
-          path: build\windows\x64\runner\Release\
+          name: windows-installer
+          path: build\windows\installer\Ecilaes-*.exe
           if-no-files-found: error
 
   release:
@@ -167,8 +188,8 @@ jobs:
           ls -lh android-apks/ 2>/dev/null || echo "(empty)"
           echo "=== linux-appimage ==="
           ls -lh linux-appimage/ 2>/dev/null || echo "(empty)"
-          echo "=== windows-release ==="
-          ls -lh windows-release/ 2>/dev/null || echo "(empty)"
+          echo "=== windows-installer ==="
+          ls -lh windows-installer/ 2>/dev/null || echo "(empty)"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -178,6 +199,6 @@ jobs:
           files: |
             android-apks/app-*.apk
             linux-appimage/*.AppImage
-            windows-release/**
+            windows-installer/Ecilaes-*.exe
           generate_release_notes: true
           fail_on_unmatched_files: true
