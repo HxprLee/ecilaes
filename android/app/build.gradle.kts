@@ -16,7 +16,7 @@ plugins {
 
 android {
     namespace = "org.hxprlee.ecilaes"
-    compileSdk = 37
+    compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
