@@ -25,6 +25,7 @@ abstract class AppRoutes {
   static const String library = '/library';
   static const String explorer = '/explorer';
   static const String playlists = '/playlists';
+  static const String playlist = '/playlist';
   static const String artists = '/artists';
   static const String albums = '/albums';
   static const String recentlyPlayed = '/recently-played';

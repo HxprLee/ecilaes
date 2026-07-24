@@ -46,7 +46,7 @@ class PageHeader extends StatelessWidget {
         ? 80.0 // Matches HomeShell headerHeight
         : 64.0 + MediaQuery.of(context).padding.top;
 
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final progress = audioSignal.headerTitleProgress.value;
 
       // Interpolate: large title shrinks and fades as it morphs into the header

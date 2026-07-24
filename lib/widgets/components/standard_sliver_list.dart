@@ -26,6 +26,7 @@ class StandardSliverList<T> extends StatelessWidget {
   final bool addBottomPadding;
   final bool isLoading;
   final Widget? loadingWidget;
+  final List<Widget>? loadingSlivers;
 
   final List<Widget>? leadingItems;
 
@@ -37,11 +38,16 @@ class StandardSliverList<T> extends StatelessWidget {
     this.addBottomPadding = true,
     this.isLoading = false,
     this.loadingWidget,
+    this.loadingSlivers,
     this.leadingItems,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading && loadingSlivers != null) {
+      return SliverMainAxisGroup(slivers: loadingSlivers!);
+    }
+
     if (isLoading) {
       return SliverFillRemaining(
         child: Center(
@@ -73,11 +79,12 @@ class StandardSliverList<T> extends StatelessWidget {
             childCount: items.length,
           ),
         ),
-        SliverToBoxAdapter(
-          child: Watch((context) {
-            return SizedBox(height: audioSignal.reservedHeight.value);
-          }),
-        ),
+        if (addBottomPadding)
+          SliverToBoxAdapter(
+            child: SignalBuilder(builder: (context) {
+              return SizedBox(height: audioSignal.reservedHeight.value);
+            }),
+          ),
       ],
     );
   }

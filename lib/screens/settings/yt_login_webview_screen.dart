@@ -27,8 +27,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../router/routes.dart';
 import '../../services/yt_login_coordinator.dart';
 import '../../signals/audio_signal.dart';
+import '../../signals/overlay_signal.dart';
 import '../../utils/navigation.dart';
 import '../../widgets/components/app_dialog.dart';
+import '../../widgets/components/app_toast.dart';
 import '../../widgets/components/sliver_page_header.dart';
 
 class YtLoginWebViewScreen extends StatefulWidget {
@@ -76,19 +78,16 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
   Future<void> _handleResult(YtLoginResult result) async {
     if (!mounted) return;
     if (result.success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.username != null
-                ? 'Connected as ${result.username}'
-                : 'YouTube Music Account connected successfully!',
-          ),
-        ),
+      ToastService.show(
+        result.username != null
+            ? 'Connected as ${result.username}'
+            : 'YouTube Music Account connected successfully!',
+        variant: AppToastVariant.success,
       );
       if (context.canPop()) {
         context.pop();
       } else {
-        navigateGo(context, AppRoutes.settingsIntegrations);
+        navigateTab(context, AppRoutes.settingsIntegrations);
       }
       return;
     }
@@ -102,12 +101,9 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
     final result = await ytLoginCoordinator.finalizeFromCookies();
     if (!mounted) return;
     if (result == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No sign-in cookies detected yet. Please complete sign-in first.',
-          ),
-        ),
+      ToastService.show(
+        'No sign-in cookies detected yet. Please complete sign-in first.',
+        variant: AppToastVariant.warning,
       );
       return;
     }
@@ -149,15 +145,12 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
       await _handleResult(result);
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result.error ??
-              (fromClipboard
-                  ? 'Clipboard does not contain a YouTube cookie.'
-                  : 'Cookie string invalid.'),
-        ),
-      ),
+    ToastService.show(
+      result.error ??
+          (fromClipboard
+              ? 'Clipboard does not contain a YouTube cookie.'
+              : 'Cookie string invalid.'),
+      variant: AppToastVariant.error,
     );
   }
 
@@ -165,15 +158,19 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
     final uri = YtLoginCoordinator.signInUri;
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the system browser.')),
+      ToastService.show(
+        'Could not open the system browser.',
+        variant: AppToastVariant.error,
       );
     }
   }
 
   void _showInstructions() {
+    overlaySignal.push(ActiveOverlay.ytLoginInstructions);
+
     showDialog(
       context: context,
+      useRootNavigator: true,
       barrierColor: Colors.black.withValues(alpha: 0.5),
       builder: (dialogContext) => AppDialog(
         titleIcon: Icon(
@@ -221,14 +218,15 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
         ),
         actions: [
           FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
+            onPressed: () {
+              overlaySignal.pop(ActiveOverlay.ytLoginInstructions);
+              Navigator.of(dialogContext).pop();
+            },
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogContext)
-                  .colorScheme
-                  .secondary
-                  .withValues(alpha: 0.8),
-              foregroundColor:
-                  Theme.of(dialogContext).colorScheme.surface,
+              backgroundColor: Theme.of(
+                dialogContext,
+              ).colorScheme.secondary.withValues(alpha: 0.8),
+              foregroundColor: Theme.of(dialogContext).colorScheme.surface,
               shape: const StadiumBorder(),
             ),
             child: const Text('Close'),
@@ -281,8 +279,7 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
           ),
           SliverFillRemaining(hasScrollBody: _linux, child: body),
           SliverToBoxAdapter(
-            child: Watch(
-              (context) => SizedBox(height: audioSignal.reservedHeight.value),
+            child: SignalBuilder(builder: (context) => SizedBox(height: audioSignal.reservedHeight.value),
             ),
           ),
         ],
@@ -321,10 +318,9 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
               FilledButton.icon(
                 onPressed: _openYtmInBrowser,
                 style: FilledButton.styleFrom(
-                  backgroundColor: Theme.of(context)
-                      .colorScheme
-                      .secondary
-                      .withValues(alpha: 0.8),
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.8),
                   foregroundColor: Theme.of(context).colorScheme.surface,
                   shape: const StadiumBorder(),
                 ),
@@ -357,13 +353,13 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
                       onPressed: _pasteFromClipboard,
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondary
-                              .withValues(alpha: 0.2),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.secondary.withValues(alpha: 0.2),
                         ),
-                        foregroundColor:
-                            Theme.of(context).colorScheme.secondary,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.secondary,
                         shape: const StadiumBorder(),
                       ),
                       icon: const Icon(Icons.content_paste),
@@ -375,10 +371,9 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
                     child: FilledButton.icon(
                       onPressed: _submitManualEntry,
                       style: FilledButton.styleFrom(
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .secondary
-                            .withValues(alpha: 0.8),
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.secondary.withValues(alpha: 0.8),
                         foregroundColor: Theme.of(context).colorScheme.surface,
                         shape: const StadiumBorder(),
                       ),
@@ -393,8 +388,7 @@ class _YtLoginWebViewScreenState extends State<YtLoginWebViewScreen> {
                 child: TextButton.icon(
                   onPressed: _showInstructions,
                   style: TextButton.styleFrom(
-                    foregroundColor:
-                        Theme.of(context).colorScheme.secondary,
+                    foregroundColor: Theme.of(context).colorScheme.secondary,
                   ),
                   icon: const Icon(Icons.help_outline, size: 16),
                   label: const Text('How do I get the cookie string?'),
@@ -473,8 +467,7 @@ class _StatusBanner extends StatelessWidget implements PreferredSizeWidget {
     if (isLinux) return const SizedBox.shrink();
     if (isLoading) {
       return LinearProgressIndicator(
-        backgroundColor:
-            Theme.of(context).colorScheme.surfaceContainerHighest,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         color: Theme.of(context).colorScheme.secondary,
       );
     }
@@ -482,10 +475,9 @@ class _StatusBanner extends StatelessWidget implements PreferredSizeWidget {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        color: Theme.of(context)
-            .colorScheme
-            .errorContainer
-            .withValues(alpha: 0.4),
+        color: Theme.of(
+          context,
+        ).colorScheme.errorContainer.withValues(alpha: 0.4),
         child: Row(
           children: [
             Icon(

@@ -16,9 +16,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
-import 'package:signals/signals_flutter.dart';
-import '../../signals/audio_signal.dart';
+import '../../signals/shell_layout_signal.dart';
+import '../../services/navigation/back_handler.dart';
 import '../../widgets/sidebar.dart';
 import '../../widgets/morphing_player.dart';
 import '../../widgets/components/window_title_bar.dart';
@@ -36,7 +35,6 @@ class _HomeShellDesktopState extends State<HomeShellDesktop> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _isSidebarCollapsed = false;
   double? _lastWidth;
-  String? _lastLocation;
 
   @override
   void didChangeDependencies() {
@@ -65,17 +63,7 @@ class _HomeShellDesktopState extends State<HomeShellDesktop> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 1000;
-    final location = GoRouterState.of(context).uri.toString();
     const headerHeight = 80.0;
-
-    if (_lastLocation != location) {
-      _lastLocation = location;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        audioSignal.headerShowBlur.value = false;
-        audioSignal.headerTitleProgress.value = 0.0;
-        audioSignal.headerArtCover.value = null;
-      });
-    }
 
     const collapsedWidth = 70.0 + 16.0;
     const expandedWidth = 250.0 + 16.0;
@@ -87,6 +75,14 @@ class _HomeShellDesktopState extends State<HomeShellDesktop> {
       contentLeftOffset = _isSidebarCollapsed ? collapsedWidth : expandedWidth;
     }
 
+    // Publish the sidebar's effective width so widgets mounted above the
+    // Navigator (e.g. the toast host) can dodge it. Done in a post-frame
+    // callback to avoid mutating signals during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      shellLayoutSignal.setSidebarWidth(contentLeftOffset);
+    });
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -95,67 +91,61 @@ class _HomeShellDesktopState extends State<HomeShellDesktop> {
         systemNavigationBarIconBrightness: Brightness.light,
         systemNavigationBarDividerColor: Colors.transparent,
       ),
-      child: Watch((context) {
-        if (audioSignal.bottomPadding.value != 0) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            audioSignal.bottomPadding.value = 0;
-          });
-        }
-
-        return PopScope(
-          canPop: audioSignal.playerExpansion.value < 0.001,
-          onPopInvokedWithResult: (didPop, result) {
-            if (!didPop) {
-              audioSignal.minimizePlayerTrigger.value++;
-            }
-          },
-          child: Scaffold(
-            key: _scaffoldKey,
-            extendBody: true,
-            body: Stack(
-              children: [
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOutCubic,
-                  left: contentLeftOffset,
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: ScrollConfiguration(
-                    behavior: ScrollConfiguration.of(context),
-                    child: widget.child,
-                  ),
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          appBackHandler.invoke(context);
+        },
+        child: Scaffold(
+          key: _scaffoldKey,
+          extendBody: true,
+          body: Stack(
+            children: [
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOutCubic,
+                left: contentLeftOffset,
+                top: 0,
+                right: 0,
+                bottom: 0,
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context),
+                  child: widget.child,
                 ),
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOutCubic,
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: headerHeight,
-                  child: WindowTitleBar(leftOffset: contentLeftOffset),
+              ),
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOutCubic,
+                top: 0,
+                left: 0,
+                right: 0,
+                height: headerHeight,
+                child: WindowTitleBar(leftOffset: contentLeftOffset),
+              ),
+              // Sidebar always above player; z-order handled by paint order
+              Positioned(
+                key: const ValueKey('sidebar'),
+                left: 0,
+                top: 0,
+                bottom: 0,
+                child: Sidebar(
+                  isCollapsed: _isSidebarCollapsed,
+                  onToggle: _toggleSidebar,
                 ),
-                // Sidebar always above player; z-order handled by paint order
-                Positioned(
-                  key: const ValueKey('sidebar'),
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Sidebar(
-                    isCollapsed: _isSidebarCollapsed,
-                    onToggle: _toggleSidebar,
-                  ),
-                ),
-                MorphingPlayer(
-                  key: _playerKey,
-                  leftOffset: contentLeftOffset,
-                  bottomOffset: 0.0,
-                ),
-              ],
-            ),
+              ),
+              // Player is a stable widget keyed by `_playerKey`. Lifted out
+              // of the previous SignalBuilder so it isn't rebuilt on every sidebar
+              // layout change or signal write from this shell.
+              MorphingPlayer(
+                key: _playerKey,
+                leftOffset: contentLeftOffset,
+                bottomOffset: 0.0,
+              ),
+            ],
           ),
-        );
-      }),
+        ),
+      ),
     );
   }
 }

@@ -37,25 +37,45 @@ class YoutubeMusicScreen extends StatefulWidget {
 
 class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
   final List<Map<String, dynamic>> _sections = [];
+  final List<Map<String, dynamic>> _homeSections = [];
+  final List<Map<String, dynamic>> _chartSections = [];
   final List<Map<String, dynamic>> _moods = [];
   bool _isLoading = true;
+  String? _activeGenreParams;
+  String? _activeGenreTitle;
+  bool _isGenreLoading = false;
+  bool _isChartsLoading = false;
+  bool _chartsRequested = false;
+  final ScrollController _scrollController = ScrollController();
+  static const double _lazyLoadThreshold = 1500; // px from bottom
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _loadHome();
   }
 
-  Color _placeholderIconColor(BuildContext context) {
-    if (context.isMaterial3) {
-      return context.colorScheme.onSurface.withValues(alpha: 0.2);
-    }
-    return Colors.white24;
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
   }
 
-  Color _placeholderIconColorStatic() {
-    // Fallback for branches without context — use light eclipx color
-    return Colors.white24;
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_isChartsLoading || _chartsRequested) return;
+    if (_activeGenreParams != null) return; // don't trigger when user is viewing a genre
+    if (_sections.isEmpty || _isLoading) return;
+    final position = _scrollController.position;
+    if (position.maxScrollExtent <= 0) {
+      // Nothing to scroll past — _maybePrefetchCharts handles this case.
+      return;
+    }
+    if (position.pixels >= position.maxScrollExtent - _lazyLoadThreshold) {
+      _loadMoreCharts();
+    }
   }
 
   void _updateStateWithData(
@@ -67,10 +87,16 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
     if (!mounted) return;
 
     final newMoods = <Map<String, dynamic>>[];
+    final seenMoodKeys = <String>{};
     if (moodsData.isNotEmpty) {
       for (var v in moodsData.values) {
         if (v is List) {
-          newMoods.addAll(v.cast<Map<String, dynamic>>());
+          for (final entry in v.cast<Map<String, dynamic>>()) {
+            final title = (entry['title'] as String? ?? '').trim();
+            if (title.isEmpty) continue;
+            final key = title.toLowerCase();
+            if (seenMoodKeys.add(key)) newMoods.add(entry);
+          }
         }
       }
     }
@@ -103,6 +129,9 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
       _moods.addAll(newMoods);
       _sections.clear();
       _sections.addAll(newSections);
+      _homeSections
+        ..clear()
+        ..addAll(newSections);
       _isLoading = false;
     });
 
@@ -132,6 +161,7 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
 
     if (cachedMoods != null && cachedExplore != null && cachedSections != null && cachedSections.isNotEmpty) {
       _updateStateWithData(cachedMoods, cachedExplore, cachedSections, isFromCache: true);
+      _maybePrefetchCharts();
     } else {
       setState(() => _isLoading = true);
     }
@@ -144,6 +174,7 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
       ).wait;
       final sections = await youtubeDatasource.getHomeSections();
       _updateStateWithData(moodsData, exploreData, sections, isFromCache: false);
+      _maybePrefetchCharts();
     } catch (e) {
       debugPrint('Error refreshing YTM home: $e');
       if (_sections.isEmpty && mounted) {
@@ -152,11 +183,157 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
     }
   }
 
+  /// If the initial home fits fully on the viewport, the scroll-to-bottom
+  /// gesture never fires. In that case, kick off the charts fetch after the
+  /// first frame so the user immediately gets more sections beneath the
+  /// existing ones without having to scroll.
+  void _maybePrefetchCharts() {
+    if (_chartsRequested || _isChartsLoading) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _chartsRequested || _isChartsLoading) return;
+      // If the user can scroll beyond the bottom, the scroll listener will
+      // take over. Only prefetch when scrolling is impossible (everything
+      // already fits), or when the content is short.
+      final canScroll = _scrollController.hasClients &&
+          _scrollController.position.maxScrollExtent > 100;
+      if (!canScroll && _sections.isNotEmpty) {
+        _loadMoreCharts();
+      }
+    });
+  }
+
+  Future<void> _toggleGenre(String params, String title) async {
+    if (_activeGenreParams == params) {
+      // Deactivate: restore the home feed snapshot (home + any lazily-loaded charts).
+      setState(() {
+        _activeGenreParams = null;
+        _activeGenreTitle = null;
+        _isGenreLoading = false;
+        _sections
+          ..clear()
+          ..addAll(_homeSections);
+      });
+      return;
+    }
+
+    // Show skeleton immediately while we fetch, but only if no cached data.
+    final cached = await youtubeDatasource.getCachedMoodPlaylists(params);
+    if (!mounted) return;
+    if (cached != null && cached.isNotEmpty) {
+      setState(() {
+        _activeGenreParams = params;
+        _activeGenreTitle = title;
+        _sections
+          ..clear()
+          ..addAll(cached);
+      });
+    } else {
+      setState(() {
+        _activeGenreParams = params;
+        _activeGenreTitle = title;
+        _isGenreLoading = true;
+        _sections.clear();
+      });
+    }
+
+    try {
+      final fresh = await youtubeDatasource.getMoodPlaylists(params);
+      if (!mounted || _activeGenreParams != params) return;
+      setState(() {
+        _sections
+          ..clear()
+          ..addAll(fresh);
+        _isGenreLoading = false;
+      });
+    } catch (e) {
+      if (!mounted || _activeGenreParams != params) return;
+      setState(() => _isGenreLoading = false);
+      debugPrint('Error loading YTM genre $params: $e');
+    }
+  }
+
+  Future<void> _loadMoreCharts() async {
+    if (_isChartsLoading || _chartsRequested) return;
+    _chartsRequested = true;
+    setState(() => _isChartsLoading = true);
+
+    try {
+      // Use cache first for instant render, then refresh.
+      final cached = await youtubeDatasource.getCachedCharts();
+      if (mounted && cached != null && cached.isNotEmpty) {
+        _appendChartsToHome(cached);
+      }
+
+      final fresh = await youtubeDatasource.getCharts();
+      if (!mounted) return;
+      _appendChartsToHome(fresh);
+      setState(() => _isChartsLoading = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isChartsLoading = false);
+      debugPrint('Error loading YTM charts: $e');
+    }
+  }
+
+  void _appendChartsToHome(Map<String, dynamic> charts) {
+    if (charts.isEmpty) return;
+    final built = _buildChartSections(charts);
+    if (built.isEmpty) return;
+
+    // Merge: keep home + the new sections that aren't already present (by title+key signature).
+    final existingKeys = {
+      for (final s in _sections) '${s['title']}|${s['sectionKey']}',
+    };
+    final toAdd = <Map<String, dynamic>>[];
+    for (final section in built) {
+      final key = '${section['title']}|${section['sectionKey']}';
+      if (existingKeys.add(key)) toAdd.add(section);
+    }
+    if (toAdd.isEmpty) return;
+
+    setState(() {
+      _chartSections.addAll(toAdd);
+      _sections.addAll(toAdd);
+      _homeSections
+        ..clear()
+        ..addAll(_sections);
+    });
+  }
+
+  List<Map<String, dynamic>> _buildChartSections(Map<String, dynamic> charts) {
+    final built = <Map<String, dynamic>>[];
+    final videoTitles = <String, String>{
+      'videos': 'Top Music Videos',
+      'daily': 'Daily Top Music Videos',
+      'weekly': 'Weekly Top Music Videos',
+      'genres': 'Top Genre Charts',
+      'artists': 'Top Artists',
+    };
+    videoTitles.forEach((key, label) {
+      final raw = charts[key];
+      if (raw is List && raw.isNotEmpty) {
+        final items = raw
+            .whereType<Map>()
+            .map((m) => Map<String, dynamic>.from(m))
+            .toList();
+        if (items.isNotEmpty) {
+          built.add({
+            'title': label,
+            'sectionKey': 'charts_$key',
+            'items': items,
+          });
+        }
+      }
+    });
+    return built;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
+        controller: _scrollController,
         slivers: [
           const SliverPageHeader(title: 'YouTube Music'),
           if (_moods.isNotEmpty)
@@ -172,14 +349,30 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
                     separatorBuilder: (_, _) => const SizedBox(width: 8),
                     itemBuilder: (context, index) {
                       final mood = _moods[index];
+                      final params = mood['params'] ?? '';
+                      final isActive = _activeGenreParams != null &&
+                          _activeGenreParams == params;
+                      final colorScheme = Theme.of(context).colorScheme;
                       return ActionChip(
                         label: Text(mood['title'] ?? ''),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        backgroundColor: isActive
+                            ? colorScheme.secondary
+                            : colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.5),
+                        labelStyle: TextStyle(
+                          color: isActive
+                              ? colorScheme.surface
+                              : colorScheme.secondary,
+                          fontWeight:
+                              isActive ? FontWeight.w600 : FontWeight.normal,
+                        ),
                         side: BorderSide.none,
-                        onPressed: () {
-                           // Navigate to mood playlist future enhancement
-                        },
+                        onPressed: params.isEmpty
+                            ? null
+                            : () => _toggleGenre(params, mood['title'] ?? ''),
                       );
                     },
                   ),
@@ -188,15 +381,49 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
             ),
           if (_isLoading && _sections.isEmpty)
             const YtHomeSkeleton()
+          else if (_isGenreLoading && _sections.isEmpty)
+            const YtHomeSkeleton()
           else if (_sections.isEmpty)
-            const SliverFillRemaining(
-              child: Center(child: Text('Failed to load YouTube Music home.')),
+            SliverFillRemaining(
+              child: Center(
+                child: Text(
+                  _activeGenreTitle == null
+                      ? 'Failed to load YouTube Music home.'
+                      : 'No playlists found for $_activeGenreTitle.',
+                ),
+              ),
             )
           else ..._sections.map((section) => _buildSection(context, section)),
             
+          if (!_chartsRequested && _activeGenreParams == null) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: OutlinedButton.icon(
+                  onPressed: _isChartsLoading ? null : _loadMoreCharts,
+                  icon: const Icon(Icons.bar_chart_outlined, size: 18),
+                  label: const Text('Load charts'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ] else if (_isChartsLoading) ...[
+            const SliverPadding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              sliver: SliverToBoxAdapter(
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
+          ],
+
           // Bottom spacing
           SliverToBoxAdapter(
-            child: Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+            child: SignalBuilder(builder: (context) => SizedBox(height: audioSignal.reservedHeight.value)),
           ),
         ],
       ),
@@ -379,21 +606,21 @@ class _YoutubeMusicScreenState extends State<YoutubeMusicScreen> {
       audioSignal.playSong(song);
     } else if (browseId.startsWith('MPRE')) {
       // It's an album
-      navigateGo(context, '${AppRoutes.youtube}/album/${Uri.encodeComponent(browseId)}',
+      navigatePush(context, '${AppRoutes.youtube}/album/${Uri.encodeComponent(browseId)}',
         extra: {'title': title, 'thumbnailUrl': thumbnailUrl});
     } else if (browseId.startsWith('UC') || browseId.startsWith('MPLA')) {
       // It's an artist
-      navigateGo(context, '${AppRoutes.youtube}/artist/${Uri.encodeComponent(browseId)}',
+      navigatePush(context, '${AppRoutes.youtube}/artist/${Uri.encodeComponent(browseId)}',
         extra: {'name': title, 'thumbnailUrl': thumbnailUrl});
     } else if (playlistId.isNotEmpty) {
       // It's a playlist
-      navigateGo(context, '${AppRoutes.youtube}/playlist/${Uri.encodeComponent(playlistId)}',
+      navigatePush(context, '${AppRoutes.youtube}/playlist/${Uri.encodeComponent(playlistId)}',
         extra: {'title': title, 'thumbnailUrl': thumbnailUrl});
     } else if (browseId.isNotEmpty) {
       // Generic browse — try as playlist (some community playlists are VL prefixed)
       String cleanId = browseId;
       if (cleanId.startsWith('VL')) cleanId = cleanId.substring(2);
-      navigateGo(context, '${AppRoutes.youtube}/playlist/${Uri.encodeComponent(cleanId)}',
+      navigatePush(context, '${AppRoutes.youtube}/playlist/${Uri.encodeComponent(cleanId)}',
         extra: {'title': title, 'thumbnailUrl': thumbnailUrl});
     }
   }

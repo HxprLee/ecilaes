@@ -62,7 +62,7 @@ class SongTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final isCurrent = audioSignal.currentSong.value?.path == song.path;
       final artDir = artDirPath ?? audioSignal.albumArtDir.value;
       final isYoutube = song.path.startsWith('yt:');

@@ -20,15 +20,14 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
+import '../../signals/overlay_signal.dart';
 import '../../router/routes.dart';
 import '../../signals/settings_signal.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../utils/navigation.dart';
 import '../../widgets/components/last_fm_auth_dialog.dart';
-import '../../widgets/components/app_dialog.dart';
 import '../../widgets/components/settings_section.dart';
 import '../../widgets/components/sliver_page_header.dart';
-import '../../services/scrobble_service.dart';
 
 class IntegrationsSection extends StatelessWidget {
   const IntegrationsSection({super.key});
@@ -55,57 +54,58 @@ class IntegrationsSection extends StatelessWidget {
                   children: [
                     const SizedBox(height: 24),
 
-                    // Discord Rich Presence
-                    const SettingsSectionLabel('Discord Rich Presence'),
-                    SettingsSection(
-                      child: Column(
-                        children: [
-                          Watch((context) => SettingsTile(
-                            title: 'Enable Discord Presence',
-                            subtitle: 'Show current song in your Discord status',
-                            showLeading: false,
-                            trailing: Switch(
-                              value: settingsSignal.enableDiscordRpc.value,
-                              onChanged: (value) =>
-                                  settingsSignal.updateDiscordRpc(value),
-                              activeThumbColor: context.colorScheme.secondary,
-                            ),
-                          )),
-                          if (_isDesktop) ...[
-                            const SettingsDivider(indent: 16),
-                            Watch((context) => SettingsTile(
-                              title: 'Buttons',
-                              subtitle: 'Configure Discord status buttons',
+                    // Discord Rich Presence (desktop only)
+                    if (_isDesktop) ...[
+                      const SettingsSectionLabel('Discord Rich Presence'),
+                      SettingsSection(
+                        child: Column(
+                          children: [
+                            SignalBuilder(builder: (context) => SettingsTile(
+                              title: 'Enable Discord Presence',
+                              subtitle: 'Show current song in your Discord status',
                               showLeading: false,
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (settingsSignal.enableDiscordRpc.value)
-                                    Icon(
-                                      Icons.chevron_right,
-                                      size: 20,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurface
-                                          .withValues(alpha: 0.38),
-                                    ),
-                                ],
+                              trailing: Switch(
+                                value: settingsSignal.enableDiscordRpc.value,
+                                onChanged: (value) =>
+                                    settingsSignal.updateDiscordRpc(value),
+                                activeThumbColor: context.colorScheme.secondary,
                               ),
-                              onTap: settingsSignal.enableDiscordRpc.value
-                                  ? () => navigateGo(context, AppRoutes.settingsIntegrationsDiscordPresence)
-                                  : null,
                             )),
+                            if (_isDesktop) ...[
+                              const SettingsDivider(indent: 16),
+                              SignalBuilder(builder: (context) => SettingsTile(
+                                title: 'Buttons',
+                                subtitle: 'Configure Discord status buttons',
+                                showLeading: false,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (settingsSignal.enableDiscordRpc.value)
+                                      Icon(
+                                        Icons.chevron_right,
+                                        size: 20,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.38),
+                                      ),
+                                  ],
+                                ),
+                                onTap: settingsSignal.enableDiscordRpc.value
+                                    ? () => navigatePush(context, AppRoutes.settingsIntegrationsDiscordPresence)
+                                    : null,
+                              )),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-
-                    const SizedBox(height: 24),
+                      const SizedBox(height: 24),
+                    ],
 
                     // YouTube Music
                     const SettingsSectionLabel('YouTube Music'),
                     SettingsSection(
-                      child: Watch((context) {
+                      child: SignalBuilder(builder: (context) {
                         final hasCookie =
                             settingsSignal.ytAuthCookie.value != null &&
                                 settingsSignal.ytAuthCookie.value!.isNotEmpty;
@@ -134,7 +134,7 @@ class IntegrationsSection extends StatelessWidget {
                               ? null
                               : () {
                                   if (kIsWeb) return;
-                                  navigateGo(
+                                  navigatePush(
                                       context, AppRoutes.settingsIntegrationsYoutubeLogin);
                                 },
                         );
@@ -146,7 +146,7 @@ class IntegrationsSection extends StatelessWidget {
                     // Last.fm
                     const SettingsSectionLabel('Last.fm'),
                     SettingsSection(
-                      child: Watch((context) {
+                      child: SignalBuilder(builder: (context) {
                         final username = settingsSignal.lastFmUsername.value;
                         final isConnected =
                             username != null && username.isNotEmpty;
@@ -173,19 +173,22 @@ class IntegrationsSection extends StatelessWidget {
                           onTap: isConnected
                               ? null
                               : () {
+                                  overlaySignal.push(ActiveOverlay.integrationsConnect);
                                   showDialog(
                                     context: context,
+                                    useRootNavigator: true,
                                     builder: (context) =>
                                         const LastFmAuthDialog(),
-                                  );
+                                  ).then((_) {
+                                    overlaySignal.pop(ActiveOverlay.integrationsConnect);
+                                  });
                                 },
                         );
                       }),
                     ),
 
                     const SizedBox(height: 24),
-                    Watch(
-                      (context) =>
+                    SignalBuilder(builder: (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
                     ),
                   ],

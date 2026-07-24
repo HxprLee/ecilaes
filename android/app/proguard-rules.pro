@@ -23,8 +23,15 @@
 -dontwarn com.google.android.play.core.tasks.OnSuccessListener
 -dontwarn com.google.android.play.core.tasks.Task
 
-# Home widget
+# music_widget (home_widget plugin)
 -keep class es.antonborri.home_widget.** { *; }
+
+# App's own Activity / Plugin / Widget classes — referenced by the
+# AndroidManifest, instantiated via reflection by the FlutterEngine,
+# or extended by R8-optimized classes. Without these, R8 strips
+# SharePlugin and MainActivity blows up with NoClassDefFoundError
+# before runApp() ever runs, leaving the splash screen visible.
+-keep class org.hxprlee.ecilaes.** { *; }
 
 # audio_service / just_audio
 -keep class com.ryanheise.** { *; }

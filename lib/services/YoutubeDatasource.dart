@@ -380,6 +380,41 @@ class YoutubeDatasource {
     return results.map((s) => mapToSong(s)).toList();
   }
 
+  /// Fetch metadata for a single YouTube/YTMusic videoId.
+  ///
+  /// Best-effort: uses YTM search filtered by videoId. When the lookup fails
+  /// (offline, videoId not indexed, etc.) returns a Song with the raw
+  /// `yt:<id>` path so callers can still attempt playback.
+  Future<Song> getSongByVideoId(String videoId) async {
+    if (videoId.isEmpty) {
+      return Song.fromPath('yt:$videoId');
+    }
+    try {
+      final results = await _sendRequest('search', {
+        'query': videoId,
+        'params': 'EgWKAQIIAWoMEA4QChADEAQQCRAF',
+      });
+      final sections = nav(results, [
+        ...SINGLE_COLUMN_TAB,
+        ...SECTION_LIST,
+      ]).toList();
+      for (final section in sections) {
+        final contents = (section as Map)['contents'] ?? section['items'];
+        if (contents is! List) continue;
+        for (final raw in contents) {
+          if (raw is! Map) continue;
+          final item = _normalizeYtmItem(Map<String, dynamic>.from(raw));
+          if (item['videoId'] == videoId) {
+            return mapToSong(item);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('YTM getSongByVideoId error: $e');
+    }
+    return Song.fromPath('yt:$videoId');
+  }
+
   /// Cache thumbnails from a raw YTM item map (song, album, artist, playlist).
   /// Call this on every item to ensure the thumbnail cache is populated.
   void cacheThumbnailsFromItem(Map<String, dynamic> item) {
@@ -884,13 +919,259 @@ class YoutubeDatasource {
 
   Future<Map<String, dynamic>> getCharts({String country = 'ZZ'}) async {
     await init();
-    if (_ytm == null) return {};
     try {
-      return await _ytm!.getCharts(country: country);
+      final response = await _sendRequest('browse', {
+        'browseId': 'FEmusic_charts',
+        if (country.isNotEmpty)
+          'formData': {'selectedValues': [country]},
+      });
+
+      final charts = <String, dynamic>{'countries': {}};
+      final results = _navList(response, [
+        'contents',
+        'singleColumnBrowseResultsRenderer',
+        'tabs',
+        0,
+        'tabRenderer',
+        'content',
+        'sectionListRenderer',
+        'contents',
+      ]);
+
+      if (results.isNotEmpty) {
+        final menu = _navMap(results[0], [
+          'musicShelfRenderer',
+          'subheaders',
+          0,
+          'musicSideAlignedItemRenderer',
+          'startItems',
+          0,
+          'musicSortFilterButtonRenderer',
+        ]);
+        (charts['countries'] as Map)['selected'] = _navTitle(menu);
+
+        (charts['countries'] as Map)['options'] = [
+          for (final m in _navList(response, ['frameworkMutations']))
+            _navOrNull(m, [
+              'payload',
+              'musicFormBooleanChoice',
+              'opaqueToken',
+            ]),
+        ].where((e) => e != null).toList();
+      }
+
+      // Country determines which categories appear: 'artists' always,
+      // 'videos' for non-US (or 'daily'/'weekly' if premium), and 'genres'
+      // only for US. The carousel loop below probes each section against
+      // both renderers and assigns the matching category.
+
+      // For each non-menu section after results[0], parse it as either an
+      // artist (MRLIR) or a playlist/video (MTRIR). Try both renderers —
+      // whichever yields results wins. Avoids hard-coding the section order
+      // (which differs for premium vs non-premium accounts).
+      final categoryPriority = <String>['artists', 'videos', 'daily', 'weekly', 'genres'];
+      final foundKeys = <String>{};
+      for (var i = 1; i < results.length; i++) {
+        final carouselContents = _navList(
+          results[i],
+          ['musicCarouselShelfRenderer', 'contents'],
+        );
+        if (carouselContents.isEmpty) continue;
+
+        String? matchedKey;
+        List<Map<String, dynamic>> matchedItems = const [];
+        for (final key in categoryPriority) {
+          if (foundKeys.contains(key)) continue;
+          if (key == 'genres' && country != 'US') continue;
+          final renderer = key == 'artists' ? 'MRLIR' : 'MTRIR';
+          final items = <Map<String, dynamic>>[];
+          for (final raw in carouselContents) {
+            final node = _safeMap(raw[renderer]);
+            if (node == null) continue;
+            final item = _parseChartItem(node, renderer);
+            if (item != null) items.add(item);
+          }
+          if (items.isNotEmpty) {
+            matchedKey = key;
+            matchedItems = items;
+            break;
+          }
+        }
+
+        if (matchedKey != null) {
+          charts[matchedKey] = matchedItems;
+          foundKeys.add(matchedKey);
+        }
+      }
+
+      // Premium accounts surface both daily and weekly, but we may have
+      // already stored 'videos'. Drop the 'videos' key in that case.
+      if (charts.containsKey('daily') || charts.containsKey('weekly')) {
+        charts.remove('videos');
+      }
+
+      YTCacheHelper.writeStampedCache('charts_$country', charts);
+      return charts;
     } catch (e) {
       debugPrint('YTM getCharts error: $e');
       return {};
     }
+  }
+
+  /// Permissive parser: accepts any Map and converts to Map<String, dynamic>
+  /// when possible. Returns null if [node] is null or not a Map-like value.
+  Map<String, dynamic>? _safeMap(dynamic node) {
+    if (node is Map<String, dynamic>) return node;
+    if (node is Map) {
+      try {
+        return Map<String, dynamic>.from(node);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _parseChartItem(Map<String, dynamic> node, String renderer) {
+    try {
+      if (renderer == 'MRLIR') {
+        // Artist: title + browseId (UC...) + subscribers + thumbnails + rank + trend.
+        final flexColumns = node['flexColumns'];
+        final titleText = _flexColumnText(flexColumns, 0);
+        final subsText = _flexColumnText(flexColumns, 1);
+        final subscribers = subsText?.split(' ').first;
+        final browseId = _navBrowseId(node);
+        final thumbnails = node['thumbnails'] ?? node['thumbnail'];
+        final ranking = _extractRanking(node);
+        return <String, dynamic>{
+          'title': titleText,
+          'browseId': browseId,
+          'subscribers': subscribers,
+          'thumbnails': thumbnails,
+          if (ranking != null) 'rank': ranking['rank'],
+          if (ranking != null) 'trend': ranking['trend'],
+        };
+      } else {
+        // Playlist/video: title + playlistId (PL...) + thumbnails.
+        final titleText = _navTitle(node);
+        final playlistId = _navString(node, [
+          'navigationEndpoint',
+          'browseEndpoint',
+          'browseId',
+        ]);
+        final cleanedPlaylistId = playlistId == null
+            ? null
+            : (playlistId.startsWith('VL')
+                ? playlistId.substring(2)
+                : playlistId);
+        final thumbnails = node['thumbnails'] ?? node['thumbnail'];
+        return <String, dynamic>{
+          'title': titleText,
+          'playlistId': cleanedPlaylistId,
+          'thumbnails': thumbnails,
+        };
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _flexColumnText(dynamic flexColumns, int index) {
+    if (flexColumns is! List) return null;
+    if (index < 0 || index >= flexColumns.length) return null;
+    final col = flexColumns[index];
+    if (col is! Map) return null;
+    final runs = col['musicResponsiveListItemFlexColumnRenderer']?['text']?['runs'];
+    if (runs is List && runs.isNotEmpty) {
+      final first = runs.first;
+      if (first is Map && first['text'] is String) return first['text'] as String;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _extractRanking(Map<String, dynamic> node) {
+    final col = node['customIndexColumn']?['musicCustomIndexColumnRenderer'];
+    if (col is! Map) return null;
+    final runs = col['text']?['runs'];
+    final rank = runs is List && runs.isNotEmpty && runs.first is Map
+        ? runs.first['text']?.toString()
+        : null;
+    final trend = col['icon']?['iconType']?.toString();
+    return {'rank': rank, 'trend': trend};
+  }
+
+  String? _navTitle(dynamic node) {
+    if (node is! Map) return null;
+    final title = node['title'];
+    if (title is Map) {
+      final runs = title['runs'];
+      if (runs is List && runs.isNotEmpty && runs.first is Map) {
+        return runs.first['text']?.toString();
+      }
+      final simple = title['simpleText'];
+      if (simple is String) return simple;
+    }
+    if (title is String) return title;
+    return null;
+  }
+
+  String? _navBrowseId(dynamic node) {
+    return _navString(node, ['navigationEndpoint', 'browseEndpoint', 'browseId']);
+  }
+
+  String? _navString(dynamic node, List<String> path) {
+    dynamic current = node;
+    for (final key in path) {
+      if (current is! Map) return null;
+      current = current[key];
+    }
+    return current is String ? current : null;
+  }
+
+  dynamic _navOrNull(dynamic node, List<String> path) {
+    dynamic current = node;
+    for (final key in path) {
+      if (current is! Map) return null;
+      current = current[key];
+    }
+    return current;
+  }
+
+  List _navList(dynamic node, List<Object> path) {
+    dynamic current = node;
+    for (final key in path) {
+      if (current is Map) {
+        current = current[key];
+      } else if (current is List && key is int) {
+        if (key < 0 || key >= current.length) return const [];
+        current = current[key];
+      } else {
+        return const [];
+      }
+    }
+    return current is List ? current : const [];
+  }
+
+  Map? _navMap(dynamic node, List<Object> path) {
+    dynamic current = node;
+    for (final key in path) {
+      if (current is Map) {
+        current = current[key];
+      } else if (current is List && key is int) {
+        if (key < 0 || key >= current.length) return null;
+        current = current[key];
+      } else {
+        return null;
+      }
+    }
+    return current is Map ? current : null;
+  }
+
+  Future<Map<String, dynamic>?> getCachedCharts({String country = 'ZZ'}) async {
+    final cached = await YTCacheHelper.readStampedCache('charts_$country', maxAge: const Duration(minutes: 30));
+    if (cached == null) return null;
+    if (cached.data is Map) return Map<String, dynamic>.from(cached.data);
+    return null;
   }
 
   /// Get full album detail: metadata + tracks as Song list.

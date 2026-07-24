@@ -265,9 +265,8 @@ Uint8List? _parseArtBytes(String songPath) {
   try {
     final reader = file.openSync();
     try {
-      if (ID3v2Parser.canUserParser(reader)) {
-        final mp3Meta =
-            ID3v2Parser(fetchImage: true).parse(reader) as Mp3Metadata;
+      if (MP3Parser.canUserParser(reader)) {
+        final mp3Meta = MP3Parser(fetchImage: true).parse(reader);
 
         Picture? selectedPic;
         if (mp3Meta.pictures.isNotEmpty) {
@@ -281,15 +280,18 @@ Uint8List? _parseArtBytes(String songPath) {
         }
 
         // Fallback for ID3v2.2 PIC frame
+        // Note: MP3Parser.parse() closes the reader, so re-open for fallback
         if (selectedPic == null) {
           try {
-            reader.setPositionSync(0);
-            final header = reader.readSync(10);
-            if (header[3] == 2) {
+            final fallbackReader = File(songPath).openSync();
+            try {
+              fallbackReader.setPositionSync(0);
+              final header = fallbackReader.readSync(10);
+              if (header[3] == 2) {
               // ID3v2.2
-              final bytes = reader.lengthSync() < 128000
-                  ? reader.readSync(reader.lengthSync())
-                  : reader.readSync(128000);
+              final bytes = fallbackReader.lengthSync() < 128000
+                  ? fallbackReader.readSync(fallbackReader.lengthSync())
+                  : fallbackReader.readSync(128000);
               int picIndex = -1;
               for (int j = 0; j < bytes.length - 3; j++) {
                 if (bytes[j] == 80 &&
@@ -323,6 +325,9 @@ Uint8List? _parseArtBytes(String songPath) {
                 }
               }
             }
+            } finally {
+              fallbackReader.closeSync();
+            }
           } catch (_) {}
         }
 
@@ -345,20 +350,17 @@ Uint8List? _parseArtBytes(String songPath) {
         }
         return null;
       } else if (FlacParser.canUserParser(reader)) {
-        final vorbisMeta =
-            FlacParser(fetchImage: true).parse(reader) as VorbisMetadata;
+        final vorbisMeta = FlacParser(fetchImage: true).parse(reader);
         if (vorbisMeta.pictures.isEmpty) return null;
         return (vorbisMeta.pictures.firstWhere(
           (p) => p.pictureType == PictureType.coverFront,
           orElse: () => vorbisMeta.pictures.first,
         )).bytes;
       } else if (MP4Parser.canUserParser(reader)) {
-        final mp4Meta =
-            MP4Parser(fetchImage: true).parse(reader) as Mp4Metadata;
+        final mp4Meta = MP4Parser(fetchImage: true).parse(reader);
         return mp4Meta.picture?.bytes;
       } else if (OGGParser.canUserParser(reader)) {
-        final oggMeta =
-            OGGParser(fetchImage: true).parse(reader) as VorbisMetadata;
+        final oggMeta = OGGParser(fetchImage: true).parse(reader);
         if (oggMeta.pictures.isEmpty) return null;
         return oggMeta.pictures.first.bytes;
       } else {

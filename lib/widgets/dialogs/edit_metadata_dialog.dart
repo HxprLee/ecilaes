@@ -16,16 +16,28 @@
 
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
-import '../models/song.dart';
-import '../signals/audio_signal.dart';
-import '../services/song_cache.dart';
-import 'components/app_dialog.dart';
+import 'package:file_selector/file_selector.dart';
+import '../../models/song.dart';
+import '../../signals/audio_signal.dart';
+import '../../signals/overlay_signal.dart';
+import '../../services/song_cache.dart';
+import '../components/app_dialog.dart';
+import '../components/app_toast.dart';
 
 class EditMetadataDialog extends StatefulWidget {
   final Song song;
 
   const EditMetadataDialog({super.key, required this.song});
+
+  static void show(BuildContext context, {required Song song}) {
+    overlaySignal.push(ActiveOverlay.editMetadata);
+
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (dialogContext) => EditMetadataDialog(song: song),
+    );
+  }
 
   @override
   State<EditMetadataDialog> createState() => _EditMetadataDialogState();
@@ -56,13 +68,17 @@ class _EditMetadataDialogState extends State<EditMetadataDialog> {
   }
 
   Future<void> _pickImage() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['jpg', 'png', 'jpeg'],
+    const typeGroup = XTypeGroup(
+      label: 'Images',
+      extensions: ['jpg', 'jpeg', 'png'],
     );
-    if (result != null && result.files.single.path != null) {
+    final XFile? result = await openFile(
+      acceptedTypeGroups: [typeGroup],
+      confirmButtonText: 'Select Image',
+    );
+    if (result != null) {
       setState(() {
-        _newImagePath = result.files.single.path;
+        _newImagePath = result.path;
       });
     }
   }
@@ -81,15 +97,18 @@ class _EditMetadataDialogState extends State<EditMetadataDialog> {
       );
 
       if (mounted) {
+        overlaySignal.pop(ActiveOverlay.editMetadata);
         Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Metadata saved!')),
+        ToastService.show(
+          'Metadata saved!',
+          variant: AppToastVariant.success,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving metadata: $e')),
+        ToastService.show(
+          'Error saving metadata: $e',
+          variant: AppToastVariant.error,
         );
       }
     } finally {
@@ -112,25 +131,33 @@ class _EditMetadataDialogState extends State<EditMetadataDialog> {
       maxHeight: 700,
       actions: [
         OutlinedButton(
-          onPressed: _isSaving ? null : () => Navigator.pop(context),
+          onPressed: _isSaving
+              ? null
+              : () {
+                  overlaySignal.pop(ActiveOverlay.editMetadata);
+                  Navigator.pop(context);
+                },
           style: OutlinedButton.styleFrom(
             side: BorderSide(
-              color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
+              color: Theme.of(
+                context,
+              ).colorScheme.secondary.withValues(alpha: 0.2),
             ),
             shape: const StadiumBorder(),
           ),
           child: Text(
             'Cancel',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.secondary,
-                ),
+              color: Theme.of(context).colorScheme.secondary,
+            ),
           ),
         ),
         FilledButton(
           onPressed: _isSaving ? null : _saveMetadata,
           style: FilledButton.styleFrom(
-            backgroundColor:
-                Theme.of(context).colorScheme.secondary.withValues(alpha: 0.8),
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.8),
             foregroundColor: Theme.of(context).colorScheme.surface,
             shape: const StadiumBorder(),
           ),
@@ -158,10 +185,9 @@ class _EditMetadataDialogState extends State<EditMetadataDialog> {
                   width: 150,
                   height: 150,
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .secondary
-                        .withValues(alpha: 0.05),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.secondary.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(8),
                     image: _newImagePath != null
                         ? DecorationImage(
@@ -172,22 +198,25 @@ class _EditMetadataDialogState extends State<EditMetadataDialog> {
                   ),
                   child: _newImagePath == null
                       ? widget.song.hasAlbumArt
-                          ? FutureBuilder<File>(
-                              future: SongCache.getAlbumArtFile(widget.song.path),
-                              builder: (context, snapshot) {
-                                if (snapshot.hasData && snapshot.data!.existsSync()) {
-                                  return ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.file(
-                                      snapshot.data!,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  );
-                                }
-                                return _buildPlaceholder();
-                              },
-                            )
-                          : _buildPlaceholder()
+                            ? FutureBuilder<File>(
+                                future: SongCache.getAlbumArtFile(
+                                  widget.song.path,
+                                ),
+                                builder: (context, snapshot) {
+                                  if (snapshot.hasData &&
+                                      snapshot.data!.existsSync()) {
+                                    return ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(
+                                        snapshot.data!,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    );
+                                  }
+                                  return _buildPlaceholder();
+                                },
+                              )
+                            : _buildPlaceholder()
                       : null,
                 ),
               ),
@@ -196,21 +225,19 @@ class _EditMetadataDialogState extends State<EditMetadataDialog> {
             TextField(
               controller: _titleController,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
+                color: Theme.of(context).colorScheme.secondary,
+              ),
               decoration: InputDecoration(
                 labelText: 'Title',
                 labelStyle: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .secondary
-                      .withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.5),
                 ),
                 filled: true,
-                fillColor: Theme.of(context)
-                    .colorScheme
-                    .secondary
-                    .withValues(alpha: 0.05),
+                fillColor: Theme.of(
+                  context,
+                ).colorScheme.secondary.withValues(alpha: 0.05),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
@@ -221,21 +248,19 @@ class _EditMetadataDialogState extends State<EditMetadataDialog> {
             TextField(
               controller: _artistController,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
+                color: Theme.of(context).colorScheme.secondary,
+              ),
               decoration: InputDecoration(
                 labelText: 'Artist',
                 labelStyle: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .secondary
-                      .withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.5),
                 ),
                 filled: true,
-                fillColor: Theme.of(context)
-                    .colorScheme
-                    .secondary
-                    .withValues(alpha: 0.05),
+                fillColor: Theme.of(
+                  context,
+                ).colorScheme.secondary.withValues(alpha: 0.05),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
@@ -246,21 +271,19 @@ class _EditMetadataDialogState extends State<EditMetadataDialog> {
             TextField(
               controller: _albumController,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
+                color: Theme.of(context).colorScheme.secondary,
+              ),
               decoration: InputDecoration(
                 labelText: 'Album',
                 labelStyle: TextStyle(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .secondary
-                      .withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.5),
                 ),
                 filled: true,
-                fillColor: Theme.of(context)
-                    .colorScheme
-                    .secondary
-                    .withValues(alpha: 0.05),
+                fillColor: Theme.of(
+                  context,
+                ).colorScheme.secondary.withValues(alpha: 0.05),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
@@ -281,18 +304,19 @@ class _EditMetadataDialogState extends State<EditMetadataDialog> {
           Icon(
             Icons.add_photo_alternate_outlined,
             size: 40,
-            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.4),
+            color: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.4),
           ),
           const SizedBox(height: 8),
           Text(
             'Change cover',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .secondary
-                      .withValues(alpha: 0.6),
-                  fontWeight: FontWeight.bold,
-                ),
+              color: Theme.of(
+                context,
+              ).colorScheme.secondary.withValues(alpha: 0.6),
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),

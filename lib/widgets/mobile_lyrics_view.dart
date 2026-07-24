@@ -130,7 +130,7 @@ class _MobileLyricsViewState extends State<MobileLyricsView> {
 
     return Stack(
       children: [
-        // Lyrics list. The auto-scroll trigger lives in a separate Watch so
+        // Lyrics list. The auto-scroll trigger lives in a separate SignalBuilder so
         // the heavy ListView+ShaderMask subtree only repaints when the
         // active line index actually changes (1-2/s, not 8-20/s).
         _LyricsAutoScrollDriver(
@@ -264,7 +264,7 @@ class _LyricsAutoScrollDriver extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isSynced) return const SizedBox.shrink();
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final idx = audioSignal.lyricsActiveIndex.value;
       if (idx >= 0 && idx != lastScrolledIndex) {
         onAutoScroll(idx);
@@ -304,7 +304,7 @@ class _LyricLineTile extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final base = Theme.of(context).textTheme.bodyMedium!;
     final showRomanizedLine = showRomanized && line.romanizedContent != null;
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final activeIndex = isSynced ? audioSignal.lyricsActiveIndex.value : -1;
       final isActive = isSynced ? activeIndex == index : true;
       final isHighlighted = isActive || !isSynced;

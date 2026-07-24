@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:inspire_blur/inspire_blur.dart';
 import '../../signals/audio_signal.dart';
 import '../../signals/search_signal.dart';
 import '../../router/routes.dart';
@@ -81,55 +82,63 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
     final isDesktop =
         !kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS);
 
-    return Watch((context) {
-      final expansion = audioSignal.playerExpansion.value;
-      final hideContentOpacity = (1 - expansion * 2).clamp(0.0, 1.0);
-      final showBlur = audioSignal.headerShowBlur.value && expansion < 0.1;
+    return SignalBuilder(
+      builder: (context) {
+        final expansion = audioSignal.playerExpansion.value;
+        final hideContentOpacity = (1 - expansion * 2).clamp(0.0, 1.0);
+        final showBlur = audioSignal.headerShowBlur.value && expansion < 0.1;
 
-      return IgnorePointer(
-        ignoring: expansion > 0.5,
-        child: GestureDetector(
-          onPanStart: isDesktop
-              ? (details) {
-                  windowManager.startDragging();
-                }
-              : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            decoration: BoxDecoration(
-              gradient: showBlur
-                  ? LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Theme.of(context)
-                            .colorScheme
-                            .surface
-                            .withValues(alpha: 0.9),
-                        Theme.of(context)
-                            .colorScheme
-                            .surface
-                            .withValues(alpha: 0.0),
-                      ],
-                    )
-                  : null,
-            ),
-            child: isDesktop
-                ? DesktopHeaderBar(
-                    leftOffset: widget.leftOffset,
-                    hideContentOpacity: hideContentOpacity,
-                    expansion: expansion,
-                    searchController: _searchController,
-                  )
-                : MobileHeaderBar(
-                    leftOffset: widget.leftOffset,
-                    hideContentOpacity: hideContentOpacity,
-                    expansion: expansion,
-                    searchController: _searchController,
+        return IgnorePointer(
+          ignoring: expansion > 0.5,
+          child: GestureDetector(
+            onPanStart: isDesktop
+                ? (details) {
+                    windowManager.startDragging();
+                  }
+                : null,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Inspire.backdropBlur(
+                  config: InspireBlurConfig.topToBottom(sigma: 20, extent: 1.0),
+                ),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    gradient: showBlur
+                        ? LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Theme.of(
+                                context,
+                              ).colorScheme.surface.withValues(alpha: 0.9),
+                              Theme.of(
+                                context,
+                              ).colorScheme.surface.withValues(alpha: 0.0),
+                            ],
+                          )
+                        : null,
                   ),
+                  child: isDesktop
+                      ? DesktopHeaderBar(
+                          leftOffset: widget.leftOffset,
+                          hideContentOpacity: hideContentOpacity,
+                          expansion: expansion,
+                          searchController: _searchController,
+                        )
+                      : MobileHeaderBar(
+                          leftOffset: widget.leftOffset,
+                          hideContentOpacity: hideContentOpacity,
+                          expansion: expansion,
+                          searchController: _searchController,
+                        ),
+                ),
+              ],
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }

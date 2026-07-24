@@ -16,18 +16,21 @@
 
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:signals/signals_flutter.dart';
 import '../models/song.dart';
 import '../signals/settings_signal.dart';
 import '../signals/audio_signal.dart';
-import 'package:signals_flutter/signals_flutter.dart';
-import 'playlist_dialogs.dart';
-import 'components/flyout_sheet.dart';
-import 'song_info_dialog.dart';
-import 'edit_metadata_dialog.dart';
-import 'player/queue_view.dart';
-import 'components/app_dialog.dart';
+import '../signals/overlay_signal.dart';
 import '../services/YoutubeDatasource.dart';
+import '../services/share_intent_service.dart';
+import 'dialogs/playlist_dialogs.dart';
+import 'components/app_toast.dart';
+import 'dialogs/song_info_dialog.dart';
+import 'dialogs/edit_metadata_dialog.dart';
+import 'dialogs/sleep_timer_dialog.dart';
+import 'dialogs/playback_speed_dialog.dart';
+import 'player/queue_view.dart';
+import 'components/flyout_sheet.dart';
 
 void showSongMoreActionsSheet({
   required BuildContext context,
@@ -35,6 +38,8 @@ void showSongMoreActionsSheet({
   File? albumArt,
   String? playlistId,
 }) {
+  overlaySignal.push(ActiveOverlay.songActions);
+
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
@@ -51,7 +56,7 @@ void showSongMoreActionsSheet({
         showHandle: true,
         child: Padding(
           padding: const EdgeInsets.only(bottom: 18),
-          child: Watch((context) {
+          child: SignalBuilder(builder: (context) {
             final quickActions = settingsSignal.actionsSheetQuickActions.value;
             final listActions = settingsSignal.actionsSheetListActions.value;
             final showLabels = settingsSignal.actionsSheetShowLabels.value;
@@ -77,7 +82,6 @@ void showSongMoreActionsSheet({
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Song Header & Quick Actions
                 Padding(
                   padding: const EdgeInsets.fromLTRB(28, 16, 28, 8),
                   child: Column(
@@ -180,7 +184,6 @@ void showSongMoreActionsSheet({
                   height: 36,
                 ),
 
-                // List Actions - Wrapped in flexible or scrollable if needed
                 Flexible(
                   child: SingleChildScrollView(
                     child: Column(
@@ -230,7 +233,10 @@ Widget _buildQuickAction({
     ),
     child: InkWell(
       onTap: () {
-        if (info.closeOnTap) Navigator.pop(context);
+        if (info.closeOnTap) {
+          overlaySignal.pop(ActiveOverlay.songActions);
+          Navigator.pop(context);
+        }
         info.onTap(context, song, playlistId);
       },
       borderRadius: BorderRadius.circular(12),
@@ -281,7 +287,6 @@ Widget _buildSheetAction({
   final info = _getActionInfo(actionId);
   if (info == null) return const SizedBox();
 
-  // Special case for remove from playlist item which only shows if playlistId is provided
   if (actionId == 'remove_from_playlist' &&
       (playlistId == null || playlistId == 'favorites')) {
     return const SizedBox();
@@ -386,10 +391,7 @@ ActionInfo? _getActionInfo(String id) {
         icon: Icons.edit_outlined,
         label: 'Edit info',
         onTap: (context, song, _) {
-          showDialog(
-            context: context,
-            builder: (context) => EditMetadataDialog(song: song),
-          );
+          EditMetadataDialog.show(context, song: song);
         },
       );
     case 'shuffle':
@@ -422,7 +424,21 @@ ActionInfo? _getActionInfo(String id) {
       return ActionInfo(
         icon: Icons.share_outlined,
         label: 'Share',
-        onTap: (context, song, _) {},
+        onTap: (context, song, _) async {
+          try {
+            await shareIntentService.shareSong(song);
+            final isLocal = !song.path.startsWith('yt:');
+            ToastService.show(
+              isLocal
+                  ? 'File path copied to clipboard'
+                  : 'Link copied to clipboard',
+              variant: AppToastVariant.success,
+            );
+          } catch (_) {
+            // Silent: share is best-effort.
+          }
+        },
+        closeOnTap: true,
       );
     case 'start_radio':
       return ActionInfo(
@@ -455,631 +471,17 @@ Widget _buildSheetItem({
         ),
       ),
       onTap: () {
-        if (closeOnTap) Navigator.pop(context);
+        if (closeOnTap) {
+          overlaySignal.pop(ActiveOverlay.songActions);
+          Navigator.pop(context);
+        }
         onTap();
       },
     ),
   );
 }
 
-void showSleepTimerDialog(BuildContext context) {
-  int selectedHours = 0;
-  int selectedMinutes = 30;
-  int selectedSeconds = 0;
-
-  showDialog(
-    context: context,
-    builder: (context) {
-      return StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AppDialog(
-            titleIcon: Icon(
-              Icons.timer_outlined,
-              color: Theme.of(context).colorScheme.secondary,
-              size: 24,
-            ),
-            title: 'Sleep timer',
-            trailing: Watch((context) {
-              final remaining = audioSignal.sleepTimerRemaining.value;
-              if (remaining == null) return const SizedBox.shrink();
-              return Text(
-                _formatDuration(remaining),
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.secondary.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w400,
-                ),
-              );
-            }),
-            maxWidth: 360,
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Scroll Wheels
-                SizedBox(
-                  height: 150,
-                  child: Stack(
-                    children: [
-                      Row(
-                        children: [
-                          const SizedBox(width: 32),
-                          Expanded(
-                            child: Column(
-                              children: [
-                                SizedBox(
-                                  height: 120,
-                                  child: Row(
-                                    children: [
-                                      _TimeCrownPicker(
-                                        maxValue: 23,
-                                        initialValue: selectedHours,
-                                        label: 'H',
-                                        onChanged: (v) => setDialogState(
-                                          () => selectedHours = v,
-                                        ),
-                                      ),
-                                      _TimeCrownPicker(
-                                        maxValue: 59,
-                                        initialValue: selectedMinutes,
-                                        label: 'M',
-                                        onChanged: (v) => setDialogState(
-                                          () => selectedMinutes = v,
-                                        ),
-                                      ),
-                                      _TimeCrownPicker(
-                                        maxValue: 59,
-                                        initialValue: selectedSeconds,
-                                        label: 'S',
-                                        onChanged: (v) => setDialogState(
-                                          () => selectedSeconds = v,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    _CrownLabel(label: 'H'),
-                                    _CrownLabel(label: 'M'),
-                                    _CrownLabel(label: 'S'),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 32),
-                        ],
-                      ),
-                      // Left arrow: points inward toward the wheel center
-                      Align(
-                        alignment: const Alignment(-1, -0.3),
-                        child: Icon(
-                          Icons.chevron_right,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.secondary.withValues(alpha: 0.35),
-                          size: 26,
-                        ),
-                      ),
-                      // Right arrow: points inward toward the wheel center
-                      Align(
-                        alignment: const Alignment(1, -0.3),
-                        child: Transform.rotate(
-                          angle: 3.14159,
-                          child: Icon(
-                            Icons.chevron_right,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.secondary.withValues(alpha: 0.35),
-                            size: 26,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Preset Chips
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Presets',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.secondary.withValues(alpha: 0.6),
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    alignment: WrapAlignment.start,
-                    children: [
-                      _buildPresetChip(context, 'End of song', () {
-                        final total = audioSignal.duration.value;
-                        final pos = audioSignal.position.value;
-                        return total - pos;
-                      }()),
-                      _buildPresetChip(
-                        context,
-                        '15m',
-                        const Duration(minutes: 15),
-                      ),
-                      _buildPresetChip(
-                        context,
-                        '30m',
-                        const Duration(minutes: 30),
-                      ),
-                      _buildPresetChip(
-                        context,
-                        '45m',
-                        const Duration(minutes: 45),
-                      ),
-                      _buildPresetChip(
-                        context,
-                        '60m',
-                        const Duration(minutes: 60),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              OutlinedButton(
-                onPressed: () {
-                  audioSignal.setSleepTimer(null);
-                  Navigator.pop(context);
-                },
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.secondary.withValues(alpha: 0.2),
-                  ),
-                  shape: const StadiumBorder(),
-                ),
-                child: Text(
-                  'Off',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
-                ),
-              ),
-              FilledButton(
-                onPressed: () {
-                  audioSignal.setSleepTimer(
-                    Duration(
-                      hours: selectedHours,
-                      minutes: selectedMinutes,
-                      seconds: selectedSeconds,
-                    ),
-                  );
-                  Navigator.pop(context);
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.secondary.withValues(alpha: 0.8),
-                  foregroundColor: Theme.of(context).colorScheme.surface,
-                  shape: const StadiumBorder(),
-                ),
-                child: const Text('Start timer'),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
-
-Widget _buildPresetChip(
-  BuildContext context,
-  String label,
-  Duration? duration,
-) {
-  return ActionChip(
-    label: Text(label),
-    onPressed: () {
-      audioSignal.setSleepTimer(duration);
-      Navigator.pop(context);
-    },
-    labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: Theme.of(context).colorScheme.secondary,
-      fontSize: 12,
-    ),
-    backgroundColor: Theme.of(
-      context,
-    ).colorScheme.secondary.withValues(alpha: 0.08),
-    side: BorderSide.none,
-    shape: const StadiumBorder(),
-    visualDensity: VisualDensity.compact,
-  );
-}
-
-String _formatDuration(Duration? d) {
-  if (d == null) return '';
-  if (d.inHours > 0) {
-    return '${d.inHours}:${(d.inMinutes % 60).toString().padLeft(2, '0')}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
-  }
-  return '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
-}
-
-void showPlaybackSpeedDialog(BuildContext context) {
-  showDialog(
-    context: context,
-    builder: (context) {
-      return AppDialog(
-        titleIcon: FaIcon(
-          FontAwesomeIcons.gaugeHigh,
-          color: Theme.of(context).colorScheme.secondary,
-          size: 20,
-        ),
-        title: 'Playback',
-        maxWidth: 360,
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Speed slider
-            _SliderRow(
-              label: 'Speed',
-              signal: settingsSignal.playbackSpeed,
-              min: 0.25,
-              max: 2.0,
-              divisions: 7,
-              onChanged: settingsSignal.updatePlaybackSpeed,
-            ),
-            const SizedBox(height: 4),
-            // Pitch slider
-            _SliderRow(
-              label: 'Pitch',
-              signal: settingsSignal.playbackPitch,
-              min: 0.25,
-              max: 2.0,
-              divisions: 7,
-              onChanged: settingsSignal.updatePlaybackPitch,
-              lockedSignal: settingsSignal.syncPitchWithSpeed,
-            ),
-            const SizedBox(height: 8),
-            // Sync pitch with speed
-            _SyncCheckboxRow(
-              value: settingsSignal.syncPitchWithSpeed,
-              onChanged: (v) => settingsSignal.updateSyncPitchWithSpeed(v),
-            ),
-          ],
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () {
-              settingsSignal.updatePlaybackSpeed(1.0);
-              settingsSignal.updatePlaybackPitch(1.0);
-            },
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondary.withValues(alpha: 0.2),
-              ),
-              shape: const StadiumBorder(),
-            ),
-            child: Text(
-              'Reset',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).colorScheme.secondary,
-              ),
-            ),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(
-                context,
-              ).colorScheme.secondary.withValues(alpha: 0.8),
-              foregroundColor: Theme.of(context).colorScheme.surface,
-              shape: const StadiumBorder(),
-            ),
-            child: const Text('Done'),
-          ),
-        ],
-      );
-    },
-  );
-}
-
-class _SliderRow extends StatelessWidget {
-  final String label;
-  final Signal<double> signal;
-  final double min;
-  final double max;
-  final int divisions;
-  final Future<void> Function(double) onChanged;
-  final bool isLocked;
-  final Signal<bool>? lockedSignal;
-
-  const _SliderRow({
-    required this.label,
-    required this.signal,
-    required this.min,
-    required this.max,
-    required this.divisions,
-    required this.onChanged,
-    this.isLocked = false,
-    this.lockedSignal,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Watch((context) {
-      final value = signal.value;
-      final locked = lockedSignal?.value ?? isLocked;
-      final color = Theme.of(context).colorScheme.secondary;
-      final sliderColor = locked
-          ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3)
-          : color;
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                SizedBox(
-                  width: 44,
-                  child: Text(
-                    label,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: locked
-                          ? Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.4)
-                          : color,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 4,
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 8,
-                      ),
-                      overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 16,
-                      ),
-                      activeTrackColor: sliderColor,
-                      inactiveTrackColor: sliderColor.withValues(alpha: 0.2),
-                      thumbColor: sliderColor,
-                      overlayColor: sliderColor.withValues(alpha: 0.12),
-                      disabledActiveTrackColor: sliderColor,
-                      disabledInactiveTrackColor: sliderColor.withValues(
-                        alpha: 0.2,
-                      ),
-                      disabledThumbColor: sliderColor,
-                    ),
-                    child: Slider(
-                      value: value.clamp(min, max),
-                      min: min,
-                      max: max,
-                      divisions: divisions,
-                      onChanged: locked ? null : onChanged,
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 52,
-                  child: Text(
-                    '${value.toStringAsFixed(2).replaceAll(RegExp(r'0+\$'), '').replaceAll(RegExp(r'\.\$'), '')}x',
-                    textAlign: TextAlign.end,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      fontWeight: FontWeight.w600,
-                      color: locked
-                          ? Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.5)
-                          : null,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    });
-  }
-}
-
-class _SyncCheckboxRow extends StatelessWidget {
-  final Signal<bool> value;
-  final Future<void> Function(bool) onChanged;
-
-  const _SyncCheckboxRow({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Watch((context) {
-      final isChecked = value.value;
-      return InkWell(
-        onTap: () => onChanged(!isChecked),
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 44,
-                child: Text('', style: Theme.of(context).textTheme.labelMedium),
-              ),
-              Expanded(
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: Checkbox(
-                        value: isChecked,
-                        onChanged: (v) => onChanged(v ?? false),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Sync pitch with speed',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 52),
-            ],
-          ),
-        ),
-      );
-    });
-  }
-}
-
-class _TimeCrownPicker extends StatefulWidget {
-  final int maxValue;
-  final int initialValue;
-  final String label;
-  final ValueChanged<int> onChanged;
-
-  const _TimeCrownPicker({
-    required this.maxValue,
-    required this.initialValue,
-    required this.label,
-    required this.onChanged,
-  });
-
-  @override
-  State<_TimeCrownPicker> createState() => _TimeCrownPickerState();
-}
-
-class _TimeCrownPickerState extends State<_TimeCrownPicker> {
-  static const _itemExtent = 40.0;
-  static const _itemCount = 6000; // 100 loops — ample range, near-infinite feel
-
-  late FixedExtentScrollController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = FixedExtentScrollController(
-      initialItem: widget.initialValue + _itemCount ~/ 2,
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  int _wrap(int index) => index % (widget.maxValue + 1);
-
-  void _onSelectedItemChanged(int index) {
-    widget.onChanged(_wrap(index));
-  }
-
-  void _maybeWrap() {
-    const snapBoundary = 10; // items from edge before snapping
-    const mid = _itemCount ~/ 2;
-    final range = widget.maxValue + 1;
-
-    final raw = _controller.selectedItem;
-    final value = _wrap(raw);
-
-    // Scrolling down: approaching the very end of the list
-    if (raw >= _itemCount - snapBoundary) {
-      final offset = value; // position within a segment
-      _controller.jumpToItem(mid - range + offset);
-    }
-    // Scrolling up: approaching the very beginning of the list
-    else if (raw <= snapBoundary) {
-      final offset = value;
-      _controller.jumpToItem(mid + range + offset);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        children: [
-          Expanded(
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                if (notification is ScrollEndNotification) {
-                  _maybeWrap();
-                }
-                return false;
-              },
-              child: ListWheelScrollView.useDelegate(
-                controller: _controller,
-                itemExtent: _itemExtent,
-                diameterRatio: 1.1,
-                perspective: 0.003,
-                physics: const FixedExtentScrollPhysics(),
-                onSelectedItemChanged: _onSelectedItemChanged,
-                childDelegate: ListWheelChildBuilderDelegate(
-                  childCount: _itemCount,
-                  builder: (context, index) {
-                    return Center(
-                      child: Text(
-                        _wrap(index).toString().padLeft(2, '0'),
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.secondary,
-                          fontSize: 18,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CrownLabel extends StatelessWidget {
-  final String label;
-
-  const _CrownLabel({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5),
-          fontSize: 11,
-        ),
-      ),
-    );
-  }
-}
+// Quick action widgets used in the actions sheet
 
 class _SpeedQuickAction extends StatelessWidget {
   final double iconSize;
@@ -1088,7 +490,7 @@ class _SpeedQuickAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final speed = settingsSignal.playbackSpeed.value;
       final pitch = settingsSignal.playbackPitch.value;
       final isModified = speed != 1.0 || pitch != 1.0;
@@ -1133,7 +535,7 @@ class _SleepTimerQuickAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final remaining = audioSignal.sleepTimerRemaining.value;
       if (remaining != null) {
         return Text(
@@ -1157,7 +559,7 @@ class _SleepTimerQuickAction extends StatelessWidget {
 class _SleepTimerLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final remaining = audioSignal.sleepTimerRemaining.value;
       if (remaining != null) {
         return Text(
@@ -1197,7 +599,7 @@ class _SleepTimerSheetItem extends StatelessWidget {
           Icons.timer_outlined,
           color: Theme.of(context).colorScheme.secondary,
         ),
-        title: Watch((context) {
+        title: SignalBuilder(builder: (context) {
           final remaining = audioSignal.sleepTimerRemaining.value;
           return Text(
             remaining != null ? _formatDuration(remaining) : 'Sleep timer',
@@ -1213,4 +615,12 @@ class _SleepTimerSheetItem extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatDuration(Duration? d) {
+  if (d == null) return '';
+  if (d.inHours > 0) {
+    return '${d.inHours}:${(d.inMinutes % 60).toString().padLeft(2, '0')}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+  }
+  return '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
 }

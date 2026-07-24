@@ -20,63 +20,155 @@ import 'package:dart_discord_presence/dart_discord_presence.dart';
 import '../models/song.dart';
 import '../signals/settings_signal.dart';
 
+/// Snapshot of the desired Discord Rich Presence.
+///
+/// Used as the key for both deduplication and the latest-intent queue so
+/// rapid playback changes coalesce into a single in-flight write.
+class _DiscordPresenceSnapshot {
+  const _DiscordPresenceSnapshot({
+    required this.song,
+    required this.artworkUrl,
+    required this.isPlaying,
+    required this.startTimeStamp,
+    required this.endTimeStamp,
+    required this.buttons,
+  });
+
+  final Song? song;
+  final String? artworkUrl;
+  final bool isPlaying;
+  final int? startTimeStamp;
+  final int? endTimeStamp;
+  final List<DiscordButton> buttons;
+
+  bool get isCleared => song == null;
+
+  static const _DiscordPresenceSnapshot cleared = _DiscordPresenceSnapshot(
+    song: null,
+    artworkUrl: null,
+    isPlaying: false,
+    startTimeStamp: null,
+    endTimeStamp: null,
+    buttons: <DiscordButton>[],
+  );
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! _DiscordPresenceSnapshot) return false;
+    if (song?.path != other.song?.path) return false;
+    if (song?.title != other.song?.title) return false;
+    if (song?.artist != other.song?.artist) return false;
+    if (song?.album != other.song?.album) return false;
+    if (artworkUrl != other.artworkUrl) return false;
+    if (isPlaying != other.isPlaying) return false;
+    if (startTimeStamp != other.startTimeStamp) return false;
+    if (endTimeStamp != other.endTimeStamp) return false;
+    if (buttons.length != other.buttons.length) return false;
+    for (var i = 0; i < buttons.length; i++) {
+      if (buttons[i].label != other.buttons[i].label) return false;
+      if (buttons[i].url != other.buttons[i].url) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        song?.path,
+        song?.title,
+        song?.artist,
+        song?.album,
+        artworkUrl,
+        isPlaying,
+        startTimeStamp,
+        endTimeStamp,
+        Object.hashAll([
+          for (final b in buttons) Object.hash(b.label, b.url),
+        ]),
+      );
+}
+
+/// Serializes access to the underlying `dart_discord_presence` client,
+/// coalesces rapid presence changes into last-write-wins, and recovers
+/// automatically when Discord disconnects or restarts.
 class DiscordRpcService {
   static final DiscordRpcService _instance = DiscordRpcService._internal();
   factory DiscordRpcService() => _instance;
   DiscordRpcService._internal();
 
   DiscordRPC? _rpc;
-  bool _isConnected = false;
-  Completer<void>? _initCompleter;
+  StreamSubscription<DiscordEvent>? _rpcEventSubscription;
+  bool _initialized = false;
+  bool _disposed = false;
+  bool _connecting = false;
+  Timer? _reconnectTimer;
+
+  // Latest intent requested by the app.
+  _DiscordPresenceSnapshot _pending = _DiscordPresenceSnapshot.cleared;
+  // Snapshot currently considered "committed" — used for dedup so the next
+  // request short-circuits only when nothing meaningful changed.
+  _DiscordPresenceSnapshot? _committed;
+
+  // Serial tail of RPC write operations so concurrent flushes always observe
+  // last-write-wins ordering at the Discord IPC layer.
+  Future<void> _writeTail = Future<void>.value();
+
+  // Exponential backoff for reconnect attempts.
+  Duration _reconnectDelay = const Duration(seconds: 2);
+  static const Duration _maxReconnectDelay = Duration(seconds: 30);
 
   static const String _applicationId = '1453422309057757307';
 
-  String _truncate(String? text, int maxLength) {
-    if (text == null || text.isEmpty) return '';
-    if (text.length <= maxLength) return text;
-    return '${text.substring(0, maxLength - 3)}...';
-  }
+  // ─────────────────────────────────────────────────────────────────────
+  // Public API
+  // ─────────────────────────────────────────────────────────────────────
 
-  String _sanitize(String? text) {
-    if (text == null) return '';
-    return text
-        .replaceAll('‘', "'")
-        .replaceAll('’', "'")
-        .replaceAll('“', '"')
-        .replaceAll('”', '"')
-        .replaceAll('…', '...')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '') // Remove control characters
-        .trim();
-  }
-
+  /// Establish the Discord IPC connection. Safe to call repeatedly; only
+  /// one connection attempt is in flight at a time.
   Future<void> init() async {
-    if (_isConnected && _rpc != null && _rpc!.isInitialized) return;
-    if (_initCompleter != null) return _initCompleter!.future;
-
-    _initCompleter = Completer<void>();
-
+    if (_disposed) return;
+    if (!DiscordRPC.isAvailable) {
+      debugPrint('DiscordRpcService: Skipping init (unsupported platform).');
+      return;
+    }
+    if (_initialized && _rpc?.isInitialized == true) return;
+    if (_connecting) return;
+    _connecting = true;
     try {
-      // debugPrint('DiscordRpcService: Initializing with ID $_applicationId');
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+
+      // Tear down any leftover client from a previous failed attempt.
+      await _disposeRpc();
+
       _rpc = DiscordRPC();
+      _subscribeRpcEvents(_rpc!);
+
       await _rpc!.initialize(_applicationId);
-      _isConnected = true;
+      _initialized = true;
+      _reconnectDelay = const Duration(seconds: 2);
       debugPrint('DiscordRpcService: Connected.');
+      // Replay the most recent intent so reconnects restore the user's state.
+      await _flushPending();
+    } on DiscordNotRunningException {
+      _initialized = false;
+      debugPrint('DiscordRpcService: Discord is not running.');
+      _scheduleReconnect();
+    } on DiscordRPCException catch (e) {
+      _initialized = false;
+      debugPrint('DiscordRpcService: Init error: $e');
+      _scheduleReconnect();
     } catch (e) {
-      if (e.toString().contains('Discord is not running')) {
-        // Silently fail if Discord is just not open
-        _isConnected = false;
-      } else {
-        debugPrint('DiscordRpcService: Init error: $e');
-        _isConnected = false;
-      }
+      _initialized = false;
+      debugPrint('DiscordRpcService: Init error: $e');
+      _scheduleReconnect();
     } finally {
-      if (!(_initCompleter?.isCompleted ?? true)) {
-        _initCompleter?.complete();
-      }
-      _initCompleter = null;
+      _connecting = false;
     }
   }
 
+  /// Apply the latest presence. Subsequent calls coalesce — only the
+  /// most recent snapshot is written to Discord.
   Future<void> updatePresence(
     Song song, {
     String? artworkUrl,
@@ -85,49 +177,174 @@ class DiscordRpcService {
     int? endTimeStamp,
     List<DiscordButton>? buttons,
   }) async {
-    try {
-      if (!_isConnected || _rpc == null) {
-        await init();
-      }
+    final snapshot = _DiscordPresenceSnapshot(
+      song: song,
+      artworkUrl: artworkUrl,
+      isPlaying: isPlaying,
+      startTimeStamp: startTimeStamp,
+      endTimeStamp: endTimeStamp,
+      buttons: buttons ?? _buildButtons(song, null),
+    );
+    _pending = snapshot;
+    await _flushPending();
+  }
 
-      if (!_isConnected || _rpc == null) return;
+  /// Clear the active presence. Coalesces with concurrent updates — a
+  /// fresh `updatePresence` that wins the race will be written instead.
+  Future<void> clearPresence() async {
+    _pending = _DiscordPresenceSnapshot.cleared;
+    await _flushPending();
+  }
 
-      print(
-        'DiscordRpcService: updatePresence called for "${song.title}" (playing: $isPlaying)',
-      );
+  /// Shut the service down. Safe to call repeatedly.
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    await _disposeRpc();
+    _pending = _DiscordPresenceSnapshot.cleared;
+    _committed = null;
+  }
 
-      final presence = DiscordPresence(
-        type: DiscordActivityType.listening,
-        details: _truncate(_sanitize(song.title), 128),
-        state: _truncate(_sanitize(song.artist), 128),
-        timestamps: startTimeStamp != null
-            ? DiscordTimestamps(
-                start: startTimeStamp ~/ 1000,
-                end: endTimeStamp != null ? endTimeStamp ~/ 1000 : null,
-              )
-            : (isPlaying ? DiscordTimestamps.started(DateTime.now()) : null),
-        largeAsset: artworkUrl != null && artworkUrl.startsWith('http')
-            ? DiscordAsset.fromUrl(
-                artworkUrl,
-                text: isPlaying ? '' : '⏸︎ Paused',
-              )
-            : DiscordAsset(
-                key: artworkUrl ?? 'app_icon',
-                text: isPlaying ? '▸ Playing' : '⏸︎ Paused',
-              ),
-        buttons: _buildButtons(song, buttons),
-      );
+  // ─────────────────────────────────────────────────────────────────────
+  // Internals
+  // ─────────────────────────────────────────────────────────────────────
 
-      await _rpc!.setPresence(presence);
-      print('DiscordRpcService: updatePresence sent successfully.');
-    } catch (e, stack) {
-      print('DiscordRpcService: updatePresence error: $e');
-      print('Stack trace: $stack');
-      _isConnected = false;
+  void _subscribeRpcEvents(DiscordRPC rpc) {
+    _rpcEventSubscription?.cancel();
+    _rpcEventSubscription = rpc.events.listen(
+      _onRpcEvent,
+      onError: (Object e, StackTrace _) {
+        debugPrint('DiscordRpcService: event error: $e');
+        _handleDisconnect();
+      },
+      onDone: _handleDisconnect,
+    );
+  }
+
+  void _onRpcEvent(DiscordEvent event) {
+    switch (event) {
+      case DiscordReadyEvent():
+        _initialized = true;
+        debugPrint('DiscordRpcService: ready.');
+      case DiscordDisconnectedEvent():
+        debugPrint('DiscordRpcService: disconnected (${event.message}).');
+        _handleDisconnect();
+      case DiscordErrorEvent():
+        debugPrint('DiscordRpcService: error event (${event.message}).');
+      case DiscordJoinGameEvent():
+      case DiscordSpectateGameEvent():
+      case DiscordJoinRequestEvent():
+        break;
     }
   }
 
-  List<DiscordButton>? _buildButtons(Song song, List<DiscordButton>? defaultButtons) {
+  void _handleDisconnect() {
+    _initialized = false;
+    _rpc = null;
+    _rpcEventSubscription?.cancel();
+    _rpcEventSubscription = null;
+    if (_disposed) return;
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed) return;
+    _reconnectTimer?.cancel();
+    final delay = _reconnectDelay;
+    _reconnectTimer = Timer(delay, () {
+      if (_disposed) return;
+      unawaited(init());
+    });
+    final next = delay * 2;
+    _reconnectDelay = next > _maxReconnectDelay ? _maxReconnectDelay : next;
+  }
+
+  Future<void> _disposeRpc() async {
+    final rpc = _rpc;
+    _rpc = null;
+    _initialized = false;
+    await _rpcEventSubscription?.cancel();
+    _rpcEventSubscription = null;
+    if (rpc == null) return;
+    try {
+      await rpc.shutdown();
+    } catch (_) {
+      // Best effort during teardown.
+    }
+  }
+
+  Future<void> _flushPending() {
+    if (_disposed) return Future<void>.value();
+    _writeTail = _writeTail.then((_) => _writeLatestOnce());
+    return _writeTail;
+  }
+
+  Future<void> _writeLatestOnce() async {
+    if (_disposed) return;
+
+    final pending = _pending;
+    if (pending == _committed) return;
+
+    if (!_initialized || _rpc == null) {
+      // Don't spin up a connection just to write a "clear" intent — leave
+      // the cleared state as the new committed value so we don't repeatedly
+      // attempt to connect while there's nothing to show.
+      if (pending.isCleared) {
+        _committed = pending;
+      } else {
+        await init();
+      }
+      return;
+    }
+
+    try {
+      if (pending.isCleared) {
+        await _rpc!.clearPresence();
+      } else {
+        await _rpc!.setPresence(_buildPackagePresence(pending));
+      }
+      _committed = pending;
+    } on DiscordConnectionException catch (e) {
+      debugPrint('DiscordRpcService: write connection error: $e');
+      _handleDisconnect();
+    } on DiscordRPCException catch (e) {
+      debugPrint('DiscordRpcService: write error: $e');
+      _handleDisconnect();
+    } catch (e) {
+      debugPrint('DiscordRpcService: write error: $e');
+      _handleDisconnect();
+    }
+  }
+
+  DiscordPresence _buildPackagePresence(_DiscordPresenceSnapshot snapshot) {
+    final song = snapshot.song!;
+    final artworkUrl = snapshot.artworkUrl;
+    final timestamps = snapshot.isPlaying && snapshot.startTimeStamp != null
+        ? DiscordTimestamps(
+            start: snapshot.startTimeStamp! ~/ 1000,
+            end: snapshot.endTimeStamp != null
+                ? snapshot.endTimeStamp! ~/ 1000
+                : null,
+          )
+        : null;
+
+    return DiscordPresence(
+      type: DiscordActivityType.listening,
+      details: _truncate(_sanitize(song.title), 128),
+      state: _truncate(_sanitize(song.artist), 128),
+      timestamps: timestamps,
+      largeAsset: artworkUrl != null && artworkUrl.startsWith('http')
+          ? DiscordAsset.fromUrl(artworkUrl)
+          : (artworkUrl != null
+              ? DiscordAsset(key: artworkUrl)
+              : DiscordAsset(key: 'app_icon')),
+      buttons: snapshot.buttons.isEmpty ? null : snapshot.buttons,
+    );
+  }
+
+  List<DiscordButton> _buildButtons(Song song, List<DiscordButton>? defaultButtons) {
     final enabledButtons = <DiscordButton>[];
 
     final listenEnabled = settingsSignal.enableDiscordListenButton.value;
@@ -149,29 +366,24 @@ class DiscordRpcService {
       ));
     }
 
-    return enabledButtons.isEmpty ? null : enabledButtons;
+    return enabledButtons;
   }
 
-  Future<void> clearPresence() async {
-    if (!_isConnected || _rpc == null) return;
-
-    try {
-      print('DiscordRpcService: Clearing presence...');
-      await _rpc!.clearPresence();
-    } catch (e) {
-      print('DiscordRpcService: clearPresence error: $e');
-      _isConnected = false;
-    }
+  String _truncate(String? text, int maxLength) {
+    if (text == null || text.isEmpty) return '';
+    if (text.length <= maxLength) return text;
+    return '${text.substring(0, maxLength - 3)}...';
   }
 
-  Future<void> dispose() async {
-    print('DiscordRpcService: Disposing and disconnecting...');
-    try {
-      await _rpc!.shutdown();
-    } catch (e) {
-      // Ignore errors during disconnect
-    }
-    _rpc = null;
-    _isConnected = false;
+  String _sanitize(String? text) {
+    if (text == null) return '';
+    return text
+        .replaceAll('‘', "'")
+        .replaceAll('’', "'")
+        .replaceAll('“', '"')
+        .replaceAll('”', '"')
+        .replaceAll('…', '...')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '') // Remove control characters
+        .trim();
   }
 }

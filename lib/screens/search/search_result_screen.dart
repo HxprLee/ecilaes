@@ -17,9 +17,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/search_signal.dart';
+import '../../services/navigation/back_handler.dart';
 import '../../services/song_cache.dart';
 import '../../services/YoutubeDatasource.dart';
 import 'widgets/search_filter_chips.dart';
@@ -85,8 +85,11 @@ class _SearchResultScreenState extends State<SearchResultScreen> with SingleTick
       body: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.escape): () {
-            if (GoRouter.of(context).canPop()) {
-              GoRouter.of(context).pop();
+            // Honour the same priority list as the system back button so
+            // Escape on the search-results screen feels identical to
+            // pressing back on Android.
+            final result = appBackHandler.invoke(context);
+            if (result.handled) {
               searchSignal.searchQuery.value = '';
             }
           },
@@ -135,7 +138,7 @@ class _SearchResultScreenState extends State<SearchResultScreen> with SingleTick
                   ),
                 ),
                 const SizedBox(height: 12),
-                Watch((context) {
+                SignalBuilder(builder: (context) {
                   if (currentTab == 0) {
                     return SearchFilterChips<LocalSearchFilter>(
                       options: _localFilterOptions,
@@ -155,14 +158,14 @@ class _SearchResultScreenState extends State<SearchResultScreen> with SingleTick
                   child: TabBarView(
                     controller: _tabController,
                     children: [
-                      Watch((context) => LocalResultsTab(
+                      SignalBuilder(builder: (context) => LocalResultsTab(
                         filter: searchSignal.localSearchFilter.value,
                         songs: searchSignal.localSearchResults.value,
                         isSearching: searchSignal.searchQuery.value.isNotEmpty,
                         query: searchSignal.searchQuery.value,
                         artDirPath: _artDirPath,
                       )),
-                      Watch((context) => YouTubeResultsTab(
+                      SignalBuilder(builder: (context) => YouTubeResultsTab(
                         rawResults: searchSignal.ytSearchResults.value,
                         songResults: searchSignal.youtubeSearchResults.value,
                         isSearching: searchSignal.searchQuery.value.isNotEmpty,

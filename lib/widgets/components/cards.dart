@@ -185,7 +185,7 @@ class _SongCardState extends State<SongCard> {
                     ),
                     if (_isHovered || Platform.isAndroid || Platform.isIOS)
                       Positioned.fill(
-                        child: Watch((context) {
+                        child: SignalBuilder(builder: (context) {
                           final currentSong = audioSignal.currentSong.value;
                           final isThisSong =
                               currentSong?.path == widget.songPath;

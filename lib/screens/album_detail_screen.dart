@@ -59,7 +59,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final albums = audioSignal.albums.value;
     final album = albums.firstWhere(
       (a) => a.name == widget.albumName && a.artist == widget.artistName,
-      orElse: () => Album(name: widget.albumName, artist: widget.artistName, songs: []),
+      orElse: () =>
+          Album(name: widget.albumName, artist: widget.artistName, songs: []),
     );
 
     if (album.songs.isNotEmpty) {
@@ -71,154 +72,179 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
-      final albums = audioSignal.albums.value;
-      final album = albums.firstWhere(
-        (a) => a.name == widget.albumName && a.artist == widget.artistName,
-        orElse: () => Album(name: widget.albumName, artist: widget.artistName, songs: []),
-      );
+    return SignalBuilder(
+      builder: (context) {
+        final albums = audioSignal.albums.value;
+        final album = albums.firstWhere(
+          (a) => a.name == widget.albumName && a.artist == widget.artistName,
+          orElse: () => Album(
+            name: widget.albumName,
+            artist: widget.artistName,
+            songs: [],
+          ),
+        );
 
-      final artDir = audioSignal.albumArtDir.value;
-      final artPath = album.songs.isNotEmpty 
-          ? SongTile.getArtPath(album.firstSongPath, artDir)
-          : '';
+        final artDir = audioSignal.albumArtDir.value;
+        final artPath = album.songs.isNotEmpty
+            ? SongTile.getArtPath(album.firstSongPath, artDir)
+            : '';
 
-      return Scaffold(
-        backgroundColor: Colors.transparent,
-        body: CustomScrollView(
-          slivers: [
-            SliverPageHeader(
-              title: album.name,
-              subtitle: album.artist,
-              actions: [
-                IconButton(
-                  onPressed: () => audioSignal.isAlbumDetailGridView.value =
-                      !audioSignal.isAlbumDetailGridView.value,
-                  icon: FaIcon(
-                    audioSignal.isAlbumDetailGridView.value
-                        ? FontAwesomeIcons.list
-                        : FontAwesomeIcons.borderAll,
-                    color: Theme.of(context).colorScheme.secondary,
-                    size: 18,
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: CustomScrollView(
+            slivers: [
+              SliverPageHeader(
+                title: album.name,
+                subtitle: album.artist,
+                actions: [
+                  IconButton(
+                    onPressed: () => audioSignal.isAlbumDetailGridView.value =
+                        !audioSignal.isAlbumDetailGridView.value,
+                    icon: FaIcon(
+                      audioSignal.isAlbumDetailGridView.value
+                          ? FontAwesomeIcons.list
+                          : FontAwesomeIcons.borderAll,
+                      color: Theme.of(context).colorScheme.secondary,
+                      size: 18,
+                    ),
                   ),
-                ),
-              ],
-              leading: Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  image: artPath.isNotEmpty && File(artPath).existsSync()
-                      ? DecorationImage(
-                          image: ResizeImage(FileImage(File(artPath)), width: 300),
-                          fit: BoxFit.cover,
+                ],
+                leading: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    image: artPath.isNotEmpty && File(artPath).existsSync()
+                        ? DecorationImage(
+                            image: ResizeImage(
+                              FileImage(File(artPath)),
+                              width: 240,
+                            ),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: artPath.isEmpty || !File(artPath).existsSync()
+                      ? Center(
+                          child: Icon(
+                            Icons.album,
+                            size: 48,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.2),
+                          ),
                         )
                       : null,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      blurRadius: 30,
-                      offset: const Offset(0, 15),
-                    ),
-                  ],
                 ),
-                child: artPath.isEmpty || !File(artPath).existsSync()
-                    ? Center(
-                        child: Icon(
-                          Icons.album, 
-                          size: 64,
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
-                        ),
-                      )
+                backgroundImage:
+                    artPath.isNotEmpty && File(artPath).existsSync()
+                    ? FileImage(File(artPath))
                     : null,
               ),
-            ),
-            
-            // Actions
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                child: Row(
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => audioSignal.playSong(album.songs.first, fromList: album.songs),
-                      icon: const FaIcon(FontAwesomeIcons.play, size: 16),
-                      label: const Text('Play'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.secondary,
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.onSecondary,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
+
+              // Actions
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Row(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () => audioSignal.playSong(
+                          album.songs.first,
+                          fromList: album.songs,
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    OutlinedButton.icon(
-                      onPressed: () => audioSignal.playShuffledFromList(album.songs),
-                      icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
-                      label: const Text('Shuffle'),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(
-                          color: Theme.of(
+                        icon: const FaIcon(FontAwesomeIcons.play, size: 16),
+                        label: const Text('Play'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(
                             context,
-                          ).colorScheme.secondary.withValues(alpha: 0.2),
-                        ),
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.secondary,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
+                          ).colorScheme.secondary,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onSecondary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
-            // Track List
-            if (audioSignal.isAlbumDetailGridView.value)
-              StandardSliverGrid<Song>(
-                items: album.songs,
-                childAspectRatio: 0.8,
-                itemBuilder: (context, song, index) {
-                  return SongGridCard(
-                    song: song,
-                    artPath: SongTile.getArtPath(song.path, artDir),
-                    onTap: () => audioSignal.playSong(song, fromList: album.songs),
-                  );
-                },
-              )
-            else
-              SongListView(
-                songs: album.songs,
-                showIndex: true,
-                addBottomPadding: false,
-                trailingBuilder: (context, song, index) => IconButton(
-                  onPressed: () => showSongMoreActionsSheet(context: context, song: song),
-                  icon: FaIcon(
-                    FontAwesomeIcons.ellipsisVertical, 
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
+                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            audioSignal.playShuffledFromList(album.songs),
+                        icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
+                        label: const Text('Shuffle'),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.secondary.withValues(alpha: 0.2),
+                          ),
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.secondary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
 
-            SliverToBoxAdapter(
-              child: SizedBox(height: audioSignal.reservedHeight.value),
-            ),
-          ],
-        ),
-      );
-    });
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+              // Track List
+              if (audioSignal.isAlbumDetailGridView.value)
+                StandardSliverGrid<Song>(
+                  items: album.songs,
+                  childAspectRatio: 0.8,
+                  itemBuilder: (context, song, index) {
+                    return SongGridCard(
+                      song: song,
+                      artPath: SongTile.getArtPath(song.path, artDir),
+                      onTap: () =>
+                          audioSignal.playSong(song, fromList: album.songs),
+                    );
+                  },
+                )
+              else
+                SongListView(
+                  songs: album.songs,
+                  showIndex: true,
+                  addBottomPadding: false,
+                  trailingBuilder: (context, song, index) => IconButton(
+                    onPressed: () =>
+                        showSongMoreActionsSheet(context: context, song: song),
+                    icon: FaIcon(
+                      FontAwesomeIcons.ellipsisVertical,
+                      size: 16,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.38),
+                    ),
+                  ),
+                ),
+
+              SliverToBoxAdapter(
+                child: SizedBox(height: audioSignal.reservedHeight.value),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

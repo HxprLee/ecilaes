@@ -19,8 +19,10 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../services/cache_service.dart';
 import '../../services/lyrics_service.dart';
 import '../../signals/audio_signal.dart';
+import '../../signals/overlay_signal.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../../widgets/components/app_dialog.dart';
+import '../../widgets/components/app_toast.dart';
 import '../../widgets/components/settings_section.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../widgets/components/sliver_page_header.dart';
@@ -99,11 +101,15 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
         ),
         onPressed: hasFiles
             ? () async {
+                overlaySignal.push(ActiveOverlay.cacheConfirm);
                 final confirm = await showDialog<bool>(
                   context: context,
+                  useRootNavigator: true,
                   builder: (c) => AppDialog(
-                    titleIcon: Icon(Icons.warning_amber_rounded,
-                        color: context.colorScheme.error),
+                    titleIcon: Icon(
+                      Icons.warning_amber_rounded,
+                      color: context.colorScheme.error,
+                    ),
                     title: 'Clear $title?',
                     content: const Text(
                       'This action cannot be undone.',
@@ -114,15 +120,17 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                         onPressed: () => Navigator.pop(c, false),
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(
-                            color: context.colorScheme.secondary
-                                .withValues(alpha: 0.2),
+                            color: context.colorScheme.secondary.withValues(
+                              alpha: 0.2,
+                            ),
                           ),
                           shape: const StadiumBorder(),
                         ),
                         child: Text(
                           'Cancel',
                           style: TextStyle(
-                              color: context.colorScheme.secondary),
+                            color: context.colorScheme.secondary,
+                          ),
                         ),
                       ),
                       FilledButton(
@@ -137,6 +145,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                     ],
                   ),
                 );
+                overlaySignal.pop(ActiveOverlay.cacheConfirm);
 
                 if (confirm == true) {
                   onClear();
@@ -153,10 +162,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
-          const SliverPageHeader(
-            title: 'Cache Management',
-            maxWidth: 600,
-          ),
+          const SliverPageHeader(title: 'Cache Management', maxWidth: 600),
           SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
@@ -181,10 +187,10 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                                 await cacheService.clearMetadata();
                                 await _loadStats();
                                 if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text(
-                                              'Cleared Metadata cache. Full scan needed.')));
+                                  ToastService.show(
+                                    'Cleared Metadata cache. Full scan needed.',
+                                    variant: AppToastVariant.info,
+                                  );
                                 }
                               },
                             ),
@@ -203,7 +209,8 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                             const SettingsDivider(indent: 16),
                             _buildCacheItem(
                               title: 'Artist Pictures',
-                              description: 'Artist profiles fetched from Deezer',
+                              description:
+                                  'Artist profiles fetched from Deezer',
                               icon: FontAwesomeIcons.users,
                               stats: _artistArtStats,
                               onClear: () async {
@@ -247,8 +254,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                               icon: Icons.delete_forever,
                               iconColor: context.colorScheme.error,
                               title: 'Clear All Cache',
-                              subtitle:
-                                  'Delete all metadata, art, and lyrics',
+                              subtitle: 'Delete all metadata, art, and lyrics',
                               onTap: () => _confirmClearAll(),
                             ),
                           ],
@@ -256,8 +262,9 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
                       ),
                     ],
                     const SizedBox(height: 24),
-                    Watch((context) =>
-                        SizedBox(height: audioSignal.reservedHeight.value)),
+                    SignalBuilder(builder: (context) =>
+                          SizedBox(height: audioSignal.reservedHeight.value),
+                    ),
                   ],
                 ),
               ),
@@ -269,11 +276,12 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
   }
 
   Future<void> _confirmClearAll() async {
+    overlaySignal.push(ActiveOverlay.cacheConfirm);
     final confirm = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (c) => AppDialog(
-        titleIcon: Icon(Icons.delete_forever,
-            color: context.colorScheme.error),
+        titleIcon: Icon(Icons.delete_forever, color: context.colorScheme.error),
         title: 'Clear All Cache?',
         content: const Text(
           'This will delete all cached data. You may need to perform a full re-scan of your library afterward.',
@@ -305,6 +313,7 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
         ],
       ),
     );
+    overlaySignal.pop(ActiveOverlay.cacheConfirm);
 
     if (confirm == true) {
       if (mounted) setState(() => _isLoading = true);
@@ -313,8 +322,10 @@ class _CacheManagementScreenState extends State<CacheManagementScreen> {
       audioSignal.artistPictures.value.clear();
       await _loadStats();
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('All caches cleared.')));
+        ToastService.show(
+          'All caches cleared.',
+          variant: AppToastVariant.success,
+        );
       }
     }
   }

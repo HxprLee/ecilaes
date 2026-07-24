@@ -19,12 +19,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
+import '../../signals/overlay_signal.dart';
 import '../../signals/queue_signal.dart' as q;
 import '../components/flyout_sheet.dart';
 import 'now_playing_row.dart';
 import 'queue_list_core.dart';
 
 void showQueueSheet(BuildContext context) {
+  overlaySignal.push(ActiveOverlay.queue);
+
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
@@ -82,7 +85,10 @@ class _QueueSheetBodyState extends State<QueueSheetBody> {
       child: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.escape): () {
-            if (mounted) Navigator.pop(context);
+            if (mounted) {
+              overlaySignal.pop(ActiveOverlay.queue);
+              Navigator.pop(context);
+            }
           },
           const SingleActivator(LogicalKeyboardKey.keyR, control: true):
               () => audioSignal.toggleRepeat(),
@@ -134,7 +140,7 @@ class _QueueSheetBodyState extends State<QueueSheetBody> {
                       ),
                     ),
                     const Spacer(),
-                    Watch((context) {
+                    SignalBuilder(builder: (context) {
                       final total = q.queueSignal.upNextCount +
                           q.queueSignal.historyCount;
                       final filtered = _filterText.trim().isEmpty;
@@ -148,7 +154,7 @@ class _QueueSheetBodyState extends State<QueueSheetBody> {
                       );
                     }),
                     const SizedBox(width: 8),
-                    Watch((context) {
+                    SignalBuilder(builder: (context) {
                       final isShuffle = q.queueSignal.isShuffleEnabled.value;
                       return IconButton(
                         onPressed: () => audioSignal.toggleShuffle(),
@@ -167,7 +173,10 @@ class _QueueSheetBodyState extends State<QueueSheetBody> {
                     }),
                     const SizedBox(width: 4),
                     IconButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () {
+                        overlaySignal.pop(ActiveOverlay.queue);
+                        Navigator.pop(context);
+                      },
                       icon: Icon(
                         Icons.close,
                         size: 20,
@@ -180,7 +189,7 @@ class _QueueSheetBodyState extends State<QueueSheetBody> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Watch((context) {
+                SignalBuilder(builder: (context) {
                   final current = audioSignal.currentSong.value;
                   if (current == null) return const SizedBox.shrink();
                   return NowPlayingRow(song: current);

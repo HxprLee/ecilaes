@@ -45,7 +45,7 @@ class PlaylistCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       if (playlist.imagePath != null) {
         return _buildImage(FileImage(File(playlist.imagePath!)));
       }

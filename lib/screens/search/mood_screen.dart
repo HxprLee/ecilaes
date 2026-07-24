@@ -108,7 +108,7 @@ class _MoodScreenState extends State<MoodScreen> {
           else
             ..._sections!.map((section) => _buildSection(context, section['title'], section['items'])),
           SliverToBoxAdapter(
-            child: Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+            child: SignalBuilder(builder: (context) => SizedBox(height: audioSignal.reservedHeight.value)),
           ),
         ],
       ),
@@ -149,7 +149,7 @@ class _MoodScreenState extends State<MoodScreen> {
                   child: InkWell(
                     onTap: () {
                       if (browseId != null) {
-                        navigateGo(
+                        navigatePush(
                           context,
                           '/youtube/playlist/${Uri.encodeComponent(browseId)}',
                           extra: {

@@ -30,7 +30,7 @@ class RawResultsList {
     required bool isSearching,
     required SearchFilter filterType,
   }) {
-    final resultsWidget = Watch((context) {
+    final resultsWidget = SignalBuilder(builder: (context) {
       final isSearchingYoutube = searchSignal.isSearchingYoutube.value;
       return StandardSliverList<Map<String, dynamic>>(
         items: results,
@@ -126,14 +126,14 @@ class RawResultsList {
                 audioSignal.playSong(song);
               } else if (filterType == SearchFilter.albums &&
                   item['browseId'] != null) {
-                navigateGo(
+                navigatePush(
                   context,
                   '/youtube/album/${Uri.encodeComponent(item['browseId'])}',
                   extra: {'title': title, 'thumbnailUrl': thumbnailUrl},
                 );
               } else if (filterType == SearchFilter.artists &&
                   (item['browseId'] != null)) {
-                navigateGo(
+                navigatePush(
                   context,
                   '/youtube/artist/${Uri.encodeComponent(item['browseId'])}',
                   extra: {'name': title, 'thumbnailUrl': thumbnailUrl},
@@ -146,7 +146,7 @@ class RawResultsList {
                 if (playlistId.startsWith('VL')) {
                   playlistId = playlistId.substring(2);
                 }
-                navigateGo(
+                navigatePush(
                   context,
                   '/youtube/playlist/${Uri.encodeComponent(playlistId)}',
                   extra: {'title': title, 'thumbnailUrl': thumbnailUrl},

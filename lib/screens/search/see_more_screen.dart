@@ -17,7 +17,6 @@
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
-import '../../signals/search_signal.dart';
 import '../../services/YoutubeDatasource.dart';
 import '../../utils/navigation.dart';
 import '../../widgets/components/sliver_page_header.dart';
@@ -122,7 +121,7 @@ class _SeeMoreScreenState extends State<SeeMoreScreen> {
               ),
             ),
           SliverToBoxAdapter(
-            child: Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+            child: SignalBuilder(builder: (context) => SizedBox(height: audioSignal.reservedHeight.value)),
           ),
         ],
       ),
@@ -205,13 +204,13 @@ class _SeeMoreScreenState extends State<SeeMoreScreen> {
       audioSignal.playSong(song);
     } else if (item['browseId'] != null) {
       if (item['type'] == 'Album') {
-        navigateGo(
+        navigatePush(
           context,
           '/youtube/album/${Uri.encodeComponent(item['browseId'])}',
           extra: {'title': titleText, 'thumbnailUrl': thumbnailUrl},
         );
       } else {
-        navigateGo(
+        navigatePush(
           context,
           '/youtube/playlist/${Uri.encodeComponent(item['browseId'])}',
           extra: {'title': titleText, 'thumbnailUrl': thumbnailUrl},

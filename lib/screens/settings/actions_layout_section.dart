@@ -87,7 +87,7 @@ class ActionsLayoutSection extends StatelessWidget {
                   const SizedBox(height: 32),
                   const SettingsSectionLabel('Options'),
                   SettingsSection(
-                    child: Watch((context) {
+                    child: SignalBuilder(builder: (context) {
                       return SwitchListTile(
                         title: const Text('Show labels in Row', style: TextStyle(fontSize: 14)),
                         subtitle: const Text('Show text labels below icons in the quick actions row', style: TextStyle(fontSize: 12)),
@@ -98,7 +98,7 @@ class ActionsLayoutSection extends StatelessWidget {
                     }),
                   ),
                   const SizedBox(height: 32),
-                  Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+                  SignalBuilder(builder: (context) => SizedBox(height: audioSignal.reservedHeight.value)),
                 ],
               ),
             ),
@@ -117,7 +117,7 @@ class ActionsLayoutSection extends StatelessWidget {
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Watch((context) {
+      child: SignalBuilder(builder: (context) {
         final actions = actionsSignal.value;
 
         return DragTarget<_ActionDragData>(
@@ -303,7 +303,7 @@ class ActionsLayoutSection extends StatelessWidget {
   }
 
   Widget _buildHiddenActions(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final quick = settingsSignal.actionsSheetQuickActions.value;
       final list = settingsSignal.actionsSheetListActions.value;
       final hidden = _allActionIds

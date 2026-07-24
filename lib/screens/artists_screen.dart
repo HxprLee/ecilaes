@@ -31,7 +31,7 @@ class ArtistsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final artists = audioSignal.artists.value;
       final isGrid = audioSignal.isArtistsGridView.value;
 
@@ -59,7 +59,7 @@ class ArtistsScreen extends StatelessWidget {
                 childAspectRatio: 0.8,
                 itemBuilder: (context, artist, index) {
                   return GestureDetector(
-                    onTap: () => navigateGo(
+                    onTap: () => navigatePush(
                       context,
                       '/artists/${Uri.encodeComponent(artist.name)}',
                     ),
@@ -176,7 +176,7 @@ class ArtistsScreen extends StatelessWidget {
                     size: 20,
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                   ),
-                  onTap: () => navigateGo(context, '${AppRoutes.artists}/${Uri.encodeComponent(artist.name)}'),
+                  onTap: () => navigatePush(context, '${AppRoutes.artists}/${Uri.encodeComponent(artist.name)}'),
                 );
               },
             ),

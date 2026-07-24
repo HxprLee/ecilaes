@@ -42,7 +42,7 @@ class LocalResultsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       switch (filter) {
         case LocalSearchFilter.songs:
           return CustomScrollView(
@@ -75,7 +75,7 @@ class LocalResultsTab extends StatelessWidget {
   }
 
   List<Widget> _buildSongsSlivers(BuildContext context) {
-    final resultsWidget = Watch((context) {
+    final resultsWidget = SignalBuilder(builder: (context) {
       return StandardSliverList<Song>(
         items: songs,
         isLoading: false,
@@ -154,7 +154,7 @@ class _LocalPlaylistsList extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                onTap: () => navigateGo(context, '${AppRoutes.playlists}/${playlist.id}'),
+                onTap: () => navigatePush(context, '${AppRoutes.playlists}/${playlist.id}'),
               );
             },
             childCount: playlists.length,
@@ -243,7 +243,7 @@ class _LocalAlbumsList extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                onTap: () => navigateGo(
+                onTap: () => navigatePush(
                   context,
                   '/albums/${Uri.encodeComponent(album.artist)}/${Uri.encodeComponent(album.name)}',
                 ),
@@ -335,7 +335,7 @@ class _LocalArtistsList extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                onTap: () => navigateGo(
+                onTap: () => navigatePush(
                   context,
                   '/artists/${Uri.encodeComponent(artist.name)}',
                 ),
@@ -428,7 +428,7 @@ class _LocalFoldersList extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                onTap: () => navigateGo(context, AppRoutes.explorer),
+                onTap: () => navigatePush(context, AppRoutes.explorer),
               );
             },
             childCount: folders.length,

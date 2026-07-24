@@ -17,10 +17,13 @@
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
+import '../../signals/overlay_signal.dart';
 import '../components/flyout_sheet.dart';
 import '../mobile_lyrics_view.dart';
 
 void showLyricsSheet(BuildContext context) {
+  overlaySignal.push(ActiveOverlay.lyrics);
+
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
@@ -82,7 +85,7 @@ class _LyricsSheetState extends State<LyricsSheet> {
           ),
           // Lyrics Content
           Expanded(
-            child: Watch((context) {
+            child: SignalBuilder(builder: (context) {
               final lyrics = audioSignal.currentLyrics.value;
               final hasLyrics = lyrics != null;
 

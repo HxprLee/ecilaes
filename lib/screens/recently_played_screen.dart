@@ -71,7 +71,7 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Watch((context) {
+      body: SignalBuilder(builder: (context) {
         // Use audioSignal.historySongs — the same source as Home screen's
         // "Recently played" section. History is ordered most-recent-first.
         final historyEntries = audioSignal.historySongs.value;

@@ -44,12 +44,18 @@ class SongGridCard extends StatelessWidget {
             onTap: onTap,
             child: Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.15),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.15),
                 ),
-                image: artPath.isNotEmpty && (song.hasAlbumArt || song.path.startsWith('yt:'))
+                image:
+                    artPath.isNotEmpty &&
+                        (song.hasAlbumArt || song.path.startsWith('yt:'))
                     ? DecorationImage(
                         image: song.path.startsWith('yt:')
                             ? NetworkImage(artPath)
@@ -58,11 +64,15 @@ class SongGridCard extends StatelessWidget {
                       )
                     : null,
               ),
-              child: !(artPath.isNotEmpty && (song.hasAlbumArt || song.path.startsWith('yt:')))
+              child:
+                  !(artPath.isNotEmpty &&
+                      (song.hasAlbumArt || song.path.startsWith('yt:')))
                   ? Center(
                       child: FaIcon(
                         FontAwesomeIcons.music,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.24),
                         size: 48,
                       ),
                     )
@@ -86,7 +96,9 @@ class SongGridCard extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
+            color: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.7),
             fontSize: 12,
           ),
         ),

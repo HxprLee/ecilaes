@@ -15,49 +15,28 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
 import 'screens/home_shell.dart';
-import 'screens/file_explorer_screen.dart';
-import 'screens/playlist_screen.dart';
-import 'screens/playlists_screen.dart';
-import 'screens/settings_screen.dart';
-import 'screens/search/search_result_screen.dart';
-import 'screens/search/search_screen.dart';
-import 'screens/search/see_more_screen.dart';
-import 'screens/search/mood_screen.dart';
-import 'screens/search/yt_library_screen.dart';
-import 'screens/library_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/recently_played_screen.dart';
-import 'screens/most_played_screen.dart';
-import 'screens/recently_added_screen.dart';
-import 'screens/artists_screen.dart';
-import 'screens/artist_detail_screen.dart';
-import 'screens/albums_screen.dart';
-import 'screens/album_detail_screen.dart';
-import 'screens/youtube_music_screen.dart';
-import 'screens/yt_album_screen.dart';
-import 'screens/yt_artist_screen.dart';
-import 'screens/yt_playlist_screen.dart';
-import 'widgets/songs_list_content.dart';
 import 'signals/audio_signal.dart';
 import 'signals/navigation_signal.dart';
 import 'router/routes.dart';
-import 'screens/settings/customization_screen.dart';
-import 'screens/settings/playback_section.dart';
-import 'screens/settings/library_section.dart';
-import 'screens/settings/about_section.dart';
-import 'screens/settings/actions_layout_section.dart';
-import 'screens/settings/player_bar_layout_section.dart';
-import 'screens/settings/lyrics_appearance_section.dart';
-import 'screens/settings/sidebar_layout_section.dart';
-import 'screens/settings/discord_presence_section.dart';
-import 'screens/settings/cache_management_screen.dart';
-import 'screens/settings/yt_login_webview_screen.dart';
-import 'screens/settings/integrations_section.dart';
+import 'screens/home/routes.dart' as home_routes;
+import 'screens/library/routes.dart' as library_routes;
+import 'screens/search/routes.dart' as search_routes;
+import 'screens/youtube/routes.dart' as youtube_routes;
+import 'screens/settings/routes.dart' as settings_routes;
+
+/// The root navigator key. Held on the [GoRouter] so widgets mounted above
+/// the Navigator (e.g. [MaterialApp.builder]) can still reach the root
+/// [OverlayState] — required by the global toast host, which lives above
+/// the Navigator and needs to install [OverlayEntry]s into the root overlay.
+final GlobalKey<NavigatorState> rootNavigatorKey =
+    GlobalKey<NavigatorState>(debugLabel: 'rootNavigator');
 
 /// Creates the GoRouter configuration.
 final GoRouter router = GoRouter(
+  navigatorKey: rootNavigatorKey,
   initialLocation: AppRoutes.home,
   routes: [
     ShellRoute(
@@ -65,310 +44,11 @@ final GoRouter router = GoRouter(
         return HomeShell(child: child);
       },
       routes: [
-        // Home
-        GoRoute(
-          path: AppRoutes.home,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const HomeScreen()),
-        ),
-        // Songs list
-        GoRoute(
-          path: AppRoutes.songs,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const SongsListContent()),
-        ),
-        // Search
-        GoRoute(
-          path: AppRoutes.search,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const SearchScreen()),
-        ),
-        // Search Results
-        GoRoute(
-          path: AppRoutes.searchResult,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const SearchResultScreen()),
-        ),
-        GoRoute(
-          path: AppRoutes.seeMore,
-          pageBuilder: (context, state) {
-            final extra = state.extra as Map<String, dynamic>? ?? {};
-            return _buildPageWithTransition(
-              state,
-              SeeMoreScreen(
-                sectionKey: extra['sectionKey'] ?? '',
-                title: extra['title'] ?? 'More',
-              ),
-            );
-          },
-        ),
-        // Mood
-        GoRoute(
-          path: '${AppRoutes.mood}/:params',
-          pageBuilder: (context, state) {
-            final params = Uri.decodeComponent(state.pathParameters['params'] ?? '');
-            final title = state.extra as String? ?? 'Mood';
-            return _buildPageWithTransition(
-              state,
-              MoodScreen(title: title, params: params),
-            );
-          },
-        ),
-        // YouTube Music
-        GoRoute(
-          path: AppRoutes.youtube,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const YoutubeMusicScreen()),
-          routes: [
-            GoRoute(
-              path: 'album/:id',
-              pageBuilder: (context, state) {
-                final id = Uri.decodeComponent(state.pathParameters['id'] ?? '');
-                final extra = state.extra as Map<String, dynamic>? ?? {};
-                return _buildPageWithTransition(state, YtAlbumScreen(
-                  browseId: id,
-                  title: extra['title'] ?? '',
-                  thumbnailUrl: extra['thumbnailUrl'] ?? '',
-                ));
-              },
-            ),
-            GoRoute(
-              path: 'artist/:id',
-              pageBuilder: (context, state) {
-                final id = Uri.decodeComponent(state.pathParameters['id'] ?? '');
-                final extra = state.extra as Map<String, dynamic>? ?? {};
-                return _buildPageWithTransition(state, YtArtistScreen(
-                  channelId: id,
-                  name: extra['name'] ?? '',
-                  thumbnailUrl: extra['thumbnailUrl'] ?? '',
-                ));
-              },
-            ),
-            GoRoute(
-              path: 'playlist/:id',
-              pageBuilder: (context, state) {
-                final id = Uri.decodeComponent(state.pathParameters['id'] ?? '');
-                final extra = state.extra as Map<String, dynamic>? ?? {};
-                return _buildPageWithTransition(state, YtPlaylistScreen(
-                  playlistId: id,
-                  title: extra['title'] ?? '',
-                  thumbnailUrl: extra['thumbnailUrl'] ?? '',
-                ));
-              },
-            ),
-          ],
-        ),
-        // YouTube Music Library
-        GoRoute(
-          path: AppRoutes.ytLibraryPlaylists,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const YtLibraryScreen(type: YTLibraryType.playlists)),
-        ),
-        GoRoute(
-          path: AppRoutes.ytLibraryAlbums,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const YtLibraryScreen(type: YTLibraryType.albums)),
-        ),
-        GoRoute(
-          path: AppRoutes.ytLibraryArtists,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const YtLibraryScreen(type: YTLibraryType.artists)),
-        ),
-        // Library
-        GoRoute(
-          path: AppRoutes.library,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const LibraryScreen()),
-        ),
-        // Recently Played
-        GoRoute(
-          path: AppRoutes.recentlyPlayed,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const RecentlyPlayedScreen()),
-        ),
-        // Most Played
-        GoRoute(
-          path: AppRoutes.mostPlayed,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const MostPlayedScreen()),
-        ),
-        // Recently Added
-        GoRoute(
-          path: AppRoutes.recentlyAdded,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const RecentlyAddedScreen()),
-        ),
-        // File Explorer
-        GoRoute(
-          path: AppRoutes.explorer,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const FileExplorerScreen()),
-          routes: [
-            // Nested route for directory paths
-            GoRoute(
-              path: ':path',
-              pageBuilder: (context, state) {
-                final path = state.pathParameters['path'] ?? '';
-                return _buildPageWithTransition(
-                  state,
-                  FileExplorerScreen(initialPath: path),
-                );
-              },
-            ),
-          ],
-        ),
-        // Playlists
-        GoRoute(
-          path: AppRoutes.playlists,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const PlaylistsScreen()),
-        ),
-        // Artists
-        GoRoute(
-          path: AppRoutes.artists,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const ArtistsScreen()),
-          routes: [
-            GoRoute(
-              path: ':name',
-              pageBuilder: (context, state) {
-                final name = state.pathParameters['name'] ?? '';
-                return _buildPageWithTransition(
-                  state,
-                  ArtistDetailScreen(artistName: name),
-                );
-              },
-            ),
-          ],
-        ),
-        // Albums
-        GoRoute(
-          path: AppRoutes.albums,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const AlbumsScreen()),
-          routes: [
-            GoRoute(
-              path: ':artist/:name',
-              pageBuilder: (context, state) {
-                final artist = state.pathParameters['artist'] ?? '';
-                final name = state.pathParameters['name'] ?? '';
-                return _buildPageWithTransition(
-                  state,
-                  AlbumDetailScreen(artistName: artist, albumName: name),
-                );
-              },
-            ),
-          ],
-        ),
-        // Playlist
-        GoRoute(
-          path: '/playlist/:id',
-          redirect: (context, state) {
-            final playlistId = state.pathParameters['id'];
-            if (playlistId == null) return AppRoutes.library;
-            final playlists = audioSignal.playlists.value;
-            final index = playlists.indexWhere((p) => p.id == playlistId);
-            if (index == -1) return AppRoutes.library;
-            return null;
-          },
-          pageBuilder: (context, state) {
-            final playlistId = state.pathParameters['id']!;
-            final playlists = audioSignal.playlists.value;
-            final index = playlists.indexWhere((p) => p.id == playlistId);
-            return _buildPageWithTransition(
-              state,
-              PlaylistScreen(playlist: playlists[index]),
-            );
-          },
-        ),
-        // Settings
-        GoRoute(
-          path: AppRoutes.settings,
-          pageBuilder: (context, state) =>
-              _buildPageWithTransition(state, const SettingsScreen()),
-          routes: [
-            GoRoute(
-              path: 'customization',
-              pageBuilder: (context, state) =>
-                  _buildPageWithTransition(state, const CustomizationScreen()),
-              routes: [
-                GoRoute(
-                  path: 'actions-layout',
-                  pageBuilder: (context, state) => _buildPageWithTransition(
-                    state,
-                    const ActionsLayoutSection(),
-                  ),
-                ),
-                GoRoute(
-                  path: 'player-layout',
-                  pageBuilder: (context, state) => _buildPageWithTransition(
-                    state,
-                    const PlayerBarLayoutSection(),
-                  ),
-                ),
-                GoRoute(
-                  path: 'lyrics-layout',
-                  pageBuilder: (context, state) => _buildPageWithTransition(
-                    state,
-                    const LyricsAppearanceSection(),
-                  ),
-                ),
-                GoRoute(
-                  path: 'sidebar-layout',
-                  pageBuilder: (context, state) => _buildPageWithTransition(
-                    state,
-                    const SidebarLayoutSection(),
-                  ),
-                ),
-              ],
-            ),
-            GoRoute(
-              path: 'integrations',
-              pageBuilder: (context, state) =>
-                  _buildPageWithTransition(state, const IntegrationsSection()),
-              routes: [
-                GoRoute(
-                  path: 'discord-presence',
-                  pageBuilder: (context, state) => _buildPageWithTransition(
-                    state,
-                    const DiscordPresenceSection(),
-                  ),
-                ),
-                GoRoute(
-                  path: 'youtube-login',
-                  pageBuilder: (context, state) => _buildPageWithTransition(
-                    state,
-                    const YtLoginWebViewScreen(),
-                  ),
-                ),
-              ],
-            ),
-            GoRoute(
-              path: 'playback',
-              pageBuilder: (context, state) =>
-                  _buildPageWithTransition(state, const PlaybackSection()),
-            ),
-            GoRoute(
-              path: 'library',
-              pageBuilder: (context, state) =>
-                  _buildPageWithTransition(state, const LibrarySection()),
-              routes: [
-                GoRoute(
-                  path: 'manage_cache',
-                  pageBuilder: (context, state) => _buildPageWithTransition(
-                    state,
-                    const CacheManagementScreen(),
-                  ),
-                ),
-              ],
-            ),
-            GoRoute(
-              path: 'about',
-              pageBuilder: (context, state) =>
-                  _buildPageWithTransition(state, const AboutSection()),
-            ),
-          ],
-        ),
+        ...home_routes.homeRoutes,
+        ...library_routes.libraryRoutes,
+        ...search_routes.searchRoutes,
+        ...youtube_routes.youtubeRoutes,
+        ...settings_routes.settingsRoutes,
       ],
     ),
   ],
@@ -376,53 +56,52 @@ final GoRouter router = GoRouter(
       Scaffold(body: Center(child: Text('Error: ${state.error}'))),
 );
 
-CustomTransitionPage _buildPageWithTransition(
-  GoRouterState state,
-  Widget child,
-) {
-  return CustomTransitionPage(
-    key: state.pageKey,
-    child: child,
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return FadeTransition(
-        opacity: Tween<double>(begin: 1.0, end: 0.0).animate(
-          CurvedAnimation(
-            parent: secondaryAnimation,
-            curve: Curves.easeOutCubic,
-          ),
-        ),
-        child: FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position:
-                Tween<Offset>(
-                  begin: const Offset(0, 0.05),
-                  end: Offset.zero,
-                ).animate(
-                  CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  ),
-                ),
-            child: child,
-          ),
-        ),
-      );
-    },
-    transitionDuration: const Duration(milliseconds: 400),
-  );
+bool _navigationListenerInitialized = false;
+
+/// Resets header state when a new route is first entered and records the
+/// visit in [NavigationSignal] for the desktop back/forward buttons. Called
+/// once at startup from main.dart — calling it more than once would
+/// double-record every navigation (the underlying listener is not removed
+/// to keep this cheap on hot restart).
+void initNavigationListener() {
+  if (_navigationListenerInitialized) return;
+  _navigationListenerInitialized = true;
+
+  navigationSignal.clear();
+  // Seed the back-stack with the absolute root so the canonical "/" route
+  // is always present in history — even if the router's initial event fires
+  // before the listener is wired up (which happens during cold start).
+  navigationSignal.recordVisit(AppRoutes.home);
+
+  router.routerDelegate.addListener(_handleRouteChange);
+  // Reset once at startup so the first build sees a clean header state.
+  _resetHeaderState();
 }
 
-/// Resets header state when a new route is first entered.
-/// Called once at startup from main.dart.
-void initNavigationListener() {
-  navigationSignal.clear();
-  router.routerDelegate.addListener(() {
-    final loc = router.routerDelegate.currentConfiguration.uri.toString();
-    if (loc.isNotEmpty) {
-      navigationSignal.recordVisit(loc);
+void _handleRouteChange() {
+  // Defer the read until go_router's delegate has finished its current
+  // notification — the synchronous `addListener` callback fires before the
+  // delegate has fully updated `currentConfiguration` for the new location.
+  SchedulerBinding.instance.addPostFrameCallback((_) {
+    final config = router.routerDelegate.currentConfiguration;
+    // ImperativeRouteMatch (a push) carries the full matched URI on its
+    // `matches.uri`; a plain RouteMatch only exposes `matchedLocation`.
+    // Prefer the URI so the recorded history includes any query string.
+    final lastMatch = config.lastOrNull;
+    String loc;
+    if (lastMatch is ImperativeRouteMatch) {
+      loc = lastMatch.matches.uri.toString();
+    } else {
+      loc = lastMatch?.matchedLocation ?? config.uri.toString();
     }
+    if (loc.isEmpty) return;
+
+    navigationSignal.recordVisit(loc);
+    _resetHeaderState();
   });
+}
+
+void _resetHeaderState() {
   audioSignal.headerShowBlur.value = false;
   audioSignal.headerTitleProgress.value = 0.0;
   audioSignal.headerArtCover.value = null;

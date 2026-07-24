@@ -34,6 +34,7 @@ class SliverPageHeader extends StatelessWidget {
   final double? maxWidth;
   final bool pinned;
   final PreferredSizeWidget? bottom;
+  final ImageProvider? backgroundImage;
 
   const SliverPageHeader({
     super.key,
@@ -46,6 +47,7 @@ class SliverPageHeader extends StatelessWidget {
     this.maxWidth,
     this.pinned = false,
     this.bottom,
+    this.backgroundImage,
   });
 
   @override
@@ -67,8 +69,11 @@ class SliverPageHeader extends StatelessWidget {
     contentHeight += 24.0; // bottom gap
 
     final bottomHeight = bottom?.preferredSize.height ?? 0.0;
+    // maxExtent: room for the header bar + content gaps + optional bottom widget
     final maxExtent = topPadding + contentHeight + bottomHeight;
-    final minExtent = topPadding + bottomHeight;
+    // minExtent: match the WindowTitleBar height so content aligns perfectly
+    // when the header is fully collapsed (no overlap with the pinned bar above).
+    final minExtent = topPadding;
 
     return SliverPersistentHeader(
       pinned: pinned,
@@ -84,6 +89,7 @@ class SliverPageHeader extends StatelessWidget {
         minExtent: minExtent,
         topPadding: topPadding,
         bottom: bottom,
+        backgroundImage: backgroundImage,
       ),
     );
   }
@@ -99,6 +105,7 @@ class _SliverPageHeaderDelegate extends SliverPersistentHeaderDelegate {
   final double? maxWidth;
   final double topPadding;
   final PreferredSizeWidget? bottom;
+  final ImageProvider? backgroundImage;
 
   @override
   final double maxExtent;
@@ -118,6 +125,7 @@ class _SliverPageHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.minExtent,
     required this.topPadding,
     this.bottom,
+    this.backgroundImage,
   });
 
   @override
@@ -138,6 +146,8 @@ class _SliverPageHeaderDelegate extends SliverPersistentHeaderDelegate {
     final titleOpacity = (1.0 - progress * 1.5).clamp(0.0, 1.0);
     final currentTopGap = _lerp(24.0 + topPadding, topPadding, progress);
     final currentBottomGap = _lerp(24.0, 0.0, progress);
+
+    final backgroundOpacity = (0.6 - progress * 0.6).clamp(0.0, 0.6);
 
     Widget content = Padding(
       padding: EdgeInsets.only(
@@ -245,16 +255,27 @@ class _SliverPageHeaderDelegate extends SliverPersistentHeaderDelegate {
       );
     }
 
-    if (bottom != null) {
+    if (bottom != null || backgroundImage != null) {
       return Stack(
+        fit: StackFit.expand,
         children: [
+          if (backgroundImage != null)
+            Opacity(
+              opacity: backgroundOpacity,
+              child: Image(
+                image: backgroundImage!,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => const SizedBox(),
+              ),
+            ),
           content,
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: bottom!,
-          ),
+          if (bottom != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: bottom!,
+            ),
         ],
       );
     }
@@ -272,7 +293,8 @@ class _SliverPageHeaderDelegate extends SliverPersistentHeaderDelegate {
         underTextActions != oldDelegate.underTextActions ||
         maxExtent != oldDelegate.maxExtent ||
         minExtent != oldDelegate.minExtent ||
-        bottom != oldDelegate.bottom;
+        bottom != oldDelegate.bottom ||
+        backgroundImage != oldDelegate.backgroundImage;
   }
 
   double _lerp(double a, double b, double t) => a + (b - a) * t;

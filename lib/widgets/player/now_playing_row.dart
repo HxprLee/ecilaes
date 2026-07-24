@@ -44,7 +44,7 @@ class NowPlayingRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final repeatMode = audioSignal.repeatMode.value;
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),

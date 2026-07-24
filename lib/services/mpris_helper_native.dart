@@ -29,8 +29,13 @@ import 'package:dbus/dbus.dart';
 /// This is the Linux implementation. On other platforms [mpris_helper.dart]
 /// provides a no-op stub.
 // Public (not library-private) so the conditional import in
-// `mpris_helper.dart` can resolve it on Linux.
+// `mpris_helper.dart` can resolve it on platforms where dart:io is
+// available. We still gate the actual registration on Platform.isLinux
+// because dart:io is also present on Android/iOS where D-Bus does not
+// exist — without this guard, AudioService.init() would hang on those
+// platforms trying to connect to a non-existent session bus.
 void registerMprisPlatformImpl() {
+  if (!Platform.isLinux) return;
   developer.log('Registering EcilaesMprisService', name: 'ecilaes.mpris');
   EcilaesMprisService.registerWith();
 }

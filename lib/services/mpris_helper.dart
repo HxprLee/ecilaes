@@ -15,7 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import 'mpris_helper_stub.dart'
-    if (dart.library.io) 'mpris_helper_linux.dart';
+    if (dart.library.io) 'mpris_helper_native.dart';
 
 /// Register the audio handler with the platform's media-control surface.
 ///

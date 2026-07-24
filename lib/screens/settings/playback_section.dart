@@ -23,7 +23,6 @@ import '../../signals/settings_signal.dart';
 import '../../widgets/components/sliver_page_header.dart';
 import '../../widgets/components/settings_section.dart';
 import '../../widgets/components/spinner_widget.dart';
-import '../../services/scrobble_service.dart';
 
 
 class PlaybackSection extends StatelessWidget {
@@ -56,7 +55,7 @@ class PlaybackSection extends StatelessWidget {
                     SettingsSection(
                       child: Column(
                         children: [
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             return SettingsTile(
                               title: 'Volume Normalization',
                               subtitle:
@@ -73,7 +72,7 @@ class PlaybackSection extends StatelessWidget {
                               ),
                             );
                           }),
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             if (!settingsSignal.audioNormalization.value) {
                               return const SizedBox.shrink();
                             }
@@ -112,7 +111,7 @@ class PlaybackSection extends StatelessWidget {
                     SettingsSection(
                       child: Column(
                         children: [
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             return SettingsTile(
                               title: 'Swipe down to stop',
                               subtitle:
@@ -128,7 +127,7 @@ class PlaybackSection extends StatelessWidget {
                           }),
                           if (_isDesktop) ...[
                             const SettingsDivider(indent: 16),
-                            Watch((context) {
+                            SignalBuilder(builder: (context) {
                               return SettingsTile(
                                 title: 'Background Playback',
                                 subtitle:
@@ -144,7 +143,7 @@ class PlaybackSection extends StatelessWidget {
                               );
                             }),
                             const SettingsDivider(indent: 16),
-                            Watch((context) {
+                            SignalBuilder(builder: (context) {
                               return SettingsTile(
                                 title: 'Single Instance',
                                 subtitle:
@@ -171,7 +170,7 @@ class PlaybackSection extends StatelessWidget {
                     SettingsSection(
                       child: Column(
                         children: [
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             return SettingsTile(
                               title: 'Cache While Playing',
                               subtitle:
@@ -187,7 +186,7 @@ class PlaybackSection extends StatelessWidget {
                             );
                           }),
                           const SettingsDivider(indent: 16),
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             return SettingsTile(
                               title: 'Pre-cache Next Song',
                               subtitle:
@@ -207,8 +206,7 @@ class PlaybackSection extends StatelessWidget {
                     ),
 
                     const SizedBox(height: 24),
-                    Watch(
-                      (context) =>
+                    SignalBuilder(builder: (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
                     ),
                   ],

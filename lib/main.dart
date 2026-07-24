@@ -15,11 +15,14 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter_single_instance/flutter_single_instance.dart';
+import 'package:inspire_blur/inspire_blur.dart';
 import 'package:signals_flutter/signals_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:romanize/romanize.dart';
@@ -35,6 +38,8 @@ import 'utils/platform_utils.dart';
 
 import 'signals/audio_signal.dart';
 import 'signals/settings_signal.dart';
+import 'widgets/components/app_toast.dart';
+import 'widgets/debug/debug_nav_overlay.dart';
 
 late AudioHandler _audioHandler;
 
@@ -43,6 +48,16 @@ Future<void> main() async {
   // Ensure widgets are initialized
   WidgetsFlutterBinding.ensureInitialized();
   print('APP_START: Widgets initialized');
+
+  // Preload inspire_blur shaders for immediate blur rendering on first use.
+  Inspire.warmUp();
+
+  // Explicitly register framework back handling for Android predictive back
+  // gesture API. Required when using a cached engine (audio_service) — the
+  // default registration in WidgetFlutterBinding may not propagate correctly.
+  if (!kIsWeb && Platform.isAndroid) {
+    SystemNavigator.setFrameworkHandlesBack(true);
+  }
 
   // Initialize JustAudioMediaKit (MPV backend)
   JustAudioMediaKit.ensureInitialized();
@@ -132,7 +147,7 @@ class MusicApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final textScale = settingsSignal.textScaleFactor.value;
       final useCustomFont = settingsSignal.useCustomFont.value;
 
@@ -163,7 +178,14 @@ class MusicApp extends StatelessWidget {
               data: MediaQuery.of(
                 context,
               ).copyWith(textScaler: TextScaler.linear(textScale)),
-              child: child!,
+                child: AppToastHost(
+                  child: Stack(
+                    children: [
+                      child!,
+                      if (kDebugMode) const DebugNavOverlay(),
+                    ],
+                  ),
+              ),
             ),
           );
         },
@@ -179,18 +201,16 @@ class _TouchScrollBehavior extends MaterialScrollBehavior {
 
   @override
   Set<PointerDeviceKind> get dragDevices => {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.stylus,
-        PointerDeviceKind.invertedStylus,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.trackpad,
-        PointerDeviceKind.unknown,
-      };
+    PointerDeviceKind.touch,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.invertedStylus,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.unknown,
+  };
 
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) {
-    return const BouncingScrollPhysics(
-      parent: AlwaysScrollableScrollPhysics(),
-    );
+    return const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics());
   }
 }

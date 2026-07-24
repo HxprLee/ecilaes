@@ -23,7 +23,7 @@ import '../signals/settings_signal.dart';
 import '../theme/app_theme_style.dart';
 import '../utils/navigation.dart';
 import '../widgets/components/sliver_page_header.dart';
-import '../widgets/playlist_dialogs.dart';
+import '../widgets/dialogs/playlist_dialogs.dart';
 import '../widgets/components/playlist_cover.dart';
 import '../widgets/components/standard_sliver_list.dart';
 import '../widgets/components/standard_sliver_grid.dart';
@@ -35,7 +35,7 @@ class PlaylistsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final allPlaylists = audioSignal.playlists.value;
       final isGrid = audioSignal.isPlaylistsGridView.value;
 
@@ -90,7 +90,10 @@ class PlaylistsScreen extends StatelessWidget {
                           ? FontAwesomeIcons.solidHeart
                           : FontAwesomeIcons.list,
                     ),
-                    onTap: () => navigateGo(context, '${AppRoutes.playlists}/${playlist.id}'),
+                    onTap: () => navigatePush(
+                      context,
+                      '${AppRoutes.playlist}/${Uri.encodeComponent(playlist.id)}',
+                    ),
                   );
                 },
               )
@@ -169,7 +172,10 @@ class PlaylistsScreen extends StatelessWidget {
                         context,
                       ).colorScheme.onSurface.withValues(alpha: 0.38),
                     ),
-                    onTap: () => navigateGo(context, '${AppRoutes.playlists}/${playlist.id}'),
+                    onTap: () => navigatePush(
+                      context,
+                      '${AppRoutes.playlist}/${Uri.encodeComponent(playlist.id)}',
+                    ),
                   );
                 },
               ),

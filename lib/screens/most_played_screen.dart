@@ -57,7 +57,7 @@ class _MostPlayedScreenState extends State<MostPlayedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Watch((context) {
+      body: SignalBuilder(builder: (context) {
         // historySongs is already sorted by lastPlayed. We want most played.
         final historyList = List<HistoryEntry>.from(audioSignal.historySongs.value);
         historyList.sort((a, b) => b.playCount.compareTo(a.playCount));

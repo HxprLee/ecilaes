@@ -20,13 +20,14 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../models/song.dart';
 import '../../signals/audio_signal.dart';
+import '../../signals/overlay_signal.dart';
 import '../../signals/queue_signal.dart' as q;
 import '../../services/album_art_cache.dart';
 import '../../services/YoutubeDatasource.dart';
 import '../../theme/app_theme_tokens.dart';
 import '../components/flyout_sheet.dart';
-import '../playlist_dialogs.dart';
-import '../song_info_dialog.dart';
+import '../../widgets/dialogs/playlist_dialogs.dart';
+import '../../widgets/dialogs/song_info_dialog.dart';
 
 /// Shared queue list body used by the FlyoutSheet queue and the queue pane
 /// inside the expanded morphing player. Both surfaces render the same
@@ -134,7 +135,7 @@ class _QueueListCoreState extends State<QueueListCore> {
 
   @override
   Widget build(BuildContext context) {
-    // Collapsed state is local — no Watch needed for it.
+    // Collapsed state is local — no SignalBuilder needed for it.
     final body = _buildBody();
 
     if (!widget.showBackToTop || _isDragging) {
@@ -150,8 +151,8 @@ class _QueueListCoreState extends State<QueueListCore> {
             : body,
         // Back-to-top FAB is the only signal-derived UI outside the scoped
         // sections. Reading _showBackToTop (set by scroll listener) is safe
-        // here — it drives a conditional Positioned, not a Watch.
-        Watch((context) {
+        // here — it drives a conditional Positioned, not a SignalBuilder.
+        SignalBuilder(builder: (context) {
           final visible = _showBackToTop;
           if (!visible) return const SizedBox.shrink();
           final hasNowPlaying =
@@ -167,10 +168,10 @@ class _QueueListCoreState extends State<QueueListCore> {
   }
 
   Widget _buildBody() {
-    // Top-level Watch gates the whole body so an empty queue short-circuits
-    // before allocating any section widgets. Children use their own Watch
-    // blocks so they rebuild independently.
-    return Watch((context) {
+// Top-level SignalBuilder gates the whole body so an empty queue short-circuits
+// before allocating any section widgets. Children use their own SignalBuilder
+// blocks so they rebuild independently.
+    return SignalBuilder(builder: (context) {
       final upNextCount = q.queueSignal.upNextCount;
       final historyCount = q.queueSignal.historyCount;
 
@@ -210,18 +211,25 @@ class _QueueListCoreState extends State<QueueListCore> {
   }
 
   void _confirmClearHistory(BuildContext context) {
+    overlaySignal.push(ActiveOverlay.clearHistoryConfirm);
+
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Clear History?'),
         content: const Text('This will remove all songs from history.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () {
+              overlaySignal.pop(ActiveOverlay.clearHistoryConfirm);
+              Navigator.pop(ctx);
+            },
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
+              overlaySignal.pop(ActiveOverlay.clearHistoryConfirm);
               Navigator.pop(ctx);
               q.queueSignal.clearHistory();
             },
@@ -236,7 +244,7 @@ class _QueueListCoreState extends State<QueueListCore> {
 
 // ─── History Section ──────────────────────────────────────────────────────────
 
-/// Owns its own Watch block so history changes don't rebuild the Up Next
+/// Owns its own SignalBuilder block so history changes don't rebuild the Up Next
 /// section.
 class _HistorySection extends StatelessWidget {
   final double horizontalPadding;
@@ -255,7 +263,7 @@ class _HistorySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final historyPaths = q.queueSignal.history.value;
       final currentPath = audioSignal.currentSong.value?.path;
       final songMap = audioSignal.songMap.value;
@@ -301,7 +309,7 @@ class _HistorySection extends StatelessWidget {
 
 // ─── Up Next Section ─────────────────────────────────────────────────────────
 
-/// Owns its own Watch block so Up Next changes don't rebuild the History
+/// Owns its own SignalBuilder block so Up Next changes don't rebuild the History
 /// section.
 class _UpNextSection extends StatelessWidget {
   final double horizontalPadding;
@@ -322,12 +330,12 @@ class _UpNextSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final currentIdx = q.queueSignal.currentIndex.value;
       final activeLen = q.queueSignal.activeLength;
-      // Read shuffleOrder + playbackOrder so the Watch subscribes to
-      // them — pathAtActiveIndex() reads them internally but the
-      // dependency wouldn't otherwise be visible to the analyzer.
+// Read shuffleOrder + playbackOrder so the SignalBuilder subscribes to
+// them — pathAtActiveIndex() reads them internally but the
+// dependency wouldn't otherwise be visible to the analyzer.
       // ignore: unused_local_variable
       final shuffleOrder = q.queueSignal.shuffleOrder.value;
       // ignore: unused_local_variable
@@ -569,6 +577,8 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
   }
 
   void _showActions(BuildContext context, Song song, int queueIndex) {
+    overlaySignal.push(ActiveOverlay.unknown);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -584,6 +594,7 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
               label: 'Play now',
               onTap: () {
                 Navigator.pop(ctx);
+                overlaySignal.pop(ActiveOverlay.unknown);
                 audioSignal.playSong(song);
               },
             ),
@@ -592,6 +603,7 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
               label: 'Move to top',
               onTap: () {
                 Navigator.pop(ctx);
+                overlaySignal.pop(ActiveOverlay.unknown);
                 q.queueSignal.moveToTop(song.path);
               },
             ),
@@ -600,6 +612,7 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
               label: 'Remove from queue',
               onTap: () {
                 Navigator.pop(ctx);
+                overlaySignal.pop(ActiveOverlay.unknown);
                 audioSignal.removeFromUpNext(queueIndex);
               },
             ),
@@ -608,6 +621,7 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
               label: 'Add to playlist',
               onTap: () {
                 Navigator.pop(ctx);
+                overlaySignal.pop(ActiveOverlay.unknown);
                 PlaylistPickerDialog.show(context, song: song);
               },
             ),
@@ -616,6 +630,7 @@ class _AnimatedUpNextListState extends State<_AnimatedUpNextList> {
               label: 'Song info',
               onTap: () {
                 Navigator.pop(ctx);
+                overlaySignal.pop(ActiveOverlay.unknown);
                 showSongInfoDialog(context, song);
               },
             ),

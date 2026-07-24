@@ -38,7 +38,7 @@ class AppDialog extends StatelessWidget {
     this.actions,
     this.maxWidth = 320,
     this.maxHeight,
-    this.padding = const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+    this.padding = const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
     this.trailing,
     this.trailingWidth = 8,
   });
@@ -54,7 +54,7 @@ class AppDialog extends StatelessWidget {
             maxHeight: maxHeight ?? double.infinity,
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
             child: BackdropFilter(
               filter: settingsSignal.enableGlobalBlur.value
                   ? ImageFilter.blur(sigmaX: 20, sigmaY: 20)
@@ -62,22 +62,19 @@ class AppDialog extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   color: context.tokens.sidebarBackground.withValues(
-                    alpha:
-                        settingsSignal.enableGlobalBlur.value ? 0.85 : 1.0,
+                    alpha: settingsSignal.enableGlobalBlur.value ? 0.85 : 1.0,
                   ),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: context.accentBorder(0.1),
-                  ),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: context.accentBorder(0.1)),
                 ),
                 padding: padding,
                 child: Material(
                   color: Colors.transparent,
                   child: DefaultTextStyle(
                     style: Theme.of(context).textTheme.bodyMedium!.copyWith(
-                          color: context.colorScheme.secondary,
-                          fontSize: 14,
-                        ),
+                      color: context.colorScheme.secondary,
+                      fontSize: 14,
+                    ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -92,12 +89,9 @@ class AppDialog extends StatelessWidget {
                               Expanded(
                                 child: Text(
                                   title,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge
+                                  style: Theme.of(context).textTheme.titleLarge
                                       ?.copyWith(
-                                        color:
-                                            context.colorScheme.secondary,
+                                        color: context.colorScheme.secondary,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 20,
                                       ),
@@ -105,18 +99,15 @@ class AppDialog extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            if (trailing != null) ...[
-                              SizedBox(width: trailingWidth),
-                              trailing!,
-                            ],
+                              if (trailing != null) ...[
+                                SizedBox(width: trailingWidth),
+                                trailing!,
+                              ],
                             ],
                           ),
                         ),
-                        const SizedBox(height: 20),
-                        if (maxHeight != null)
-                          Flexible(child: content)
-                        else
-                          content,
+                        const SizedBox(height: 24),
+                        content,
                         if (actions != null && actions!.isNotEmpty) ...[
                           const SizedBox(height: 24),
                           Row(

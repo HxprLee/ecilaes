@@ -21,7 +21,6 @@ import '../../signals/audio_signal.dart';
 import '../../router/routes.dart';
 import '../../utils/navigation.dart';
 import '../../widgets/components/sliver_page_header.dart';
-import '../../widgets/components/song_tile.dart';
 import '../../models/song.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -42,7 +41,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Watch((context) {
+      body: SignalBuilder(builder: (context) {
         final recentSearches = searchSignal.recentSearches.value;
         final exploreData = searchSignal.exploreData.value;
         final moodCategories = searchSignal.moodCategories.value;
@@ -106,7 +105,7 @@ class _SearchScreenState extends State<SearchScreen> {
                           // Setting the signal alone might not update the TextField unless it's bound.
                           // We'll just push to results for now.
                           searchSignal.searchQuery.value = query;
-                          navigateGo(context, AppRoutes.searchResult);
+                          navigatePush(context, AppRoutes.searchResult);
                         },
                       );
                     },
@@ -215,13 +214,13 @@ class _SearchScreenState extends State<SearchScreen> {
                         audioSignal.playSong(song);
                       } else if (item['browseId'] != null) {
                         if (item['type'] == 'Album') {
-                          navigateGo(
+                          navigatePush(
                             context,
                             '/youtube/album/${Uri.encodeComponent(item['browseId'])}',
                             extra: {'title': titleText, 'thumbnailUrl': thumbnailUrl},
                           );
                         } else {
-                          navigateGo(
+                          navigatePush(
                             context,
                             '/youtube/playlist/${Uri.encodeComponent(item['browseId'])}',
                             extra: {'title': titleText, 'thumbnailUrl': thumbnailUrl},
@@ -307,10 +306,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   label: Text(map['title'] ?? ''),
                   onPressed: () {
                     if (map['params'] != null) {
-                       navigateGo(context, '${AppRoutes.mood}/${Uri.encodeComponent(map['params'])}', extra: map['title']);
+                       navigatePush(context, '${AppRoutes.mood}/${Uri.encodeComponent(map['params'])}', extra: map['title']);
                     } else {
                        searchSignal.searchQuery.value = map['title'] ?? '';
-                       navigateGo(context, AppRoutes.searchResult);
+                       navigatePush(context, AppRoutes.searchResult);
                     }
                   },
                 );

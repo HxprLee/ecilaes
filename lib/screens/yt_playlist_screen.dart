@@ -48,12 +48,15 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
   @override
   void initState() {
     super.initState();
-    audioSignal.headerPageTitle.value = widget.title;
-    final thumb = widget.thumbnailUrl;
-    if (thumb.isNotEmpty) {
-      audioSignal.headerArtCover.value = thumb;
-      audioSignal.headerArtCoverIsNetwork.value = true;
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      audioSignal.headerPageTitle.value = widget.title;
+      final thumb = widget.thumbnailUrl;
+      if (thumb.isNotEmpty) {
+        audioSignal.headerArtCover.value = thumb;
+        audioSignal.headerArtCoverIsNetwork.value = true;
+      }
+    });
     _load();
   }
 
@@ -68,7 +71,10 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
   Future<void> _load() async {
     final data = await youtubeDatasource.getPlaylistDetail(widget.playlistId);
     if (mounted) {
-      setState(() { _playlistData = data; _loading = false; });
+      setState(() {
+        _playlistData = data;
+        _loading = false;
+      });
       audioSignal.headerPageTitle.value = data['title'] ?? widget.title;
       final thumb = data['thumbnailUrl'] ?? '';
       if (thumb.isNotEmpty) {
@@ -94,39 +100,34 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
     final tracks = (_playlistData['tracks'] as List<Song>?) ?? [];
     final trackCount = _playlistData['trackCount'] ?? tracks.length;
 
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final isSmallScreen = screenWidth < 600;
-
-    final playButton = ElevatedButton.icon(
-      onPressed: () => audioSignal.playSong(tracks.first, fromList: tracks),
-      icon: const FaIcon(FontAwesomeIcons.play, size: 14),
-      label: const Text('Play'),
+    final playButton = ElevatedButton(
+      onPressed: tracks.isEmpty
+          ? null
+          : () => audioSignal.playSong(tracks.first, fromList: tracks),
       style: ElevatedButton.styleFrom(
         backgroundColor: cs.secondary,
         foregroundColor: cs.onSecondary,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        shape: const StadiumBorder(),
+        padding: const EdgeInsets.all(12),
+        shape: const CircleBorder(),
       ),
+      child: const FaIcon(FontAwesomeIcons.play, size: 14),
     );
 
     final shuffleButton = OutlinedButton(
-      onPressed: () => audioSignal.playShuffledFromList(tracks),
+      onPressed: tracks.isEmpty
+          ? null
+          : () => audioSignal.playShuffledFromList(tracks),
       style: OutlinedButton.styleFrom(
         shape: const CircleBorder(),
         padding: const EdgeInsets.all(12),
         side: BorderSide(color: cs.secondary.withValues(alpha: 0.3)),
+        foregroundColor: cs.secondary,
       ),
-      child: FaIcon(
-        FontAwesomeIcons.shuffle,
-        size: 14,
-        color: cs.secondary,
-      ),
+      child: FaIcon(FontAwesomeIcons.shuffle, size: 14),
     );
 
     final moreOptionsMenu = PopupMenuButton<String>(
-      onSelected: (value) {
-        // Implement save to library in future
-      },
+      onSelected: (value) {},
       itemBuilder: (context) => [
         const PopupMenuItem(
           value: 'save',
@@ -155,10 +156,26 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
         slivers: [
           SliverPageHeader(
             title: title,
-            subtitle: [if (author.isNotEmpty) author, '$trackCount songs'].join(' • '),
+            subtitle: [
+              if (author.isNotEmpty) author,
+              '$trackCount songs',
+            ].join(' • '),
+            actions: [
+              IconButton(
+                onPressed: () => audioSignal.isPlaylistDetailGridView.value =
+                    !audioSignal.isPlaylistDetailGridView.value,
+                icon: FaIcon(
+                  audioSignal.isPlaylistDetailGridView.value
+                      ? FontAwesomeIcons.list
+                      : FontAwesomeIcons.borderAll,
+                  color: cs.secondary,
+                  size: 18,
+                ),
+              ),
+            ],
             leading: Container(
-              width: isSmallScreen ? 120 : 140,
-              height: isSmallScreen ? 120 : 140,
+              width: 120,
+              height: 120,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 color: cs.surfaceContainerHighest,
@@ -170,72 +187,42 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
                     : null,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 30,
-                    offset: const Offset(0, 15),
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
                   ),
                 ],
               ),
               child: thumbUrl.isEmpty
                   ? Center(
-                      child: Icon(Icons.queue_music, size: 64,
-                        color: cs.onSurface.withValues(alpha: 0.2)),
+                      child: Icon(
+                        Icons.queue_music,
+                        size: 48,
+                        color: cs.onSurface.withValues(alpha: 0.2),
+                      ),
                     )
                   : null,
             ),
-            topActions: isSmallScreen ? [moreOptionsMenu] : null,
-            underTextActions: isSmallScreen && !_loading && tracks.isNotEmpty
-                ? [
-                    playButton,
-                    const SizedBox(width: 8),
-                    shuffleButton,
-                  ]
+            topActions: [moreOptionsMenu],
+            underTextActions: !_loading && tracks.isNotEmpty
+                ? [playButton, const SizedBox(width: 8), shuffleButton]
+                : null,
+            backgroundImage: thumbUrl.isNotEmpty
+                ? NetworkImage(thumbUrl)
                 : null,
           ),
 
-          // Actions (Desktop only)
-          if (!isSmallScreen && !_loading && tracks.isNotEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                child: Row(
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => audioSignal.playSong(tracks.first, fromList: tracks),
-                      icon: const FaIcon(FontAwesomeIcons.play, size: 16),
-                      label: const Text('Play'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: cs.secondary,
-                        foregroundColor: cs.onSecondary,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    OutlinedButton.icon(
-                      onPressed: () => audioSignal.playShuffledFromList(tracks),
-                      icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
-                      label: const Text('Shuffle'),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: cs.secondary.withValues(alpha: 0.2)),
-                        foregroundColor: cs.secondary,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                    ),
-                    const Spacer(),
-                    moreOptionsMenu,
-                  ],
-                ),
-              ),
-            ),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
           if (_loading)
-            const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
+            const SliverFillRemaining(
+              child: Center(child: CircularProgressIndicator()),
+            )
           else if (tracks.isEmpty)
             SliverFillRemaining(
               child: Center(
-                child: Text('No tracks found', style: TextStyle(color: cs.secondary.withValues(alpha: 0.6))),
+                child: Text(
+                  'No tracks found',
+                  style: TextStyle(color: cs.secondary.withValues(alpha: 0.6)),
+                ),
               ),
             )
           else
@@ -244,14 +231,21 @@ class _YtPlaylistScreenState extends State<YtPlaylistScreen> {
               showIndex: false,
               addBottomPadding: false,
               trailingBuilder: (context, song, index) => IconButton(
-                onPressed: () => showSongMoreActionsSheet(context: context, song: song),
-                icon: FaIcon(FontAwesomeIcons.ellipsisVertical, size: 16,
-                  color: cs.onSurface.withValues(alpha: 0.38)),
+                onPressed: () =>
+                    showSongMoreActionsSheet(context: context, song: song),
+                icon: FaIcon(
+                  FontAwesomeIcons.ellipsisVertical,
+                  size: 16,
+                  color: cs.onSurface.withValues(alpha: 0.38),
+                ),
               ),
             ),
 
           SliverToBoxAdapter(
-            child: Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+            child: SignalBuilder(
+              builder: (context) =>
+                  SizedBox(height: audioSignal.reservedHeight.value),
+            ),
           ),
         ],
       ),

@@ -19,7 +19,8 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/audio_signal.dart';
-import '../../theme/app_theme_tokens.dart';
+import '../../signals/overlay_signal.dart';
+import '../../services/navigation/back_handler.dart';
 import '../../widgets/sidebar.dart';
 import '../../widgets/morphing_player.dart';
 import '../../widgets/components/window_title_bar.dart';
@@ -37,24 +38,12 @@ class _HomeShellMobileState extends State<HomeShellMobile> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _playerKey = GlobalKey();
 
-  String? _lastRoute;
-
   @override
   Widget build(BuildContext context) {
-    final router = GoRouter.of(context);
     final location = GoRouterState.of(context).uri.toString();
     final topPadding = MediaQuery.of(context).padding.top;
     final headerHeight = 64.0 + topPadding;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
-
-    if (_lastRoute != location) {
-      _lastRoute = location;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        audioSignal.headerShowBlur.value = false;
-        audioSignal.headerTitleProgress.value = 0.0;
-        audioSignal.headerArtCover.value = null;
-      });
-    }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -64,92 +53,123 @@ class _HomeShellMobileState extends State<HomeShellMobile> {
         systemNavigationBarIconBrightness: Brightness.light,
         systemNavigationBarDividerColor: Colors.transparent,
       ),
-      child: Watch((context) {
-        if (audioSignal.bottomPadding.value != bottomPadding) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            audioSignal.bottomPadding.value = bottomPadding;
-          });
-        }
+      child: SignalBuilder(
+        builder: (context) {
+          if (audioSignal.bottomPadding.value != bottomPadding) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              audioSignal.bottomPadding.value = bottomPadding;
+            });
+          }
 
-        return PopScope(
-          canPop: !router.canPop() &&
-              audioSignal.playerExpansion.value < 0.001,
-          onPopInvokedWithResult: (didPop, result) {
-            if (didPop) return;
-            final expansion = audioSignal.playerExpansion.value;
-            if (expansion > 0.001) {
-              audioSignal.minimizePlayerTrigger.value++;
-              return;
-            }
-            if (router.canPop()) {
-              router.pop();
-            }
-          },
-          child: Scaffold(
-            key: _scaffoldKey,
-            extendBody: true,
-            drawer: Drawer(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              width: 250 + 16,
-              child: Sidebar(
-                isCollapsed: false,
-                onToggle: () {},
-                isDrawer: true,
+          return PopScope(
+            // canPop: false — delegate ALL system-back handling to
+            // AppBackHandler. go_router's internal PopScope (canPop:
+            // matches.length == 1) + our own canPop: true had an
+            // inconsistent interaction: tab routes (last shell child)
+            // closed the app because the inner Navigator blocked the
+            // pop (didPop=false) and the fallthrough hit the root
+            // Navigator's PopScope, popping the entire ShellRoute.
+            // With canPop:false the system back is consumed at our
+            // PopScope and we steer it through the same prioritised
+            // handler used by the in-app back button.
+            canPop: false,
+            onPopInvokedWithResult: (didPop, result) {
+              // Close drawer synchronously — onDrawerChanged fires
+              // post-frame, too late for the handler below.
+              final scaffold = _scaffoldKey.currentState;
+              if (scaffold != null && scaffold.isDrawerOpen) {
+                overlaySignal.isDrawerOpen.value = false;
+                scaffold.closeDrawer();
+              }
+              final handled = appBackHandler.invoke(context).handled;
+              if (!handled) SystemNavigator.pop();
+            },
+            child: Scaffold(
+              key: _scaffoldKey,
+              extendBody: true,
+              onDrawerChanged: (isOpen) {
+                overlaySignal.isDrawerOpen.value = isOpen;
+              },
+              drawer: Drawer(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                width: 250 + 16,
+                child: Sidebar(
+                  isCollapsed: false,
+                  onToggle: () {},
+                  isDrawer: true,
+                ),
               ),
-            ),
-            body: Stack(
-              children: [
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOutCubic,
-                  left: 0,
-                  top: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: ScrollConfiguration(
-                    behavior: ScrollConfiguration.of(context),
-                    child: widget.child,
+              body: Stack(
+                children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOutCubic,
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: ScrollConfiguration(
+                      behavior: ScrollConfiguration.of(context),
+                      child: widget.child,
+                    ),
                   ),
-                ),
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOutCubic,
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: headerHeight,
-                  child: const WindowTitleBar(leftOffset: 0),
-                ),
-                Positioned.fill(
-                  child: Watch((context) {
-                    final expansion = audioSignal.playerExpansion.value;
-                    const navBarHeight = 56.0;
-                    final mobileNavBarHeight = navBarHeight + bottomPadding;
-
-                    final player = MorphingPlayer(
-                      key: _playerKey,
-                      leftOffset: 0,
-                      bottomOffset: mobileNavBarHeight,
-                    );
-
-                    return Stack(
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOutCubic,
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: headerHeight,
+                    child: const WindowTitleBar(leftOffset: 0),
+                  ),
+                  // Player is a stable widget keyed by `_playerKey`. The
+                  // shell never recreates it on rebuild — only its
+                  // transform/translation tracks `playerExpansion`, which
+                  // ticks every animation frame during expand/collapse.
+                  // Lifting the player out of the SignalBuilder keeps animation
+                  // work in the player's own state, avoiding a per-frame
+                  // build of the whole Stack.
+                  Positioned.fill(
+                    child: Stack(
                       children: [
-                        player,
-                        MobileNavBar(
-                          location: location,
-                          bottomPadding: bottomPadding,
-                          expansion: expansion,
+                        MorphingPlayer(
+                          key: _playerKey,
+                          leftOffset: 0,
+                          bottomOffset: 56.0 + bottomPadding,
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: 56.0 + bottomPadding,
+                          child: SignalBuilder(
+                            builder: (context) {
+                              final expansion =
+                                  audioSignal.playerExpansion.value;
+                              return Transform.translate(
+                                offset: Offset(
+                                  0,
+                                  expansion * (56.0 + bottomPadding),
+                                ),
+                                child: MobileNavBar(
+                                  location: location,
+                                  bottomPadding: bottomPadding,
+                                  expansion: expansion,
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ],
-                    );
-                  }),
-                ),
-              ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      }),
+          );
+        },
+      ),
     );
   }
 }

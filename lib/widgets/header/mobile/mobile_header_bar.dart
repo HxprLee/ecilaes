@@ -22,8 +22,11 @@ import 'package:signals/signals_flutter.dart';
 import '../../../models/playlist.dart';
 import '../../../widgets/components/playlist_cover.dart';
 import '../../../signals/audio_signal.dart';
+import '../../../signals/navigation_signal.dart';
+import '../../../signals/overlay_signal.dart';
 import '../../../signals/search_signal.dart';
 import '../../../router/routes.dart';
+import '../../../services/navigation/back_handler.dart';
 import '../../../theme/app_theme_tokens.dart';
 import '../../../utils/navigation.dart';
 
@@ -100,7 +103,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     final topPadding = MediaQuery.of(context).padding.top;
     final headerHeight = 60.0 + topPadding;
 
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final suggestions = searchSignal.searchSuggestions.value;
       final query = searchSignal.searchQuery.value;
 
@@ -180,7 +183,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     if (_isSearchExpanded) {
       _focusNode.requestFocus();
       _showSuggestionsOverlay();
-      navigateGo(context, AppRoutes.search);
+      navigatePush(context, AppRoutes.search);
     } else {
       _focusNode.unfocus();
       widget.searchController.clear();
@@ -190,78 +193,29 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
     }
   }
 
-  /// Derive a display title from the current route.
-  String _getPageTitle(String route) {
-    if (route == '/') return 'Home';
-    if (route == '/songs') return 'Songs';
-    if (route == '/search') return 'Search';
-    if (route == '/library') return 'Library';
-    if (route == '/explorer') return 'Folders';
-    if (route == '/recently-played') return 'Recently Played';
-    if (route == '/recently-added') return 'Recently Added';
-    if (route == '/settings') return 'Settings';
-    if (route == '/settings/customization') return 'Customization';
-    if (route == '/settings/playback') return 'Playback';
-    if (route == '/settings/library') return 'Library';
-    if (route == '/settings/about') return 'About';
-    if (route == '/settings/customization/player-layout') return 'Player Bar Layout';
-    if (route == '/settings/customization/lyrics-layout') return 'Lyrics Layout';
-    if (route == '/settings/customization/actions-layout') return 'Actions Sheet Layout';
-    if (route == '/settings/customization/sidebar-layout') return 'Sidebar Items';
-    if (route == '/settings/customization/discord-presence') return 'Discord Rich Presence';
-    if (route == '/settings/library/manage_cache') return 'Cache Management';
-    if (route == AppRoutes.settingsIntegrationsYoutubeLogin) return 'YouTube Music Login';
-    if (route == '/playlists') return 'Playlists';
-    if (route == '/albums') return 'Albums';
-    if (route == '/artists') return 'Artists';
-    if (route == '/youtube') return 'YouTube Music';
-    if (route.startsWith('/youtube/album')) return 'Album';
-    if (route.startsWith('/youtube/artist')) return 'Artist';
-    if (route.startsWith('/youtube/playlist')) return 'Playlist';
-    if (route.startsWith('/albums/')) {
-      final parts = route.split('/');
-      if (parts.length >= 4) return Uri.decodeComponent(parts.last);
-    }
-    if (route.startsWith('/artists/')) {
-      final parts = route.split('/');
-      if (parts.length >= 3) return Uri.decodeComponent(parts.last);
-    }
-    if (route.startsWith('/explorer/')) return 'Folders';
-    if (route.startsWith('/playlist/')) {
-      final id = route.split('/').last;
-      try {
-        final playlist = audioSignal.playlists.value.firstWhere(
-          (p) => p.id == id,
-        );
-        return playlist.name;
-      } catch (_) {
-        return 'Playlist';
-      }
-    }
-    return '';
-  }
+  /// Derive a display title from the current route. Delegates to the shared
+  /// [pageTitleFor] helper so the desktop and mobile bars stay in sync.
+  String _getPageTitle(String route) => pageTitleFor(route);
 
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
     final router = GoRouter.of(context);
 
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final currentRoute = GoRouterState.of(context).uri.toString();
       final isSearchPage = currentRoute == AppRoutes.search;
       final titleProgress = audioSignal.headerTitleProgress.value;
       final pageTitle = audioSignal.headerPageTitle.value ?? _getPageTitle(currentRoute);
-      final shouldBack =
-          currentRoute.startsWith('/settings') ||
-          currentRoute == AppRoutes.songs ||
-          currentRoute.startsWith('/playlist') ||
-          currentRoute.startsWith('/playlists') ||
-          currentRoute.startsWith('/albums') ||
-          currentRoute.startsWith('/artists') ||
-          currentRoute.startsWith('/explorer') ||
-          currentRoute == AppRoutes.recentlyPlayed ||
-          currentRoute == AppRoutes.recentlyAdded ||
-          currentRoute.startsWith('/youtube');
+      // Show the back arrow whenever there is somewhere to go: a pushed
+      // route on the Navigator, a prior entry in NavigationSignal's history,
+      // or the morphing player being expanded. The central AppBackHandler is
+      // authoritative for what tapping it actually does.
+      final hasBackTarget = router.canPop() ||
+          navigationSignal.canGoBack ||
+          audioSignal.playerExpansion.value > 0.001;
+      final shouldBack = hasBackTarget &&
+          !currentRoute.startsWith('/explorer');
 
       // Auto-collapse if we navigate away from search
       if (!isSearchPage && _isSearchExpanded) {
@@ -314,9 +268,10 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                           key: ValueKey(shouldBack),
                           onPressed: () {
                             if (shouldBack) {
-                              router.pop();
+                              appBackHandler.invoke(context);
                             } else {
                               Scaffold.of(context).openDrawer();
+                              overlaySignal.pushDrawer();
                             }
                           },
                           icon: shouldBack
@@ -449,14 +404,14 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                             : Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Watch((context) {
+                                  SignalBuilder(builder: (context) {
                                     final isScanning =
                                         audioSignal.isScanning.value;
                                     if (!isScanning) {
                                       return const SizedBox.shrink();
                                     }
 
-                                    return Watch((context) {
+                                    return SignalBuilder(builder: (context) {
                                       final progress =
                                           audioSignal.scanProgress.value;
                                       return Container(
@@ -504,7 +459,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                   ),
                                   if (!currentRoute.startsWith('/settings'))
                                     IconButton(
-                                      onPressed: () => navigateGo(context, AppRoutes.settings),
+                                      onPressed: () => navigatePush(context, AppRoutes.settings),
                                       icon: FaIcon(
                                         FontAwesomeIcons.gear,
                                         color: Theme.of(
@@ -539,7 +494,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                 if (router.canPop()) {
                                   router.pop();
                                 } else {
-                                  navigateGo(context, AppRoutes.home);
+                                  navigateTab(context, AppRoutes.home);
                                 }
                               },
                             ),
@@ -553,7 +508,7 @@ class _MobileHeaderBarState extends State<MobileHeaderBar> {
                                   searchSignal.searchSuggestions.value = [];
                                   searchSignal.addRecentSearch(value);
                                   _removeSuggestionsOverlay();
-                                  navigateGo(context, AppRoutes.searchResult);
+                                  navigatePush(context, AppRoutes.searchResult);
                                 },
                                 style: TextStyle(
                                   color: Theme.of(

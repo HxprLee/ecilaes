@@ -16,9 +16,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:signals/signals_flutter.dart';
-import '../signals/audio_signal.dart';
-import '../models/song.dart';
-import 'components/app_dialog.dart';
+import '../../signals/audio_signal.dart';
+import '../../signals/overlay_signal.dart';
+import '../../models/song.dart';
+import '../components/app_dialog.dart';
+import '../components/app_toast.dart';
 
 class PlaylistPickerDialog extends StatelessWidget {
   final Song? song;
@@ -28,8 +30,11 @@ class PlaylistPickerDialog extends StatelessWidget {
     : assert(song != null || folderPath != null);
 
   static void show(BuildContext context, {Song? song, String? folderPath}) {
+    overlaySignal.push(ActiveOverlay.playlistPicker);
+
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (dialogContext) =>
           PlaylistPickerDialog(song: song, folderPath: folderPath),
     );
@@ -45,7 +50,7 @@ class PlaylistPickerDialog extends StatelessWidget {
       ),
       title: 'Add to playlist',
       maxHeight: 450,
-      content: Watch((context) {
+      content: SignalBuilder(builder: (context) {
         final playlists = audioSignal.playlists.value;
         if (playlists.isEmpty) {
           return Center(
@@ -100,13 +105,11 @@ class PlaylistPickerDialog extends StatelessWidget {
                   );
                 }
                 if (context.mounted) {
+                  overlaySignal.pop(ActiveOverlay.playlistPicker);
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Added to ${playlist.name}'),
-                      behavior: SnackBarBehavior.floating,
-                      width: 300,
-                    ),
+                  ToastService.show(
+                    'Added to ${playlist.name}',
+                    variant: AppToastVariant.success,
                   );
                 }
               },
@@ -145,8 +148,11 @@ class CreatePlaylistDialog extends StatefulWidget {
   const CreatePlaylistDialog({super.key, this.song, this.folderPath});
 
   static void show(BuildContext context, {Song? song, String? folderPath}) {
+    overlaySignal.push(ActiveOverlay.createPlaylist);
+
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (dialogContext) =>
           CreatePlaylistDialog(song: song, folderPath: folderPath),
     );
@@ -199,7 +205,10 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
       ),
       actions: [
         OutlinedButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            overlaySignal.pop(ActiveOverlay.createPlaylist);
+            Navigator.pop(context);
+          },
           style: OutlinedButton.styleFrom(
             side: BorderSide(
               color: Theme.of(
@@ -233,19 +242,18 @@ class _CreatePlaylistDialogState extends State<CreatePlaylistDialog> {
                   );
                 }
                 if (context.mounted) {
+                  overlaySignal.pop(ActiveOverlay.createPlaylist);
                   Navigator.of(context).pop(); // Close create dialog
                   if (widget.song != null || widget.folderPath != null) {
                     // If we came from the picker, close it too.
                     // We use Navigator.of(context) again which is safe
                     // as long as the state is still mounted.
+                    overlaySignal.pop(ActiveOverlay.playlistPicker);
                     Navigator.of(context).pop(); // Close add dialog
                   }
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Created and added to $name'),
-                      behavior: SnackBarBehavior.floating,
-                      width: 300,
-                    ),
+                  ToastService.show(
+                    'Created and added to $name',
+                    variant: AppToastVariant.success,
                   );
                 }
               } catch (e) {

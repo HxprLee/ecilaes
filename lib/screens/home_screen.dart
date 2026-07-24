@@ -59,7 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final recentAdded = audioSignal.recentlyAdded.value;
       final recentPlayed = audioSignal.recentlyPlayed.value;
 
@@ -80,19 +80,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     _QuickAccessCard(
                       title: 'Favorites',
                       icon: FontAwesomeIcons.solidHeart,
-                      onTap: () => navigateGo(context, '${AppRoutes.playlists}/favorites'),
+                      onTap: () => navigatePush(context, '${AppRoutes.playlists}/favorites'),
                     ),
                     const SizedBox(width: 8),
                     _QuickAccessCard(
                       title: 'Recently played',
                       icon: FontAwesomeIcons.clockRotateLeft,
-                      onTap: () => navigateGo(context, AppRoutes.recentlyPlayed),
+                      onTap: () => navigateTab(context, AppRoutes.recentlyPlayed),
                     ),
                     const SizedBox(width: 8),
                     _QuickAccessCard(
                       title: 'Recently added',
                       icon: FontAwesomeIcons.bolt,
-                      onTap: () => navigateGo(context, AppRoutes.recentlyAdded),
+                      onTap: () => navigateTab(context, AppRoutes.recentlyAdded),
                     ),
                     const SizedBox(width: 8),
                     _QuickAccessCard(
@@ -104,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _QuickAccessCard(
                       title: 'Playlists',
                       icon: FontAwesomeIcons.list,
-                      onTap: () => navigateGo(context, AppRoutes.playlists),
+                      onTap: () => navigateTab(context, AppRoutes.playlists),
                     ),
                     const SizedBox(width: 8),
                     _QuickAccessCard(
@@ -135,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     IconButton(
-                      onPressed: () => navigateGo(context, AppRoutes.recentlyAdded),
+                      onPressed: () => navigateTab(context, AppRoutes.recentlyAdded),
                       icon: FaIcon(
                         FontAwesomeIcons.chevronRight,
                         color: Theme.of(context).colorScheme.secondary,
@@ -182,7 +182,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     IconButton(
-                      onPressed: () => navigateGo(context, AppRoutes.recentlyPlayed),
+                      onPressed: () => navigateTab(context, AppRoutes.recentlyPlayed),
                       icon: FaIcon(
                         FontAwesomeIcons.chevronRight,
                         color: Theme.of(context).colorScheme.secondary,

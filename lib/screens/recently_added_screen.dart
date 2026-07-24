@@ -55,7 +55,7 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Watch((context) {
+      body: SignalBuilder(builder: (context) {
         final recentAdded = audioSignal.recentlyAdded.value;
         final isGrid = _isGridView.value;
 
@@ -114,8 +114,7 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
                     ),
                   ),
                   SliverToBoxAdapter(
-                    child: Watch(
-                      (context) =>
+                    child: SignalBuilder(builder: (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
                     ),
                   ),

@@ -16,10 +16,11 @@
 
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:signals/signals_flutter.dart';
 import '../../signals/settings_signal.dart';
 import '../../signals/audio_signal.dart';
+import '../../signals/overlay_signal.dart';
 import '../../router/routes.dart';
 import '../../services/YoutubeDatasource.dart';
 import '../../theme/app_theme_tokens.dart';
@@ -37,10 +38,7 @@ class LibrarySection extends StatelessWidget {
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
-          const SliverPageHeader(
-            title: 'Library',
-            maxWidth: 600,
-          ),
+          const SliverPageHeader(title: 'Library', maxWidth: 600),
           SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
@@ -53,86 +51,88 @@ class LibrarySection extends StatelessWidget {
                     // Storage Management
                     const SettingsSectionLabel('Storage Management'),
                     SettingsSection(
-                      child: Watch((context) {
+                      child: SignalBuilder(builder: (context) {
+                        final dir = settingsSignal.musicDirectory.value;
                         final stats = audioSignal.storageStats.value;
                         final count = stats['count'] as int;
                         final size = stats['size'] as int;
-
-                        return Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Row(
-                            children: [
-                              _storageStatItem(
-                                context,
-                                Icons.audiotrack_outlined,
-                                'Songs',
-                                count.toString(),
-                              ),
-                              const SizedBox(width: 32),
-                              _storageStatItem(
-                                context,
-                                Icons.storage_outlined,
-                                'Storage',
-                                _formatSize(size),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Indexing
-                    const SettingsSectionLabel('Indexing'),
-                    SettingsSection(
-                      child: Watch((context) {
                         final isScanning = audioSignal.isScanning.value;
-                        return SettingsTile(
-                          leading: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: isScanning
-                                ? Watch((context) {
-                                    final progress =
-                                        audioSignal.scanProgress.value;
-                                    return Stack(
-                                      alignment: Alignment.center,
-                                      children: [
-                                        CircularProgressIndicator(
-                                          value: progress,
-                                          strokeWidth: 2,
-                                          backgroundColor: context
-                                              .colorScheme.secondary
-                                              .withValues(alpha: 0.2),
-                                          color:
-                                              context.colorScheme.secondary,
-                                        ),
-                                        Text(
-                                          '${(progress * 100).round()}',
-                                          style: TextStyle(
-                                            fontSize: 7,
-                                            fontWeight: FontWeight.bold,
-                                            color:
-                                                context.colorScheme.secondary,
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  })
-                                : Icon(
-                                    Icons.refresh,
+                        final isDefaultDir = dir == null;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                14,
+                                16,
+                                16,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.folder_outlined,
+                                    size: 16,
                                     color: context.colorScheme.secondary,
-                                    size: 20,
                                   ),
-                          ),
-                          title: isScanning ? 'Indexing...' : 'Re-index Songs',
-                          subtitle: isScanning
-                              ? 'Scanning your music directory'
-                              : 'Scan for new or changed music files',
-                          onTap: isScanning
-                              ? null
-                              : () => audioSignal.reindexLibrary(),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      dir ?? audioSignal.defaultMusicPath,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: context.colorScheme.onSurface
+                                            .withValues(alpha: 0.7),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Row(
+                                spacing: 32,
+                                children: [
+                                  _storageStatItem(
+                                    context,
+                                    Icons.audiotrack_outlined,
+                                    'Songs',
+                                    count.toString(),
+                                  ),
+                                  _storageStatItem(
+                                    context,
+                                    Icons.storage_outlined,
+                                    'Storage',
+                                    _formatSize(size),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(0, 0, 0, 4),
+                              child: _DirectoryActionRow(
+                                primaryLabel: isDefaultDir ? 'Change' : 'Reset',
+                                primaryIcon: isDefaultDir
+                                    ? Icons.edit_outlined
+                                    : Icons.restart_alt,
+                                onPrimary: isDefaultDir
+                                    ? () => _pickDirectory(context)
+                                    : () => _confirmResetDirectory(context),
+                                secondaryLabel: isScanning
+                                    ? 'Indexing...'
+                                    : 'Re-index',
+                                secondaryIcon: Icons.refresh,
+                                onSecondary: isScanning
+                                    ? null
+                                    : () => audioSignal.reindexLibrary(),
+                              ),
+                            ),
+                          ],
                         );
                       }),
                     ),
@@ -163,12 +163,15 @@ class LibrarySection extends StatelessWidget {
                           SettingsTile(
                             icon: Icons.storage_outlined,
                             title: 'Manage Caches',
-                            subtitle:
-                                'Clear cached metadata, art, and lyrics',
+                            subtitle: 'Clear cached metadata, art, and lyrics',
                             onTap: () {
                               debugPrint(
-                                  'MANAGE_CACHES: pushing /settings/library/manage_cache');
-                              navigatePush(context, AppRoutes.settingsLibraryManageCache);
+                                'MANAGE_CACHES: pushing /settings/library/manage_cache',
+                              );
+                              navigatePush(
+                                context,
+                                AppRoutes.settingsLibraryManageCache,
+                              );
                             },
                           ),
                         ],
@@ -180,7 +183,7 @@ class LibrarySection extends StatelessWidget {
                     // Exclusions
                     const SettingsSectionLabel('Exclusions'),
                     SettingsSection(
-                      child: Watch((context) {
+                      child: SignalBuilder(builder: (context) {
                         final excluded = settingsSignal.excludedPaths.value;
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -191,15 +194,15 @@ class LibrarySection extends StatelessWidget {
                                 child: Text(
                                   'No excluded files or folders.',
                                   style: TextStyle(
-                                      fontSize: 12,
-                                      fontStyle: FontStyle.italic),
+                                    fontSize: 12,
+                                    fontStyle: FontStyle.italic,
+                                  ),
                                 ),
                               )
                             else
                               ListView.separated(
                                 shrinkWrap: true,
-                                physics:
-                                    const NeverScrollableScrollPhysics(),
+                                physics: const NeverScrollableScrollPhysics(),
                                 itemCount: excluded.length,
                                 separatorBuilder: (context, index) =>
                                     const SettingsDivider(indent: 16),
@@ -209,7 +212,9 @@ class LibrarySection extends StatelessWidget {
                                   final path = stored.substring(2);
                                   return Padding(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 8),
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
                                     child: Row(
                                       children: [
                                         Icon(
@@ -228,16 +233,18 @@ class LibrarySection extends StatelessWidget {
                                             children: [
                                               Text(
                                                 path.split('/').last,
-                                                style:
-                                                    const TextStyle(fontSize: 14),
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                ),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                               ),
                                               Text(
                                                 path,
                                                 style: const TextStyle(
-                                                    fontSize: 10,
-                                                    color: Colors.grey),
+                                                  fontSize: 10,
+                                                  color: Colors.grey,
+                                                ),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                               ),
@@ -246,8 +253,9 @@ class LibrarySection extends StatelessWidget {
                                         ),
                                         IconButton(
                                           icon: const Icon(
-                                              Icons.remove_circle_outline,
-                                              size: 20),
+                                            Icons.remove_circle_outline,
+                                            size: 20,
+                                          ),
                                           onPressed: () => settingsSignal
                                               .removeExcludedPath(stored),
                                         ),
@@ -266,8 +274,7 @@ class LibrarySection extends StatelessWidget {
                         );
                       }),
                     ),
-                    Watch(
-                      (context) =>
+                    SignalBuilder(builder: (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
                     ),
                   ],
@@ -281,8 +288,8 @@ class LibrarySection extends StatelessWidget {
   }
 
   Future<void> _pickDirectory(BuildContext context) async {
-    final String? selectedDirectory = await FilePicker.platform
-        .getDirectoryPath(dialogTitle: 'Select Music Directory');
+    final String? selectedDirectory = await getDirectoryPath(
+        confirmButtonText: 'Select Music Directory');
 
     if (selectedDirectory != null) {
       await settingsSignal.updateMusicDirectory(selectedDirectory);
@@ -290,27 +297,80 @@ class LibrarySection extends StatelessWidget {
     }
   }
 
+  void _confirmResetDirectory(BuildContext context) {
+    overlaySignal.push(ActiveOverlay.resetDirectoryConfirm);
+
+    showDialog(
+      context: context,
+      useRootNavigator: true,
+      builder: (context) => AppDialog(
+        titleIcon: Icon(
+          Icons.folder_off_outlined,
+          color: context.colorScheme.secondary,
+        ),
+        title: 'Reset Music Directory',
+        content: const Text(
+          'This will clear the music directory setting. Your library will remain unchanged until you pick a new folder or trigger a re-index. Continue?',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () {
+              overlaySignal.pop(ActiveOverlay.resetDirectoryConfirm);
+              Navigator.pop(context);
+            },
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(
+                color: context.colorScheme.secondary.withValues(alpha: 0.2),
+              ),
+              shape: const StadiumBorder(),
+            ),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: context.colorScheme.secondary),
+            ),
+          ),
+          FilledButton(
+            onPressed: () async {
+              overlaySignal.pop(ActiveOverlay.resetDirectoryConfirm);
+              Navigator.pop(context);
+              await settingsSignal.updateMusicDirectory(null);
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: context.colorScheme.secondary,
+              foregroundColor: context.colorScheme.surface,
+              shape: const StadiumBorder(),
+            ),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _pickExclusion(BuildContext context) async {
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      dialogTitle: 'Select Files or Folders to Exclude',
+    final files = await openFiles(
+      confirmButtonText: 'Select Files or Folders to Exclude',
     );
 
-    if (result != null) {
-      for (final file in result.files) {
-        if (file.path != null) {
-          await settingsSignal.addExcludedPath(file.path!);
-        }
+    if (files.isNotEmpty) {
+      for (final file in files) {
+        await settingsSignal.addExcludedPath(file.path);
       }
     }
   }
 
   void _confirmClearMissing(BuildContext context) {
+    overlaySignal.push(ActiveOverlay.clearMissingConfirm);
+
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (context) => AppDialog(
-        titleIcon: Icon(Icons.cleaning_services_outlined,
-            color: context.colorScheme.secondary),
+        titleIcon: Icon(
+          Icons.cleaning_services_outlined,
+          color: context.colorScheme.secondary,
+        ),
         title: 'Clear Missing Files',
         content: const Text(
           'This will remove all songs from your library that no longer exist on your disk. Continue?',
@@ -318,7 +378,10 @@ class LibrarySection extends StatelessWidget {
         ),
         actions: [
           OutlinedButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              overlaySignal.pop(ActiveOverlay.clearMissingConfirm);
+              Navigator.pop(context);
+            },
             style: OutlinedButton.styleFrom(
               side: BorderSide(
                 color: context.colorScheme.secondary.withValues(alpha: 0.2),
@@ -332,6 +395,7 @@ class LibrarySection extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () {
+              overlaySignal.pop(ActiveOverlay.clearMissingConfirm);
               Navigator.pop(context);
               audioSignal.clearMissingFiles();
             },
@@ -348,11 +412,13 @@ class LibrarySection extends StatelessWidget {
   }
 
   void _confirmForceScan(BuildContext context) {
+    overlaySignal.push(ActiveOverlay.forceScanConfirm);
+
     showDialog(
       context: context,
+      useRootNavigator: true,
       builder: (context) => AppDialog(
-        titleIcon: Icon(Icons.refresh,
-            color: context.colorScheme.secondary),
+        titleIcon: Icon(Icons.refresh, color: context.colorScheme.secondary),
         title: 'Force Full Scan',
         content: const Text(
           'This will clear your library cache and perform a complete search of your music directory. This may take a while. Continue?',
@@ -360,7 +426,10 @@ class LibrarySection extends StatelessWidget {
         ),
         actions: [
           OutlinedButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              overlaySignal.pop(ActiveOverlay.forceScanConfirm);
+              Navigator.pop(context);
+            },
             style: OutlinedButton.styleFrom(
               side: BorderSide(
                 color: context.colorScheme.secondary.withValues(alpha: 0.2),
@@ -374,6 +443,7 @@ class LibrarySection extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () {
+              overlaySignal.pop(ActiveOverlay.forceScanConfirm);
               Navigator.pop(context);
               audioSignal.reindexLibrary();
             },
@@ -390,7 +460,11 @@ class LibrarySection extends StatelessWidget {
   }
 
   Widget _storageStatItem(
-      BuildContext context, IconData icon, String label, String value) {
+    BuildContext context,
+    IconData icon,
+    String label,
+    String value,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -402,8 +476,7 @@ class LibrarySection extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: 10,
-                color:
-                    context.colorScheme.onSurface.withValues(alpha: 0.54),
+                color: context.colorScheme.onSurface.withValues(alpha: 0.54),
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.5,
               ),
@@ -454,7 +527,8 @@ class _YtAuthDialogState extends State<_YtAuthDialog> {
 
     if (cookie.contains('…') || cookie.contains('...')) {
       setState(() {
-        _error = 'Cookie is truncated. Please copy the entire string, not just the visible part.';
+        _error =
+            'Cookie is truncated. Please copy the entire string, not just the visible part.';
       });
       return;
     }
@@ -471,7 +545,10 @@ class _YtAuthDialogState extends State<_YtAuthDialog> {
       username = await datasource.getAccountName();
     } catch (_) {}
 
-    await settingsSignal.updateYtAuthCookie(sanitizedCookie, username: username);
+    await settingsSignal.updateYtAuthCookie(
+      sanitizedCookie,
+      username: username,
+    );
     audioSignal.reindexLibrary();
     if (mounted) {
       Navigator.of(context).pop();
@@ -516,11 +593,70 @@ class _YtAuthDialogState extends State<_YtAuthDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Save'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('Save')),
       ],
+    );
+  }
+}
+
+class _DirectoryActionRow extends StatelessWidget {
+  final String primaryLabel;
+  final IconData primaryIcon;
+  final VoidCallback onPrimary;
+  final String secondaryLabel;
+  final IconData secondaryIcon;
+  final VoidCallback? onSecondary;
+
+  const _DirectoryActionRow({
+    required this.primaryLabel,
+    required this.primaryIcon,
+    required this.onPrimary,
+    required this.secondaryLabel,
+    required this.secondaryIcon,
+    required this.onSecondary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: onPrimary,
+              icon: Icon(primaryIcon, size: 18),
+              label: Text(primaryLabel),
+              style: FilledButton.styleFrom(
+                backgroundColor: context.colorScheme.secondary.withValues(
+                  alpha: 0.8,
+                ),
+                foregroundColor: context.colorScheme.surface,
+                shape: const StadiumBorder(),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: onSecondary,
+              icon: Icon(secondaryIcon, size: 18),
+              label: Text(secondaryLabel),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(
+                  color: context.colorScheme.secondary.withValues(alpha: 0.2),
+                ),
+                shape: const StadiumBorder(),
+                foregroundColor: context.colorScheme.onSurface.withValues(
+                  alpha: 0.7,
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

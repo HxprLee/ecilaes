@@ -43,12 +43,13 @@ class StandardSliverGrid<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasItems = items.isNotEmpty || (leadingItems != null && leadingItems!.isNotEmpty);
+    final hasItems =
+        items.isNotEmpty || (leadingItems != null && leadingItems!.isNotEmpty);
     if (!hasItems) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
 
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final reservedHeight = audioSignal.reservedHeight.value;
       final leadingCount = leadingItems?.length ?? 0;
 
@@ -63,22 +64,17 @@ class StandardSliverGrid<T> extends StatelessWidget {
                 crossAxisSpacing: crossAxisSpacing,
                 childAspectRatio: childAspectRatio,
               ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  if (index < leadingCount) {
-                    return leadingItems![index];
-                  }
-                  final itemIndex = index - leadingCount;
-                  return itemBuilder(context, items[itemIndex], itemIndex);
-                },
-                childCount: leadingCount + items.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                if (index < leadingCount) {
+                  return leadingItems![index];
+                }
+                final itemIndex = index - leadingCount;
+                return itemBuilder(context, items[itemIndex], itemIndex);
+              }, childCount: leadingCount + items.length),
             ),
           ),
           if (addBottomPadding)
-            SliverToBoxAdapter(
-              child: SizedBox(height: reservedHeight),
-            ),
+            SliverToBoxAdapter(child: SizedBox(height: reservedHeight)),
         ],
       );
     });

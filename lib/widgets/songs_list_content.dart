@@ -30,7 +30,7 @@ class SongsListContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final displaySongs = audioSignal.allSongs.value;
       final isGrid = audioSignal.isSongsGridView.value;
       final artDir = audioSignal.albumArtDir.value;

@@ -19,6 +19,10 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
+    // AGP 9.2.1 is the latest stable that compiles `compileFlutterBuildRelease`
+    // without NPE once `defaultConfig.minSdk` is explicit on this Flutter
+    // version. AGP 8.x can't run `jlink` from JDK 26 against android-36's
+    // core-for-system-modules.jar, so we have to stay on 9.x.
     id("com.android.application") version "9.2.1" apply false
     id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }

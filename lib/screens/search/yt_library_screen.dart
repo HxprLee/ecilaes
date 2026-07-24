@@ -110,7 +110,7 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final title = switch (widget.type) {
         YTLibraryType.playlists => 'Playlists',
         YTLibraryType.albums => 'Albums',
@@ -189,7 +189,7 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                     onTap: () {
                       if (browseId != null) {
                         if (widget.type == YTLibraryType.artists) {
-                          navigateGo(
+                          navigatePush(
                             context,
                             '/youtube/artist/${Uri.encodeComponent(browseId)}',
                             extra: {
@@ -198,7 +198,7 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                             },
                           );
                         } else if (widget.type == YTLibraryType.albums) {
-                          navigateGo(
+                          navigatePush(
                             context,
                             '/youtube/album/${Uri.encodeComponent(browseId)}',
                             extra: {
@@ -207,7 +207,7 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                             },
                           );
                         } else {
-                          navigateGo(
+                          navigatePush(
                             context,
                             '/youtube/playlist/${Uri.encodeComponent(browseId)}',
                             extra: {
@@ -282,7 +282,7 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                     onTap: () {
                       if (browseId != null) {
                         if (widget.type == YTLibraryType.artists) {
-                          navigateGo(
+                          navigatePush(
                             context,
                             '/youtube/artist/${Uri.encodeComponent(browseId)}',
                             extra: {
@@ -291,7 +291,7 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                             },
                           );
                         } else if (widget.type == YTLibraryType.albums) {
-                          navigateGo(
+                          navigatePush(
                             context,
                             '/youtube/album/${Uri.encodeComponent(browseId)}',
                             extra: {
@@ -300,7 +300,7 @@ class _YtLibraryScreenState extends State<YtLibraryScreen> {
                             },
                           );
                         } else {
-                          navigateGo(
+                          navigatePush(
                             context,
                             '/youtube/playlist/${Uri.encodeComponent(browseId)}',
                             extra: {

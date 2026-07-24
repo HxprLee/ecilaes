@@ -48,9 +48,12 @@ import '../services/metadata_service.dart';
 import '../services/album_art_cache.dart';
 import '../services/audio_cache_service.dart';
 import '../services/lyrics_service.dart';
+import '../services/share_intent_service.dart';
+import '../signals/share_signal.dart';
 import '../signals/queue_signal.dart' as q;
 import '../models/library_models.dart';
 import '../services/artist_art_cache.dart';
+import '../widgets/components/app_toast.dart';
 
 class AudioSignal {
   static final AudioSignal _instance = AudioSignal._internal();
@@ -338,6 +341,13 @@ class AudioSignal {
         repeatMode.value = state.repeatMode;
         isBuffering.value =
             state.processingState == AudioProcessingState.buffering;
+        // Refresh Discord presence when auto-advance starts a new song.
+        // The playing=true signal arrives before currentSong is updated via
+        // the mediaItem stream, so we need to force-refresh here to ensure
+        // Discord shows the new song with its timestamps.
+        if (isDesktop && state.playing) {
+          unawaited(_updateDiscordPresence(force: true));
+        }
       }),
     );
     _subscriptions.add(
@@ -358,8 +368,8 @@ class AudioSignal {
             // If the resolved Song is the empty fallback (no cached
             // metadata), overlay the MediaItem's title/artist/album so
             // the player UI doesn't show "yt:<id>" as the title.
-            final looksLikeFallback = song.title == song.path ||
-                song.artist == 'Unknown Artist';
+            final looksLikeFallback =
+                song.title == song.path || song.artist == 'Unknown Artist';
             if (looksLikeFallback) {
               song = song.copyWith(
                 title: item.title.isNotEmpty ? item.title : song.title,
@@ -395,6 +405,14 @@ class AudioSignal {
                     song.duration != null &&
                     song.duration!.inSeconds > 0) {
                   _loadLyricsForSong(song);
+                }
+                // Refresh Discord when the MediaItem now carries a duration
+                // the previous emission didn't. The audio handler populates the
+                // MediaItem's duration asynchronously after the source is
+                // probed, so the song-change write often happens before the
+                // duration is known — the next MediaItem emission restores it.
+                if (isDesktop && item.duration != null) {
+                  unawaited(_updateDiscordPresence(force: true));
                 }
               }
             }
@@ -441,6 +459,15 @@ class AudioSignal {
         }),
       );
     }
+
+    // Listen for incoming shares (Android) — cold-start payload + live updates.
+    _subscriptions.add(
+      shareIntentService.incomingShares.listen((payload) {
+        if (!payload.isUrl) return;
+        shareSignal.incomingUrl.value = payload.value;
+        unawaited(_handleIncomingShare(payload.value));
+      }),
+    );
 
     // Recompute parsed lyric lines only when the lyrics text changes —
     // the per-tick `lyricsActiveIndex` computed reuses the cached list.
@@ -613,67 +640,106 @@ class AudioSignal {
   }
 
   // Discord RPC
+  // Snapshot used for dedup, mirroring the keys the service coalesces on.
   String? _lastDiscordSongPath;
   bool? _lastDiscordIsPlaying;
-  String? _cachedArtworkUrl;
+  String? _lastDiscordArtworkUrl;
+  final Map<String, String> _discordArtworkCache = {};
 
   Future<void> _updateDiscordPresence({bool force = false}) async {
     if (!isDesktop) return;
 
+    if (!settingsSignal.enableDiscordRpc.value) {
+      _clearDiscordPresence();
+      return;
+    }
+
     final song = currentSong.value;
     final playing = isPlaying.value;
 
-    if (song == null) return;
-
-    if (!settingsSignal.enableDiscordRpc.value) {
-      if (_lastDiscordSongPath != null) {
-        await PlatformService().clearPresence();
-        _lastDiscordSongPath = null;
-        _lastDiscordIsPlaying = null;
+    // Coalesce with the most recent effective state so dedup is correct
+    // even if a previous update hasn't finished writing to Discord yet.
+    if (song == null) {
+      if (!force &&
+          _lastDiscordSongPath == null &&
+          _lastDiscordIsPlaying == null) {
+        return;
       }
+      _clearDiscordPresence();
       return;
     }
 
     int? start;
     int? end;
     if (playing) {
-      final posMs = audioHandler.playbackState.value.position.inMilliseconds;
+      // Read the live player position rather than the playbackState snapshot,
+      // which lags by a frame and would otherwise anchor the Discord elapsed
+      // timer to a stale position after seek/pause transitions.
+      final posMs = audioHandler.player.position.inMilliseconds;
       start = DateTime.now().millisecondsSinceEpoch - posMs;
 
+      // Prefer the player's live duration, then the MediaItem, then the Song.
+      // The player duration is set as soon as the source is probed, which is
+      // usually earlier than the MediaItem reflecting it; without it, Discord
+      // renders no progress bar (it needs both start and end to draw one).
+      final playerDuration = audioHandler.player.duration;
       final currentMediaItem = audioHandler.mediaItem.value;
       final durationMs =
+          playerDuration?.inMilliseconds ??
           currentMediaItem?.duration?.inMilliseconds ??
           song.duration?.inMilliseconds;
       end = durationMs != null ? start + durationMs : null;
     }
 
+    final artworkUrl = await _resolveArtworkUrl(song);
+
     if (!force &&
         _lastDiscordSongPath == song.path &&
-        _lastDiscordIsPlaying == playing) {
+        _lastDiscordIsPlaying == playing &&
+        _lastDiscordArtworkUrl == artworkUrl) {
       return;
     }
 
     _lastDiscordSongPath = song.path;
     _lastDiscordIsPlaying = playing;
+    _lastDiscordArtworkUrl = artworkUrl;
 
+    await PlatformService().updatePresence(
+      song,
+      artworkUrl: artworkUrl,
+      isPlaying: playing,
+      startTimeStamp: start,
+      endTimeStamp: end,
+    );
+  }
+
+  Future<String?> _resolveArtworkUrl(Song song) async {
+    final cacheKey =
+        '${song.path}|${song.title}|${song.artist}|${song.album ?? ''}';
+    final cached = _discordArtworkCache[cacheKey];
+    if (cached != null) return cached.isEmpty ? null : cached;
+
+    final String? url;
     if (song.path.startsWith('yt:')) {
       final videoId = song.path.substring(3);
-      _cachedArtworkUrl = YoutubeDatasource().getArtworkUrl(videoId);
+      url = YoutubeDatasource().getArtworkUrl(videoId);
     } else {
-      _cachedArtworkUrl = await AlbumArtService().getAlbumArtUrl(
+      url = await AlbumArtService().getAlbumArtUrl(
         song.artist,
         song.album ?? '',
         song.title,
       );
     }
 
-    await PlatformService().updatePresence(
-      song,
-      artworkUrl: _cachedArtworkUrl,
-      isPlaying: playing,
-      startTimeStamp: start,
-      endTimeStamp: end,
-    );
+    _discordArtworkCache[cacheKey] = url ?? '';
+    return url;
+  }
+
+  void _clearDiscordPresence() {
+    _lastDiscordSongPath = null;
+    _lastDiscordIsPlaying = null;
+    _lastDiscordArtworkUrl = null;
+    unawaited(PlatformService().clearPresence());
   }
 
   Future<void> _loadCacheAndScanOnly() async {
@@ -858,8 +924,16 @@ class AudioSignal {
     if (isDesktop) unawaited(_updateDiscordPresence(force: true));
   }
 
-  Future<void> skipNext() => _audioHandler.skipToNext();
-  Future<void> skipPrevious() => _audioHandler.skipToPrevious();
+  Future<void> skipNext() async {
+    await _audioHandler.skipToNext();
+    if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+  }
+
+  Future<void> skipPrevious() async {
+    await _audioHandler.skipToPrevious();
+    if (isDesktop) unawaited(_updateDiscordPresence(force: true));
+  }
+
   Future<void> stop() async {
     currentSong.value = null;
     isPlaying.value = false;
@@ -1337,6 +1411,35 @@ class AudioSignal {
     }
   }
 
+  /// Resolve a shared YT/YTMusic URL to a Song and start playback.
+  ///
+  /// Best-effort: if metadata lookup fails, falls back to a placeholder
+  /// `yt:<id>` Song and still attempts playback. Clears [shareSignal.incomingUrl]
+  /// on completion so hot-reload / configuration changes don't re-trigger.
+  Future<void> _handleIncomingShare(String url) async {
+    ToastService.show('Opening shared link…');
+
+    final videoId = ShareIntentService.extractVideoId(url);
+    if (videoId == null || videoId.isEmpty) {
+      debugPrint('Share: could not extract videoId from $url');
+      shareSignal.incomingUrl.value = null;
+      return;
+    }
+
+    Song song;
+    try {
+      song = await youtubeDatasource.getSongByVideoId(videoId);
+    } catch (e) {
+      debugPrint('Share: getSongByVideoId failed: $e');
+      song = Song.fromPath('yt:$videoId');
+    }
+
+    shareSignal.incomingUrl.value = null;
+
+    if (song.path.isEmpty) return;
+    await playSong(song);
+  }
+
   /// Picks the best accent color from a palette using population-weighted scoring.
   /// Filters out near-white, near-black, and low-saturation hues that are
   /// likely background noise, then scores by: population * saturation * luminance_factor.
@@ -1605,6 +1708,14 @@ class AudioSignal {
   }
 
   // File Explorer Helpers
+  String get defaultMusicPath {
+    if (kIsWeb) return '';
+    if (Platform.isAndroid) return '/storage/emulated/0/Music';
+    final home = Platform.environment['HOME'];
+    if (home != null) return '$home/Music';
+    return '';
+  }
+
   Future<String> getMusicPath() async {
     return (await _getMusicPath()) ?? '';
   }
@@ -1619,7 +1730,7 @@ class AudioSignal {
     }
 
     if (Platform.isAndroid) {
-      return '/storage/emulated/0';
+      return '/storage/emulated/0/Music';
     } else {
       final home = Platform.environment['HOME'];
       if (home != null) {
@@ -2016,10 +2127,9 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
           final reader = File(path).openSync();
           try {
             // Check if it's ID3 (covers v2.2, v2.3, v2.4)
-            if (ID3v2Parser.canUserParser(reader)) {
-              // ID3v2Parser.parse will close the reader on success,
-              // but we wrap it in a try-finally just in case it throws before/after.
-              final mp3Meta = ID3v2Parser(fetchImage: true).parse(reader);
+            if (MP3Parser.canUserParser(reader)) {
+              // MP3Parser.parse will close the reader on success/failure.
+              final mp3Meta = MP3Parser(fetchImage: true).parse(reader);
               metadata = AppAudioMetadata(
                 file: File(path),
                 album: (mp3Meta as dynamic).album,
@@ -2067,53 +2177,58 @@ Future<void> _indexingIsolateEntry(Map<String, dynamic> params) async {
               } catch (_) {}
 
               // Fallback for ID3v2.2 (PIC frame) if no pictures found
+              // Note: MP3Parser.parse() closes the reader, so we re-open
               if (metadata.pictures.isEmpty) {
                 try {
-                  reader.setPositionSync(0);
-                  final header = reader.readSync(10);
-                  if (header[3] == 2) {
-                    // ID3v2.2
-                    // Brute force search for PIC frame in the first 128KB
-                    final bytes = reader.lengthSync() < 128000
-                        ? reader.readSync(reader.lengthSync())
-                        : reader.readSync(128000);
+                  final fallbackReader = File(path).openSync();
+                  try {
+                    fallbackReader.setPositionSync(0);
+                    final header = fallbackReader.readSync(10);
+                    if (header[3] == 2) {
+                      // ID3v2.2
+                      // Brute force search for PIC frame in the first 128KB
+                      final bytes = fallbackReader.lengthSync() < 128000
+                          ? fallbackReader.readSync(fallbackReader.lengthSync())
+                          : fallbackReader.readSync(128000);
 
-                    int picIndex = -1;
-                    for (int j = 0; j < bytes.length - 3; j++) {
-                      if (bytes[j] == 80 &&
-                          bytes[j + 1] == 73 &&
-                          bytes[j + 2] == 67) {
-                        // "PIC"
-                        picIndex = j;
-                        break;
+                      int picIndex = -1;
+                      for (int j = 0; j < bytes.length - 3; j++) {
+                        if (bytes[j] == 80 &&
+                            bytes[j + 1] == 73 &&
+                            bytes[j + 2] == 67) {
+                          // "PIC"
+                          picIndex = j;
+                          break;
+                        }
                       }
-                    }
 
-                    if (picIndex != -1) {
-                      // PIC frame header is 6 bytes: ID(3), Size(3)
-                      final size =
-                          (bytes[picIndex + 3] << 16) |
-                          (bytes[picIndex + 4] << 8) |
-                          bytes[picIndex + 5];
-                      if (size > 0 && picIndex + 6 + size <= bytes.length) {
-                        final frameData = bytes.sublist(
-                          picIndex + 6,
-                          picIndex + 6 + size,
-                        );
-                        // Skip encoding(1) and fixed format(3) and picture type(1) and description(var)
-                        // This is a rough estimation, but usually the image data follows a null terminator or fixed offset
-                        int imgOffset = 5; // encoding(1) + format(3) + type(1)
-                        if (imgOffset < frameData.length) {
-                          metadata.pictures.add(
-                            Picture(
-                              frameData.sublist(imgOffset),
-                              'image/jpeg',
-                              PictureType.coverFront,
-                            ),
+                      if (picIndex != -1) {
+                        // PIC frame header is 6 bytes: ID(3), Size(3)
+                        final size =
+                            (bytes[picIndex + 3] << 16) |
+                            (bytes[picIndex + 4] << 8) |
+                            bytes[picIndex + 5];
+                        if (size > 0 && picIndex + 6 + size <= bytes.length) {
+                          final frameData = bytes.sublist(
+                            picIndex + 6,
+                            picIndex + 6 + size,
                           );
+                          // Skip encoding(1) + format(3) + type(1)
+                          int imgOffset = 5;
+                          if (imgOffset < frameData.length) {
+                            metadata.pictures.add(
+                              Picture(
+                                frameData.sublist(imgOffset),
+                                'image/jpeg',
+                                PictureType.coverFront,
+                              ),
+                            );
+                          }
                         }
                       }
                     }
+                  } finally {
+                    fallbackReader.closeSync();
                   }
                 } catch (_) {}
               }

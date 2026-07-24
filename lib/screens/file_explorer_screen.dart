@@ -17,15 +17,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:go_router/go_router.dart';
 import 'package:signals/signals_flutter.dart';
 import '../signals/audio_signal.dart';
-import '../router/routes.dart';
+import '../signals/overlay_signal.dart';
 import '../models/song.dart';
 import '../services/album_art_cache.dart';
+import '../services/navigation/back_handler.dart';
 import '../utils/navigation.dart';
 import 'package:path/path.dart' as p;
-import '../widgets/playlist_dialogs.dart';
+import '../widgets/dialogs/playlist_dialogs.dart';
 
 class FileExplorerScreen extends StatefulWidget {
   final String? initialPath;
@@ -86,154 +86,111 @@ class _FileExplorerScreenState extends State<FileExplorerScreen> {
 
     final currentPath = _currentPath ?? '';
 
-    return Watch((context) {
-      return PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, result) async {
-          if (didPop) return;
-
-          // Priority 1: Minimize Player if open
-          if (audioSignal.playerExpansion.value > 0.001) {
-            audioSignal.minimizePlayerTrigger.value++;
-            return;
-          }
-
-          final musicPath = await audioSignal.getMusicPath();
-          if (currentPath == musicPath) {
-            // At root, go back to library/home
-            if (context.mounted) {
-              if (context.canPop()) {
-                context.pop();
-              } else {
-                navigateGo(context, AppRoutes.library);
-              }
-            }
-            return;
-          }
-
-          // Go up one level
-          final parent = Directory(currentPath).parent;
-          if (context.mounted) {
-            navigateGo(context, '${AppRoutes.explorer}/${Uri.encodeComponent(parent.path)}');
-          }
-        },
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Padding(
-                padding: EdgeInsets.only(
-                  top:
-                      24.0 +
-                      ((Platform.isAndroid || Platform.isIOS)
-                          ? (50.0 + MediaQuery.of(context).padding.top)
-                          : 50.0),
-                  left: 24.0,
-                  right: 24.0,
-                  bottom: 24.0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        if (!(Platform.isAndroid || Platform.isIOS)) ...[
-                          IconButton(
-                            icon: Icon(
-                              Icons.arrow_back,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.54),
-                            ),
-                            onPressed: () async {
-                              final musicPath = await audioSignal.getMusicPath();
-                              if (currentPath == musicPath) {
-                                if (context.mounted) {
-                                  if (context.canPop()) {
-                                    context.pop();
-                                  } else {
-                                    navigateGo(context, AppRoutes.library);
-                                  }
-                                }
-                              } else {
-                                final parent = Directory(currentPath).parent;
-                                if (context.mounted) {
-                                  navigateGo(
-                                    context,
-                                    '/explorer/${Uri.encodeComponent(parent.path)}',
-                                  );
-                                }
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        Expanded(
-                          child: Text(
-                            currentPath,
-                            style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.38),
-                              fontSize: 14,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+    return SignalBuilder(builder: (context) {
+      // The shell's central PopScope + AppBackHandler now owns back
+      // navigation. Directory drilling is push-based (`navigatePush`), so
+      // a normal system-back pop unwinds the explorer stack until the root
+      // is reached; at the root `router.canPop()` is false and the OS takes
+      // over. The desktop-only header back arrow delegates to the same
+      // handler so the priority list (player minimize, overlay close, push
+      // pop, history pop) is honoured.
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Padding(
+              padding: EdgeInsets.only(
+                top:
+                    24.0 +
+                    ((Platform.isAndroid || Platform.isIOS)
+                        ? (50.0 + MediaQuery.of(context).padding.top)
+                        : 50.0),
+                left: 24.0,
+                right: 24.0,
+                bottom: 24.0,
               ),
-
-              // Explorer List
-              Expanded(
-                child: _items!.isEmpty
-                    ? Center(
-                        child: Text(
-                          'No music files found in this folder',
-                          style: TextStyle(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (!(Platform.isAndroid || Platform.isIOS)) ...[
+                        IconButton(
+                          icon: Icon(
+                            Icons.arrow_back,
                             color: Theme.of(
                               context,
                             ).colorScheme.onSurface.withValues(alpha: 0.54),
                           ),
+                          onPressed: () => appBackHandler.invoke(context),
                         ),
-                      )
-                    : ListView.builder(
-                        padding: EdgeInsets.fromLTRB(
-                          24,
-                          0,
-                          24,
-                          audioSignal.reservedHeight.value,
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: Text(
+                          currentPath,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.38),
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        itemCount: _items!.length,
-                        itemBuilder: (context, index) {
-                          final item = _items![index];
-                          if (item is Directory) {
-                            return _FolderTile(
-                              directory: item,
-                              onTap: () {
-                                navigatePush(
-                                  context,
-                                  '/explorer/${Uri.encodeComponent(item.path)}',
-                                );
-                              },
-                            );
-                          } else if (item is File) {
-                            return _FileTile(
-                              file: item,
-                              onTap: () => audioSignal.playFile(item),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        },
                       ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+
+            // Explorer List
+            Expanded(
+              child: _items!.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No music files found in this folder',
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.54),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: EdgeInsets.fromLTRB(
+                        24,
+                        0,
+                        24,
+                        audioSignal.reservedHeight.value,
+                      ),
+                      itemCount: _items!.length,
+                      itemBuilder: (context, index) {
+                        final item = _items![index];
+                        if (item is Directory) {
+                          return _FolderTile(
+                            directory: item,
+                            onTap: () {
+                              navigatePush(
+                                context,
+                                '/explorer/${Uri.encodeComponent(item.path)}',
+                              );
+                            },
+                          );
+                        } else if (item is File) {
+                          return _FileTile(
+                            file: item,
+                            onTap: () => audioSignal.playFile(item),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+            ),
+          ],
         ),
       );
     });
@@ -294,6 +251,8 @@ class _FolderTile extends StatelessWidget {
       Offset.zero & overlay.size,
     );
 
+    overlaySignal.push(ActiveOverlay.folderMenu);
+
     showMenu(
       context: context,
       position: position,
@@ -312,6 +271,7 @@ class _FolderTile extends StatelessWidget {
             ),
           ),
           onTap: () {
+            overlaySignal.pop(ActiveOverlay.folderMenu);
             // We need to show another menu to pick the playlist
             Future.delayed(const Duration(milliseconds: 100), () {
               PlaylistPickerDialog.show(context, folderPath: directory.path);
@@ -319,7 +279,7 @@ class _FolderTile extends StatelessWidget {
           },
         ),
       ],
-    );
+    ).then((_) => overlaySignal.pop(ActiveOverlay.folderMenu));
   }
 }
 

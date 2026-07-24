@@ -14,9 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-/// Stub used on non-Linux platforms (Android, iOS, web). The conditional
-/// import in `mpris_helper.dart` selects this file unless `dart:io` is
-/// available, in which case `mpris_helper_linux.dart` is loaded instead.
+/// Stub used on platforms where `dart:io` is unavailable (i.e. the web).
+/// The conditional import in `mpris_helper.dart` selects this file unless
+/// `dart.library.io` is available, in which case `mpris_helper_native.dart`
+/// is loaded instead — that file then guards the actual registration on
+/// `Platform.isLinux` to avoid attempting D-Bus on Android/iOS.
 ///
 /// Public so the conditional import in `mpris_helper.dart` can resolve it.
 void registerMprisPlatformImpl() {

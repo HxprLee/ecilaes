@@ -16,7 +16,14 @@ plugins {
 
 android {
     namespace = "org.hxprlee.ecilaes"
-    compileSdk = flutter.compileSdkVersion
+    // compileSdk must be 36 — many plugins (file_selector, flutter_curl,
+    // media_kit, shared_preferences, sqflite, url_launcher, etc.) require it
+    // via AAR metadata. targetSdk stays at 34: it controls the Android
+    // runtime contract (MediaSession behavior, etc.) and 34 is what
+    // audio_service 0.18.18 was built and tested against, so its
+    // notification / lock-screen / headset callbacks fire correctly on
+    // Android 14+.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -29,14 +36,15 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "org.hxprlee.ecilaes"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // Match compileSdk so MediaSession uses the contract audio_service
+        // 0.18.18 was built against.
+        targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Explicit because Flutter's `compileFlutterBuildRelease` task reads
+        // `mergedFlavor.minSdkVersion` and NPEs when it's unset on AGP 8.11+.
+        minSdk = maxOf(flutter.minSdkVersion, 21)
     }
 
     signingConfigs {

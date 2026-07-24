@@ -28,7 +28,7 @@ class LibraryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: CustomScrollView(
@@ -50,47 +50,47 @@ class LibraryScreen extends StatelessWidget {
                   _CategoryCard(
                     title: 'Favorites',
                     icon: FontAwesomeIcons.solidHeart,
-                    onTap: () => navigateGo(context, '${AppRoutes.playlists}/favorites'),
+                    onTap: () => navigatePush(context, '${AppRoutes.playlists}/favorites'),
                   ),
                   _CategoryCard(
                     title: 'Most Played',
                     icon: FontAwesomeIcons.fireFlameCurved,
-                    onTap: () => navigateGo(context, AppRoutes.mostPlayed),
+                    onTap: () => navigatePush(context, AppRoutes.mostPlayed),
                   ),
                   _CategoryCard(
                     title: 'Recently Played',
                     icon: FontAwesomeIcons.clockRotateLeft,
-                    onTap: () => navigateGo(context, AppRoutes.recentlyPlayed),
+                    onTap: () => navigatePush(context, AppRoutes.recentlyPlayed),
                   ),
                   _CategoryCard(
                     title: 'Albums',
                     icon: FontAwesomeIcons.compactDisc,
-                    onTap: () => navigateGo(context, AppRoutes.albums),
+                    onTap: () => navigatePush(context, AppRoutes.albums),
                   ),
                   _CategoryCard(
                     title: 'Songs',
                     icon: FontAwesomeIcons.music,
-                    onTap: () => navigateGo(context, AppRoutes.songs),
+                    onTap: () => navigatePush(context, AppRoutes.songs),
                   ),
                   _CategoryCard(
                     title: 'Playlists',
                     icon: FontAwesomeIcons.list,
-                    onTap: () => navigateGo(context, AppRoutes.playlists),
+                    onTap: () => navigatePush(context, AppRoutes.playlists),
                   ),
                   _CategoryCard(
                     title: 'Artists',
                     icon: FontAwesomeIcons.user,
-                    onTap: () => navigateGo(context, AppRoutes.artists),
+                    onTap: () => navigatePush(context, AppRoutes.artists),
                   ),
                   _CategoryCard(
                     title: 'Downloaded',
                     icon: FontAwesomeIcons.circleCheck,
-                    onTap: () => navigateGo(context, AppRoutes.explorer),
+                    onTap: () => navigatePush(context, AppRoutes.explorer),
                   ),
                   _CategoryCard(
                     title: 'Folders',
                     icon: FontAwesomeIcons.solidFolder,
-                    onTap: () => navigateGo(context, AppRoutes.explorer),
+                    onTap: () => navigatePush(context, AppRoutes.explorer),
                   ),
                 ]),
               ),
@@ -104,7 +104,7 @@ class LibraryScreen extends StatelessWidget {
             const SliverPageHeader(title: 'YouTube Music', subtitle: 'Saved from YouTube'),
 
             // YouTube Grid
-            Watch((context) {
+            SignalBuilder(builder: (context) {
               final hasCookie = settingsSignal.ytAuthCookie.value != null && settingsSignal.ytAuthCookie.value!.isNotEmpty;
               
               if (!hasCookie) {
@@ -125,7 +125,7 @@ class LibraryScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 16),
                           FilledButton(
-                            onPressed: () => navigateGo(context, AppRoutes.library),
+                            onPressed: () => navigateTab(context, AppRoutes.library),
                             child: const Text('Go to Settings'),
                           ),
                         ],
@@ -148,22 +148,22 @@ class LibraryScreen extends StatelessWidget {
                     _CategoryCard(
                       title: 'Liked Songs',
                       icon: FontAwesomeIcons.solidThumbsUp,
-                      onTap: () => navigateGo(context, AppRoutes.ytPlaylistLM),
+                      onTap: () => navigatePush(context, AppRoutes.ytPlaylistLM),
                     ),
                     _CategoryCard(
                       title: 'Playlists',
                       icon: FontAwesomeIcons.list,
-                      onTap: () => navigateGo(context, AppRoutes.ytLibraryPlaylists),
+                      onTap: () => navigatePush(context, AppRoutes.ytLibraryPlaylists),
                     ),
                     _CategoryCard(
                       title: 'Albums',
                       icon: FontAwesomeIcons.compactDisc,
-                      onTap: () => navigateGo(context, AppRoutes.ytLibraryAlbums),
+                      onTap: () => navigatePush(context, AppRoutes.ytLibraryAlbums),
                     ),
                     _CategoryCard(
                       title: 'Artists',
                       icon: FontAwesomeIcons.user,
-                      onTap: () => navigateGo(context, AppRoutes.ytLibraryArtists),
+                      onTap: () => navigatePush(context, AppRoutes.ytLibraryArtists),
                     ),
                   ]),
                 ),

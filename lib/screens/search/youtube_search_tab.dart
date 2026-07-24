@@ -81,7 +81,7 @@ class _YouTubeResultsTabState extends State<YouTubeResultsTab> {
       controller: _scrollController,
       slivers: [
         ..._buildResultsSlivers(context),
-        Watch((context) {
+        SignalBuilder(builder: (context) {
           final isLoading = searchSignal.isSearchingYoutube.value;
           final hasMore = searchSignal.hasMoreYtResults.value;
           if (!isLoading && !hasMore) {
@@ -121,11 +121,11 @@ class _YouTubeResultsTabState extends State<YouTubeResultsTab> {
   }
 
   List<Widget> _buildSongsSlivers(BuildContext context) {
-    final resultsWidget = Watch((context) {
+    final resultsWidget = SignalBuilder(builder: (context) {
       return StandardSliverList<Song>(
         items: widget.songResults,
         isLoading: searchSignal.isSearchingYoutube.value && widget.songResults.isEmpty,
-        loadingWidget: const SearchSkeleton(),
+        loadingSlivers: [const SearchSkeleton()],
         emptyMessage: widget.isSearching ? 'No YouTube songs found' : 'Start typing to search',
         itemBuilder: (context, song, index) => SongTile(
           song: song,

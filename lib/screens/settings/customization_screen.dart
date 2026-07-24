@@ -65,8 +65,7 @@ class CustomizationScreen extends StatelessWidget {
                               title: 'Theme Style',
                               subtitle: 'Choose color palette',
                               showLeading: false,
-                              trailing: Watch(
-                                (context) => _buildThemeStyleButton(context),
+                              trailing: SignalBuilder(builder: (context) => _buildThemeStyleButton(context),
                               ),
                             ),
                             const SettingsDivider(indent: 16),
@@ -74,13 +73,12 @@ class CustomizationScreen extends StatelessWidget {
                               title: 'Theme',
                               subtitle: 'Choose app appearance',
                               showLeading: false,
-                              trailing: Watch(
-                                (context) => _buildThemeModeButton(context),
+                              trailing: SignalBuilder(builder: (context) => _buildThemeModeButton(context),
                               ),
                             ),
                             const SettingsDivider(indent: 16),
                           ],
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             final scale = settingsSignal.textScaleFactor.value;
                             return SettingsTile(
                               title: 'Text Scale',
@@ -98,7 +96,8 @@ class CustomizationScreen extends StatelessWidget {
                                   final p = int.tryParse(s);
                                   return p != null ? p / 100.0 : null;
                                 },
-                                onChanged: (v) => settingsSignal.updateTextScale(v),
+                                onChanged: (v) =>
+                                    settingsSignal.updateTextScale(v),
                               ),
                             );
                           }),
@@ -109,7 +108,7 @@ class CustomizationScreen extends StatelessWidget {
                     const SizedBox(height: 32),
 
                     // Visual Effects section
-                    const SettingsSectionLabel('Visual Effects'),
+                    const SettingsSectionLabel('Visuals'),
                     SettingsSection(
                       child: Column(
                         children: [
@@ -117,8 +116,7 @@ class CustomizationScreen extends StatelessWidget {
                             title: 'Custom Font (Iosevka)',
                             subtitle: 'Use bundled Iosevka Nerd Font',
                             showLeading: false,
-                            trailing: Watch(
-                              (context) => Switch(
+                            trailing: SignalBuilder(builder: (context) => Switch(
                                 value: settingsSignal.useCustomFont.value,
                                 onChanged: (value) =>
                                     settingsSignal.updateCustomFont(value),
@@ -126,32 +124,12 @@ class CustomizationScreen extends StatelessWidget {
                               ),
                             ),
                           ),
-                          if (_isDesktop) ...[
-                            const SettingsDivider(indent: 16),
-                            SettingsTile(
-                              title: 'Custom Window Controls',
-                              subtitle: 'Use custom buttons',
-                              showLeading: false,
-                              trailing: Watch(
-                                (context) => Switch(
-                                  value: settingsSignal
-                                      .useCustomWindowControls
-                                      .value,
-                                  onChanged: (value) => settingsSignal
-                                      .updateCustomWindowControls(value),
-                                  activeThumbColor:
-                                      context.colorScheme.secondary,
-                                ),
-                              ),
-                            ),
-                          ],
                           const SettingsDivider(indent: 16),
                           SettingsTile(
                             title: 'Blur Effect',
                             subtitle: 'Enable backdrop blur globally',
                             showLeading: false,
-                            trailing: Watch(
-                              (context) => Switch(
+                            trailing: SignalBuilder(builder: (context) => Switch(
                                 value: settingsSignal.enableGlobalBlur.value,
                                 onChanged: (value) =>
                                     settingsSignal.updateGlobalBlur(value),
@@ -159,81 +137,9 @@ class CustomizationScreen extends StatelessWidget {
                               ),
                             ),
                           ),
-                          if (_isDesktop) ...[
-                            const SettingsDivider(indent: 16),
-                            SettingsTile(
-                              title: 'Window Transparency',
-                              subtitle:
-                                  'Translucent background (requires restart)',
-                              showLeading: false,
-                              trailing: Watch(
-                                (context) => Switch(
-                                  value: settingsSignal
-                                      .enableWindowTransparency
-                                      .value,
-                                  onChanged: (value) => settingsSignal
-                                      .updateWindowTransparency(value),
-                                  activeThumbColor:
-                                      context.colorScheme.secondary,
-                                ),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),
-
-                    const SizedBox(height: 32),
-
-                    // Layout section
-                    const SettingsSectionLabel('Layout'),
-                    SettingsSection(
-                      child: Column(
-                        children: [
-                          SettingsTile(
-                            title: 'Player Layout',
-                            subtitle: 'Customize the action buttons row',
-                            showLeading: false,
-                            onTap: () => navigateGo(
-                              context,
-                              AppRoutes.settingsCustomizationPlayerLayout,
-                            ),
-                          ),
-                          const SettingsDivider(indent: 16),
-                          SettingsTile(
-                            title: 'Context Menu Actions',
-                            subtitle: 'Customize the long-press menu actions',
-                            showLeading: false,
-                            onTap: () => navigateGo(
-                              context,
-                              AppRoutes.settingsCustomizationActionsLayout,
-                            ),
-                          ),
-                          const SettingsDivider(indent: 16),
-                          SettingsTile(
-                            title: 'Lyrics View Layout',
-                            subtitle: 'Customize lyrics alignment and fonts',
-                            showLeading: false,
-                            onTap: () => navigateGo(
-                              context,
-                              AppRoutes.settingsCustomizationLyricsLayout,
-                            ),
-                          ),
-                          const SettingsDivider(indent: 16),
-                          SettingsTile(
-                            title: 'Sidebar Items',
-                            subtitle:
-                                'Choose which library items appear in sidebar',
-                            showLeading: false,
-                            onTap: () => navigateGo(
-                              context,
-                              AppRoutes.settingsCustomizationSidebarLayout,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
                     if (_isDesktop) ...[
                       const SizedBox(height: 32),
                       const SettingsSectionLabel('Window'),
@@ -244,8 +150,7 @@ class CustomizationScreen extends StatelessWidget {
                               title: 'Custom Window Controls',
                               subtitle: 'Use custom buttons',
                               showLeading: false,
-                              trailing: Watch(
-                                (context) => Switch(
+                              trailing: SignalBuilder(builder: (context) => Switch(
                                   value: settingsSignal
                                       .useCustomWindowControls
                                       .value,
@@ -262,8 +167,7 @@ class CustomizationScreen extends StatelessWidget {
                               subtitle:
                                   'Translucent background (requires restart)',
                               showLeading: false,
-                              trailing: Watch(
-                                (context) => Switch(
+                              trailing: SignalBuilder(builder: (context) => Switch(
                                   value: settingsSignal
                                       .enableWindowTransparency
                                       .value,
@@ -278,10 +182,59 @@ class CustomizationScreen extends StatelessWidget {
                         ),
                       ),
                     ],
+                    const SizedBox(height: 32),
+
+                    // Layout section
+                    const SettingsSectionLabel('Layout'),
+                    SettingsSection(
+                      child: Column(
+                        children: [
+                          SettingsTile(
+                            title: 'Player Layout',
+                            subtitle: 'Customize the action buttons row',
+                            showLeading: false,
+                            onTap: () => navigatePush(
+                              context,
+                              AppRoutes.settingsCustomizationPlayerLayout,
+                            ),
+                          ),
+                          const SettingsDivider(indent: 16),
+                          SettingsTile(
+                            title: 'Context Menu Actions',
+                            subtitle: 'Customize the long-press menu actions',
+                            showLeading: false,
+                            onTap: () => navigatePush(
+                              context,
+                              AppRoutes.settingsCustomizationActionsLayout,
+                            ),
+                          ),
+                          const SettingsDivider(indent: 16),
+                          SettingsTile(
+                            title: 'Lyrics View Layout',
+                            subtitle: 'Customize lyrics alignment and fonts',
+                            showLeading: false,
+                            onTap: () => navigatePush(
+                              context,
+                              AppRoutes.settingsCustomizationLyricsLayout,
+                            ),
+                          ),
+                          const SettingsDivider(indent: 16),
+                          SettingsTile(
+                            title: 'Sidebar Items',
+                            subtitle:
+                                'Choose which library items appear in sidebar',
+                            showLeading: false,
+                            onTap: () => navigatePush(
+                              context,
+                              AppRoutes.settingsCustomizationSidebarLayout,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
 
                     const SizedBox(height: 24),
-                    Watch(
-                      (context) =>
+                    SignalBuilder(builder: (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
                     ),
                   ],
@@ -312,7 +265,7 @@ class CustomizationScreen extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: Watch((context) => _buildThemeStyleButton(context)),
+            child: SignalBuilder(builder: (context) => _buildThemeStyleButton(context)),
           ),
         ],
       ),
@@ -337,13 +290,12 @@ class CustomizationScreen extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: Watch((context) => _buildThemeModeButton(context)),
+            child: SignalBuilder(builder: (context) => _buildThemeModeButton(context)),
           ),
         ],
       ),
     );
   }
-
 
   Widget _buildThemeStyleButton(BuildContext context) {
     return SegmentedButton<AppThemeStyle>(
@@ -392,4 +344,3 @@ class CustomizationScreen extends StatelessWidget {
     );
   }
 }
-

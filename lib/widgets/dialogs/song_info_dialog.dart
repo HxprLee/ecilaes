@@ -17,60 +17,84 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
-import '../models/song.dart';
-import 'components/app_dialog.dart';
+import '../../models/song.dart';
+import '../../signals/overlay_signal.dart';
+import '../components/app_dialog.dart';
 import 'edit_metadata_dialog.dart';
 
 void showSongInfoDialog(BuildContext context, Song song) {
-  showDialog(
+  overlaySignal.push(ActiveOverlay.songInfo);
+
+  showGeneralDialog(
     context: context,
-    builder: (context) {
-      return AppDialog(
-        titleIcon: Icon(
-          Icons.info_outline,
-          color: Theme.of(context).colorScheme.secondary,
-          size: 24,
-        ),
-        title: 'Song info',
-        maxWidth: 440,
-        trailing: song.path.startsWith('yt:')
-            ? null
-            : IconButton(
-                  icon: Icon(
-                    Icons.edit_outlined,
-                    color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.6),
-                    size: 20,
-                  ),
-                  tooltip: 'Edit info',
-                  onPressed: () {
-                    Navigator.pop(context);
-                    showDialog(
-                      context: context,
-                      builder: (context) => EditMetadataDialog(song: song),
-                    );
-                  },
-                ),
-        trailingWidth: 0,
-        content: _SongInfoContent(song: song),
-        actions: [
-          OutlinedButton(
-              onPressed: () => Navigator.pop(context),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.secondary.withValues(alpha: 0.2),
-                ),
-                shape: const StadiumBorder(),
+    barrierDismissible: true,
+    barrierLabel: 'Dismiss',
+    barrierColor: Colors.black54,
+    transitionDuration: const Duration(milliseconds: 150),
+    pageBuilder: (context, animation, secondaryAnimation) {
+      return Align(
+        alignment: Alignment.center,
+        child: Material(
+          color: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
+            ),
+            child: AppDialog(
+              titleIcon: Icon(
+                Icons.info_outline,
+                color: Theme.of(context).colorScheme.secondary,
+                size: 24,
               ),
-              child: Text(
-                'Close',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              title: 'Song info',
+              maxWidth: 440,
+              trailing: song.path.startsWith('yt:')
+                  ? null
+                  : IconButton(
+                      icon: Icon(
+                        Icons.edit_outlined,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.secondary.withValues(alpha: 0.6),
+                        size: 14,
+                      ),
+                      tooltip: 'Edit info',
+                      onPressed: () {
+                        overlaySignal.pop(ActiveOverlay.songInfo);
+                        Navigator.pop(context);
+                        EditMetadataDialog.show(context, song: song);
+                      },
+                    ),
+              trailingWidth: 0,
+              content: SizedBox(
+                height: 400,
+                child: _SongInfoContent(song: song),
+              ),
+              actions: [
+                OutlinedButton(
+                  onPressed: () {
+                    overlaySignal.pop(ActiveOverlay.songInfo);
+                    Navigator.pop(context);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.secondary.withValues(alpha: 0.2),
+                    ),
+                    shape: const StadiumBorder(),
+                  ),
+                  child: Text(
+                    'Close',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: Theme.of(context).colorScheme.secondary,
                     ),
-              ),
+                  ),
+                ),
+              ],
             ),
-        ],
+          ),
+        ),
       );
     },
   );
@@ -102,13 +126,13 @@ class _SongInfoContent extends StatelessWidget {
 
         try {
           final metadata = readMetadata(file, getImage: false);
-          
+
           if (metadata.title != null) info['Title'] = metadata.title!;
           if (metadata.artist != null) info['Artist'] = metadata.artist!;
           if (metadata.album != null) info['Album'] = metadata.album!;
-          
+
           if (metadata.year != null) info['Year'] = metadata.year.toString();
-          
+
           if (metadata.genres.isNotEmpty) {
             info['Genre'] = metadata.genres.join(', ');
           }
@@ -124,7 +148,8 @@ class _SongInfoContent extends StatelessWidget {
             final secs = (d.inSeconds % 60).toString().padLeft(2, '0');
             info['Duration'] = '$mins:$secs';
           }
-          if (metadata.bitrate != null) info['Bitrate'] = '${(metadata.bitrate! / 1000).round()} kbps';
+          if (metadata.bitrate != null)
+            info['Bitrate'] = '${(metadata.bitrate! / 1000).round()} kbps';
         } catch (e) {
           info['Error'] = 'Could not read detailed metadata';
         }
@@ -140,50 +165,59 @@ class _SongInfoContent extends StatelessWidget {
       future: _fetchInfo(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(48.0),
+          return const Center(
             child: CircularProgressIndicator(),
           );
         }
         if (snapshot.hasError || !snapshot.hasData) {
           return Padding(
             padding: const EdgeInsets.all(24.0),
-            child: Text('Error loading info', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            child: Text(
+              'Error loading info',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           );
         }
 
         final info = snapshot.data!;
-        return ListView.separated(
+        return ListView.builder(
           shrinkWrap: true,
+          padding: const EdgeInsets.only(bottom: 8),
           itemCount: info.length,
-          padding: const EdgeInsets.only(top: 0, bottom: 8),
-          separatorBuilder: (_, _) => Divider(
-            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-            height: 1,
-          ),
           itemBuilder: (context, index) {
             final key = info.keys.elementAt(index);
             final val = info.values.elementAt(index);
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    key,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (index > 0)
+                  Divider(
+                    color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
+                    height: 1,
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        key,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.5),
                         ),
-                  ),
-                  const SizedBox(height: 4),
-                  SelectableText(
-                    val,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      ),
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        val,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.secondary,
                         ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             );
           },
         );

@@ -35,6 +35,35 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+
+            <!-- Receive plain-text shares (YT/YTMusic URLs from other apps). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+
+            <!-- Receive shared audio files (best-effort). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="audio/*"/>
+            </intent-filter>
+
+            <!-- Receive implicit-view YT/YTMusic links from browsers, etc. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="music.youtube.com"/>
+                <data android:scheme="https"
+                      android:host="www.youtube.com"/>
+                <data android:scheme="https"
+                      android:host="youtube.com"/>
+                <data android:scheme="https"
+                      android:host="youtu.be"/>
+            </intent-filter>
         </activity>
 
         <service android:name="com.ryanheise.audioservice.AudioService"
@@ -62,6 +91,17 @@
             <meta-data android:name="android.appwidget.provider"
                 android:resource="@xml/music_widget_info" />
         </receiver>
+
+        <!-- FileProvider for sharing local audio files. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
@@ -100,6 +140,11 @@
             <category android:name="android.intent.category.BROWSABLE"/>
             <data android:scheme="https"
                   android:host="accounts.google.com"/>
+        </intent>
+        <!-- Required to resolve apps for ACTION_SEND (share-out chooser). -->
+        <intent>
+            <action android:name="android.intent.action.SEND"/>
+            <data android:mimeType="*/*"/>
         </intent>
     </queries>
 </manifest>

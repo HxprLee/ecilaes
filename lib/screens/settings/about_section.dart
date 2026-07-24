@@ -44,7 +44,7 @@ class AboutSection extends StatelessWidget {
                     Center(
                       child: Column(
                         children: [
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             return SvgPicture.asset(
                               'assets/app_icon.svg',
                               width: 100,
@@ -66,7 +66,7 @@ class AboutSection extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Version 0.5.4',
+                            'Version 0.5.5',
                             style: TextStyle(
                               color: Theme.of(
                                 context,
@@ -113,8 +113,7 @@ class AboutSection extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Watch(
-                      (context) =>
+                    SignalBuilder(builder: (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
                     ),
                   ],

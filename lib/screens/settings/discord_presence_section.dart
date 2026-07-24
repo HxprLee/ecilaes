@@ -46,7 +46,7 @@ class DiscordPresenceSection extends StatelessWidget {
                     SettingsSection(
                       child: Column(
                         children: [
-                          Watch((context) => SettingsTile(
+                          SignalBuilder(builder: (context) => SettingsTile(
                             title: 'Listen on YouTube Button',
                             subtitle: 'Show "Listen on YouTube" button in Discord status',
                             showLeading: false,
@@ -59,7 +59,7 @@ class DiscordPresenceSection extends StatelessWidget {
                             ),
                           )),
                           const SettingsDivider(indent: 16),
-                          Watch((context) => SettingsTile(
+                          SignalBuilder(builder: (context) => SettingsTile(
                             title: 'Open Project Button',
                             subtitle: 'Show "Open Project" button in Discord status',
                             showLeading: false,

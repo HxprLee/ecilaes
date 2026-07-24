@@ -35,6 +35,16 @@ class _AppWindowListener extends WindowListener {
   Future<void> onWindowClose() async {
     audioSignal.stop();
     await audioSignal.disposePlayer();
+    try {
+      await DiscordRpcService().dispose();
+    } catch (_) {
+      // Don't block shutdown on a misbehaving RPC client.
+    }
+    try {
+      await PlatformService().dispose();
+    } catch (_) {
+      // Don't block shutdown on a misbehaving platform service.
+    }
     exit(0);
   }
 }

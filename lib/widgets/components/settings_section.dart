@@ -37,7 +37,7 @@ class SettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final blur = settingsSignal.enableGlobalBlur.value;
       return Padding(
         padding: padding,

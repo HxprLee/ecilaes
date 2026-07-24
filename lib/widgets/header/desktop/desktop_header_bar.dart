@@ -109,55 +109,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
     _overlayEntry?.markNeedsBuild();
   }
 
-  String _getPageTitle(String route) {
-    if (route == '/') return 'Home';
-    if (route == '/songs') return 'Songs';
-    if (route == '/search') return 'Search';
-    if (route == '/library') return 'Library';
-    if (route == '/explorer') return 'Folders';
-    if (route == '/recently-played') return 'Recently Played';
-    if (route == '/recently-added') return 'Recently Added';
-    if (route == '/playlists') return 'Playlists';
-    if (route == '/albums') return 'Albums';
-    if (route == '/artists') return 'Artists';
-    if (route == '/youtube') return 'YouTube Music';
-    if (route.startsWith('/youtube/album')) return 'Album';
-    if (route.startsWith('/youtube/artist')) return 'Artist';
-    if (route.startsWith('/youtube/playlist')) return 'Playlist';
-    if (route.startsWith('/albums/')) {
-      final parts = route.split('/');
-      if (parts.length >= 4) return Uri.decodeComponent(parts.last);
-    }
-    if (route.startsWith('/artists/')) {
-      final parts = route.split('/');
-      if (parts.length >= 3) return Uri.decodeComponent(parts.last);
-    }
-    if (route == '/settings') return 'Settings';
-    if (route == '/settings/customization') return 'Customization';
-    if (route == '/settings/playback') return 'Playback';
-    if (route == '/settings/library') return 'Library';
-    if (route == '/settings/about') return 'About';
-    if (route == '/settings/customization/player-layout') return 'Player Bar Layout';
-    if (route == '/settings/customization/lyrics-layout') return 'Lyrics Layout';
-    if (route == '/settings/customization/actions-layout') return 'Actions Sheet Layout';
-    if (route == '/settings/customization/sidebar-layout') return 'Sidebar Items';
-    if (route == '/settings/customization/discord-presence') return 'Discord Rich Presence';
-    if (route == '/settings/library/manage_cache') return 'Cache Management';
-    if (route == AppRoutes.settingsIntegrationsYoutubeLogin) return 'YouTube Music Login';
-    if (route.startsWith('/explorer/')) return 'Folders';
-    if (route.startsWith('/playlist/')) {
-      final id = route.split('/').last;
-      try {
-        final playlist = audioSignal.playlists.value.firstWhere(
-          (p) => p.id == id,
-        );
-        return playlist.name;
-      } catch (_) {
-        return 'Playlist';
-      }
-    }
-    return '';
-  }
+  String _getPageTitle(String route) => pageTitleFor(route);
 
   void _selectSuggestion(String suggestion) {
     widget.searchController.text = suggestion;
@@ -183,7 +135,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
   }
 
   Widget _buildOverlay(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final suggestions = searchSignal.searchSuggestions.value;
       final query = searchSignal.searchQuery.value;
 
@@ -242,7 +194,9 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
                       leading: FaIcon(
                         FontAwesomeIcons.magnifyingGlass,
                         size: 14,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
                       title: Text(
                         suggestion,
@@ -272,7 +226,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
       child: Row(
         children: [
           // Invisible overlay controller that subscribes to search signals
-          Watch((context) {
+          SignalBuilder(builder: (context) {
             searchSignal.searchSuggestions.value;
             searchSignal.searchQuery.value;
             final query = searchSignal.searchQuery.value;
@@ -295,7 +249,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
             opacity: widget.hideContentOpacity,
             child: IgnorePointer(
               ignoring: widget.expansion > 0.5,
-              child: Watch((context) {
+              child: SignalBuilder(builder: (context) {
                 final canBack = navigationSignal.canGoBack;
                 final canFwd = navigationSignal.canGoForward;
                 return Row(
@@ -325,7 +279,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
 
           const SizedBox(width: 16),
           // Morphing Page Title and Art
-          Watch((context) {
+          SignalBuilder(builder: (context) {
             final titleProgress = audioSignal.headerTitleProgress.value;
             final currentRoute = GoRouterState.of(context).uri.toString();
             final routeTitle = _getPageTitle(currentRoute);
@@ -344,45 +298,55 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Builder(builder: (context) {
-                        final playlistId = currentRoute.startsWith('/playlist/')
-                            ? currentRoute.split('/').last
-                            : null;
-                        Playlist? playlist;
-                        if (playlistId != null) {
-                          try {
-                            playlist = audioSignal.playlists.value.firstWhere(
-                              (p) => p.id == playlistId,
+                      Builder(
+                        builder: (context) {
+                          final playlistId =
+                              currentRoute.startsWith('/playlist/')
+                              ? currentRoute.split('/').last
+                              : null;
+                          Playlist? playlist;
+                          if (playlistId != null) {
+                            try {
+                              playlist = audioSignal.playlists.value.firstWhere(
+                                (p) => p.id == playlistId,
+                              );
+                            } catch (_) {}
+                          }
+
+                          if (playlist != null) {
+                            return PlaylistCover(
+                              playlist: playlist,
+                              width: 32,
+                              height: 32,
+                              borderRadius: 4,
                             );
-                          } catch (_) {}
-                        }
+                          }
 
-                        if (playlist != null) {
-                          return PlaylistCover(
-                            playlist: playlist,
-                            width: 32,
-                            height: 32,
-                            borderRadius: 4,
-                          );
-                        }
-
-                        if (audioSignal.headerArtCover.value != null) {
-                          return Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              image: DecorationImage(
-                                image: audioSignal.headerArtCoverIsNetwork.value
-                                    ? NetworkImage(audioSignal.headerArtCover.value!)
-                                    : FileImage(File(audioSignal.headerArtCover.value!)),
-                                fit: BoxFit.cover,
+                          if (audioSignal.headerArtCover.value != null) {
+                            return Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                image: DecorationImage(
+                                  image:
+                                      audioSignal.headerArtCoverIsNetwork.value
+                                      ? NetworkImage(
+                                          audioSignal.headerArtCover.value!,
+                                        )
+                                      : FileImage(
+                                          File(
+                                            audioSignal.headerArtCover.value!,
+                                          ),
+                                        ),
+                                  fit: BoxFit.cover,
+                                ),
                               ),
-                            ),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      }),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
@@ -405,11 +369,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
           }),
 
           // Search Bar — expands to fill remaining space
-          Expanded(
-            child: Center(
-              child: _buildSearchBar(context),
-            ),
-          ),
+          Expanded(child: Center(child: _buildSearchBar(context))),
 
           const SizedBox(width: 16),
 
@@ -458,7 +418,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
               textAlignVertical: TextAlignVertical.center,
               onTap: () {
                 if (widget.searchController.text.trim().isEmpty) {
-                  navigateGo(context, AppRoutes.search);
+                  navigatePush(context, AppRoutes.search);
                 }
               },
               onChanged: (value) => searchSignal.searchQuery.value = value,
@@ -466,7 +426,7 @@ class _DesktopHeaderBarState extends State<DesktopHeaderBar> {
                 searchSignal.searchSuggestions.value = [];
                 searchSignal.addRecentSearch(value);
                 _removeOverlay();
-                navigateGo(context, AppRoutes.searchResult);
+                navigatePush(context, AppRoutes.searchResult);
               },
               decoration: InputDecoration(
                 hintText: 'Search songs, albums, artists',
@@ -527,8 +487,12 @@ class _CircularIconButton extends StatelessWidget {
               icon,
               size: 20,
               color: onPressed != null
-                  ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)
-                  : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.24),
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.7)
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.24),
             ),
           ),
         ),
@@ -604,7 +568,9 @@ class _CircularWindowButton extends StatelessWidget {
             child: Icon(
               icon,
               size: 18,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
           ),
         ),

@@ -47,7 +47,7 @@ class LyricsAppearanceSection extends StatelessWidget {
 
                     const SettingsSectionLabel('Text Alignment'),
                     SettingsSection(
-                      child: Watch((context) {
+                      child: SignalBuilder(builder: (context) {
                         return Padding(
                           padding: const EdgeInsets.all(16.0),
                           child: Column(
@@ -87,7 +87,7 @@ class LyricsAppearanceSection extends StatelessWidget {
                     SettingsSection(
                       child: Column(
                         children: [
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             return SettingsTile(
                               title: 'Active Text Size',
                               subtitle: '${settingsSignal.lyricsActiveFontSize.value.round()}px',
@@ -104,7 +104,7 @@ class LyricsAppearanceSection extends StatelessWidget {
                             );
                           }),
                           const SettingsDivider(indent: 16),
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             return SettingsTile(
                               title: 'Inactive Text Size',
                               subtitle: '${settingsSignal.lyricsInactiveFontSize.value.round()}px',
@@ -121,7 +121,7 @@ class LyricsAppearanceSection extends StatelessWidget {
                             );
                           }),
                           const SettingsDivider(indent: 16),
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             return SettingsTile(
                               title: 'Plain Text Size',
                               subtitle: '${settingsSignal.plainLyricsFontSize.value.round()}px',
@@ -138,7 +138,7 @@ class LyricsAppearanceSection extends StatelessWidget {
                             );
                           }),
                           const SettingsDivider(indent: 16),
-                          Watch((context) {
+                          SignalBuilder(builder: (context) {
                             return SwitchListTile(
                               title: Text(
                                 'Romanized Lyrics',
@@ -169,7 +169,7 @@ class LyricsAppearanceSection extends StatelessWidget {
                     const SizedBox(height: 24),
                     const SettingsSectionLabel('Lyrics Providers'),
                     SettingsSection(
-                      child: Watch((context) {
+                      child: SignalBuilder(builder: (context) {
                         final providers = settingsSignal.lyricsProviders.value;
                         final enabled = settingsSignal.enabledLyricsProviders.value;
 
@@ -225,8 +225,7 @@ class LyricsAppearanceSection extends StatelessWidget {
                     ),
 
                     const SizedBox(height: 24),
-                    Watch(
-                      (context) =>
+                    SignalBuilder(builder: (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
                     ),
                   ],

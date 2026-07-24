@@ -52,7 +52,7 @@ class SettingsScreen extends StatelessWidget {
                             title: 'Customization',
                             subtitle: 'Themes, layouts, and visual effects',
                             onTap: () =>
-                                navigateGo(context, AppRoutes.settingsCustomization),
+                                navigatePush(context, AppRoutes.settingsCustomization),
                           ),
                           const SettingsDivider(),
                           SettingsTile(
@@ -60,21 +60,21 @@ class SettingsScreen extends StatelessWidget {
                             title: 'Playback',
                             subtitle:
                                 'Controls, gestures, and background behavior',
-                            onTap: () => navigateGo(context, AppRoutes.settingsPlayback),
+                            onTap: () => navigatePush(context, AppRoutes.settingsPlayback),
                           ),
                           const SettingsDivider(),
                           SettingsTile(
                             icon: FontAwesomeIcons.music,
                             title: 'Library',
                             subtitle: 'Manage music folders and indexing',
-                            onTap: () => navigateGo(context, AppRoutes.settingsLibrary),
+                            onTap: () => navigatePush(context, AppRoutes.settingsLibrary),
                           ),
                           const SettingsDivider(),
                           SettingsTile(
                             icon: FontAwesomeIcons.plug,
                             title: 'Integrations',
                             subtitle: 'Discord, YouTube Music, and Last.fm',
-                            onTap: () => navigateGo(context, AppRoutes.settingsIntegrations),
+                            onTap: () => navigatePush(context, AppRoutes.settingsIntegrations),
                           ),
                           const SettingsDivider(),
                           SettingsTile(
@@ -82,14 +82,13 @@ class SettingsScreen extends StatelessWidget {
                             title: 'About',
                             subtitle:
                                 'Version information and developer links',
-                            onTap: () => navigateGo(context, AppRoutes.settingsAbout),
+                            onTap: () => navigatePush(context, AppRoutes.settingsAbout),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Watch(
-                      (context) =>
+                    SignalBuilder(builder: (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
                     ),
                   ],

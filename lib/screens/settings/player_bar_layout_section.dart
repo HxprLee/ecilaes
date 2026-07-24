@@ -70,8 +70,7 @@ class PlayerBarLayoutSection extends StatelessWidget {
                     _buildHiddenActions(context),
 
                     const SizedBox(height: 32),
-                    Watch(
-                      (context) =>
+                    SignalBuilder(builder: (context) =>
                           SizedBox(height: audioSignal.reservedHeight.value),
                     ),
                   ],
@@ -91,7 +90,7 @@ class PlayerBarLayoutSection extends StatelessWidget {
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Watch((context) {
+      child: SignalBuilder(builder: (context) {
         final actions = actionsSignal.value;
 
         return DragTarget<_ActionDragData>(
@@ -267,7 +266,7 @@ class PlayerBarLayoutSection extends StatelessWidget {
   }
 
   Widget _buildHiddenActions(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final player = settingsSignal.playerBarActions.value;
       final hidden = _allActionIds.where((id) => !player.contains(id)).toList();
 

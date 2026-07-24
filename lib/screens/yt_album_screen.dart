@@ -48,12 +48,15 @@ class _YtAlbumScreenState extends State<YtAlbumScreen> {
   @override
   void initState() {
     super.initState();
-    audioSignal.headerPageTitle.value = widget.title;
-    final thumb = widget.thumbnailUrl;
-    if (thumb.isNotEmpty) {
-      audioSignal.headerArtCover.value = thumb;
-      audioSignal.headerArtCoverIsNetwork.value = true;
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      audioSignal.headerPageTitle.value = widget.title;
+      final thumb = widget.thumbnailUrl;
+      if (thumb.isNotEmpty) {
+        audioSignal.headerArtCover.value = thumb;
+        audioSignal.headerArtCoverIsNetwork.value = true;
+      }
+    });
     _load();
   }
 
@@ -68,7 +71,10 @@ class _YtAlbumScreenState extends State<YtAlbumScreen> {
   Future<void> _load() async {
     final data = await youtubeDatasource.getAlbumDetail(widget.browseId);
     if (mounted) {
-      setState(() { _albumData = data; _loading = false; });
+      setState(() {
+        _albumData = data;
+        _loading = false;
+      });
       audioSignal.headerPageTitle.value = data['title'] ?? widget.title;
       final thumb = data['thumbnailUrl'] ?? widget.thumbnailUrl;
       if (thumb.isNotEmpty) {
@@ -102,8 +108,8 @@ class _YtAlbumScreenState extends State<YtAlbumScreen> {
             title: title,
             subtitle: [artist, if (year.isNotEmpty) year].join(' • '),
             leading: Container(
-              width: 140,
-              height: 140,
+              width: 120,
+              height: 120,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 color: cs.surfaceContainerHighest,
@@ -115,62 +121,73 @@ class _YtAlbumScreenState extends State<YtAlbumScreen> {
                     : null,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 30,
-                    offset: const Offset(0, 15),
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
                   ),
                 ],
               ),
               child: thumbUrl.isEmpty
                   ? Center(
-                      child: Icon(Icons.album, size: 64,
-                        color: cs.onSurface.withValues(alpha: 0.2)),
+                      child: Icon(
+                        Icons.album,
+                        size: 48,
+                        color: cs.onSurface.withValues(alpha: 0.2),
+                      ),
                     )
                   : null,
             ),
-          ),
-
-          // Actions
-          if (!_loading && tracks.isNotEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                child: Row(
-                  children: [
+            underTextActions: !_loading && tracks.isNotEmpty
+                ? [
                     ElevatedButton.icon(
-                      onPressed: () => audioSignal.playSong(tracks.first, fromList: tracks),
-                      icon: const FaIcon(FontAwesomeIcons.play, size: 16),
+                      onPressed: () =>
+                          audioSignal.playSong(tracks.first, fromList: tracks),
+                      icon: const FaIcon(FontAwesomeIcons.play, size: 14),
                       label: const Text('Play'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: cs.secondary,
                         foregroundColor: cs.onSecondary,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 8,
+                        ),
+                        shape: const StadiumBorder(),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    OutlinedButton.icon(
+                    const SizedBox(width: 8),
+                    OutlinedButton(
                       onPressed: () => audioSignal.playShuffledFromList(tracks),
-                      icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
-                      label: const Text('Shuffle'),
                       style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: cs.secondary.withValues(alpha: 0.2)),
-                        foregroundColor: cs.secondary,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: const CircleBorder(),
+                        padding: const EdgeInsets.all(12),
+                        side: BorderSide(
+                          color: cs.secondary.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: FaIcon(
+                        FontAwesomeIcons.shuffle,
+                        size: 14,
+                        color: cs.secondary,
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                  ]
+                : null,
+            backgroundImage: thumbUrl.isNotEmpty
+                ? NetworkImage(thumbUrl)
+                : null,
+          ),
 
           if (_loading)
-            const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
+            const SliverFillRemaining(
+              child: Center(child: CircularProgressIndicator()),
+            )
           else if (tracks.isEmpty)
             SliverFillRemaining(
               child: Center(
-                child: Text('No tracks found', style: TextStyle(color: cs.secondary.withValues(alpha: 0.6))),
+                child: Text(
+                  'No tracks found',
+                  style: TextStyle(color: cs.secondary.withValues(alpha: 0.6)),
+                ),
               ),
             )
           else
@@ -179,14 +196,21 @@ class _YtAlbumScreenState extends State<YtAlbumScreen> {
               showIndex: true,
               addBottomPadding: false,
               trailingBuilder: (context, song, index) => IconButton(
-                onPressed: () => showSongMoreActionsSheet(context: context, song: song),
-                icon: FaIcon(FontAwesomeIcons.ellipsisVertical, size: 16,
-                  color: cs.onSurface.withValues(alpha: 0.38)),
+                onPressed: () =>
+                    showSongMoreActionsSheet(context: context, song: song),
+                icon: FaIcon(
+                  FontAwesomeIcons.ellipsisVertical,
+                  size: 16,
+                  color: cs.onSurface.withValues(alpha: 0.38),
+                ),
               ),
             ),
 
           SliverToBoxAdapter(
-            child: Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
+            child: SignalBuilder(
+              builder: (context) =>
+                  SizedBox(height: audioSignal.reservedHeight.value),
+            ),
           ),
         ],
       ),

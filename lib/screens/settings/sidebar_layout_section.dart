@@ -44,7 +44,7 @@ class SidebarLayoutSection extends StatelessWidget {
                   children: [
                     const SizedBox(height: 24),
                     SettingsSection(
-                      child: Watch((context) {
+                      child: SignalBuilder(builder: (context) {
                         final pinnedItems = settingsSignal.pinnedSidebarItems.value;
                         final allItems = [
                           {'id': 'albums', 'label': 'Albums', 'icon': Icons.album},
@@ -108,7 +108,7 @@ class SidebarLayoutSection extends StatelessWidget {
                       }),
                     ),
                     const SizedBox(height: 24),
-                    Watch((context) =>
+                    SignalBuilder(builder: (context) =>
                         SizedBox(height: audioSignal.reservedHeight.value)),
                   ],
                 ),

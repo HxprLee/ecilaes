@@ -31,7 +31,7 @@ class AlbumsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final albums = audioSignal.albums.value;
       final artDir = audioSignal.albumArtDir.value;
       final isGrid = audioSignal.isAlbumsGridView.value;
@@ -61,7 +61,7 @@ class AlbumsScreen extends StatelessWidget {
                 itemBuilder: (context, album, index) {
                   final artPath = SongTile.getArtPath(album.firstSongPath, artDir);
                   return GestureDetector(
-                    onTap: () => navigateGo(
+                    onTap: () => navigatePush(
                       context,
                       '/albums/${Uri.encodeComponent(album.artist)}/${Uri.encodeComponent(album.name)}',
                     ),
@@ -174,7 +174,7 @@ class AlbumsScreen extends StatelessWidget {
                       size: 20,
                       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.38),
                     ),
-                    onTap: () => navigateGo(
+                    onTap: () => navigatePush(
                       context,
                       '/albums/${Uri.encodeComponent(album.artist)}/${Uri.encodeComponent(album.name)}',
                     ),

@@ -45,18 +45,23 @@ class YtArtistScreen extends StatefulWidget {
 }
 
 class _YtArtistScreenState extends State<YtArtistScreen> {
-  Map<String, dynamic> _artistData = {};
-  bool _loading = true;
+  late final Signal<Map<String, dynamic>> _artistData;
+  late final Signal<bool> _loading;
 
   @override
   void initState() {
     super.initState();
-    audioSignal.headerPageTitle.value = widget.name;
-    final thumb = widget.thumbnailUrl;
-    if (thumb.isNotEmpty) {
-      audioSignal.headerArtCover.value = thumb;
-      audioSignal.headerArtCoverIsNetwork.value = true;
-    }
+    _artistData = signal<Map<String, dynamic>>({});
+    _loading = signal<bool>(true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      audioSignal.headerPageTitle.value = widget.name;
+      final thumb = widget.thumbnailUrl;
+      if (thumb.isNotEmpty) {
+        audioSignal.headerArtCover.value = thumb;
+        audioSignal.headerArtCoverIsNetwork.value = true;
+      }
+    });
     _load();
   }
 
@@ -65,13 +70,18 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
     audioSignal.headerPageTitle.value = null;
     audioSignal.headerArtCover.value = null;
     audioSignal.headerArtCoverIsNetwork.value = false;
+    _artistData.dispose();
+    _loading.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     final data = await youtubeDatasource.getArtistDetail(widget.channelId);
-    if (mounted) {
-      setState(() { _artistData = data; _loading = false; });
+    if (!mounted) return;
+    _artistData.value = data;
+    _loading.value = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       audioSignal.headerPageTitle.value = data['name'] ?? widget.name;
       final thumb = data['thumbnailUrl'] ?? '';
       if (thumb.isNotEmpty) {
@@ -85,205 +95,265 @@ class _YtArtistScreenState extends State<YtArtistScreen> {
           ...topSongs,
         ];
       }
-    }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final name = _artistData['name'] ?? widget.name;
-    final thumbUrl = _artistData['thumbnailUrl'] ?? widget.thumbnailUrl;
-    final subscribers = _artistData['subscribers'] ?? '';
-    final topSongs = (_artistData['topSongs'] as List<Song>?) ?? [];
-    final albums = (_artistData['albums'] as List<Map<String, dynamic>>?) ?? [];
-    final singles = (_artistData['singles'] as List<Map<String, dynamic>>?) ?? [];
+    return SignalBuilder(
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        final data = _artistData.value;
+        final loading = _loading.value;
+        final name = data['name'] ?? widget.name;
+        final thumbUrl = data['thumbnailUrl'] ?? widget.thumbnailUrl;
+        final subscribers = data['subscribers'] ?? '';
+        final topSongs = (data['topSongs'] as List<Song>?) ?? [];
+        final albums = (data['albums'] as List<Map<String, dynamic>>?) ?? [];
+        final singles = (data['singles'] as List<Map<String, dynamic>>?) ?? [];
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: CustomScrollView(
-        slivers: [
-          SliverPageHeader(
-            title: name,
-            subtitle: subscribers.isNotEmpty ? '$subscribers subscribers' : '',
-            leading: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: cs.surfaceContainerHighest,
-                image: thumbUrl.isNotEmpty
-                    ? DecorationImage(
-                        image: NetworkImage(thumbUrl),
-                        fit: BoxFit.cover,
-                      )
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: CustomScrollView(
+            slivers: [
+              SliverPageHeader(
+                title: name,
+                subtitle: subscribers.isNotEmpty
+                    ? '$subscribers subscribers'
                     : null,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
+                leading: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: cs.surfaceContainerHighest,
+                    image: thumbUrl.isNotEmpty
+                        ? DecorationImage(
+                            image: NetworkImage(thumbUrl),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: thumbUrl.isEmpty
+                      ? Center(
+                          child: FaIcon(
+                            FontAwesomeIcons.user,
+                            size: 48,
+                            color: cs.secondary.withValues(alpha: 0.5),
+                          ),
+                        )
+                      : null,
+                ),
+                underTextActions: !loading && topSongs.isNotEmpty
+                    ? [
+                        ElevatedButton.icon(
+                          onPressed: () => audioSignal.playSong(
+                            topSongs.first,
+                            fromList: topSongs,
+                          ),
+                          icon: const FaIcon(FontAwesomeIcons.play, size: 14),
+                          label: const Text('Play'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: cs.secondary,
+                            foregroundColor: cs.onSecondary,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 8,
+                            ),
+                            shape: const StadiumBorder(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton(
+                          onPressed: () =>
+                              audioSignal.playShuffledFromList(topSongs),
+                          style: OutlinedButton.styleFrom(
+                            shape: const CircleBorder(),
+                            padding: const EdgeInsets.all(12),
+                            side: BorderSide(
+                              color: cs.secondary.withValues(alpha: 0.3),
+                            ),
+                            foregroundColor: cs.secondary,
+                          ),
+                          child: FaIcon(
+                            FontAwesomeIcons.shuffle,
+                            size: 14,
+                            color: cs.secondary,
+                          ),
+                        ),
+                      ]
+                    : null,
+                backgroundImage: thumbUrl.isNotEmpty
+                    ? NetworkImage(thumbUrl)
+                    : null,
+              ),
+
+              if (loading)
+                const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else ...[
+                // Top Songs header
+                if (topSongs.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24.0,
+                        vertical: 12.0,
+                      ),
+                      child: Text(
+                        'Popular Songs',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SongListView(
+                    songs: topSongs,
+                    showIndex: false,
+                    addBottomPadding: false,
+                    trailingBuilder: (context, song, index) => IconButton(
+                      onPressed: () => showSongMoreActionsSheet(
+                        context: context,
+                        song: song,
+                      ),
+                      icon: FaIcon(
+                        FontAwesomeIcons.ellipsisVertical,
+                        size: 16,
+                        color: cs.onSurface.withValues(alpha: 0.38),
+                      ),
+                    ),
                   ),
                 ],
-              ),
-              child: thumbUrl.isEmpty
-                  ? Center(
-                      child: FaIcon(FontAwesomeIcons.user, size: 48,
-                        color: cs.secondary.withValues(alpha: 0.5)),
-                    )
-                  : null,
-            ),
-          ),
 
-          // Play / Shuffle top songs
-          if (!_loading && topSongs.isNotEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                child: Row(
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () => audioSignal.playSong(topSongs.first, fromList: topSongs),
-                      icon: const FaIcon(FontAwesomeIcons.play, size: 16),
-                      label: const Text('Play All'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: cs.secondary,
-                        foregroundColor: cs.onSecondary,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                // Albums
+                if (albums.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
+                      child: Text(
+                        'Albums',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.5,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    OutlinedButton.icon(
-                      onPressed: () => audioSignal.playShuffledFromList(topSongs),
-                      icon: const FaIcon(FontAwesomeIcons.shuffle, size: 16),
-                      label: const Text('Shuffle'),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: cs.secondary.withValues(alpha: 0.2)),
-                        foregroundColor: cs.secondary,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 220,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        itemCount: albums.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 16),
+                        itemBuilder: (context, index) {
+                          final album = albums[index];
+                          final thumbs = album['thumbnails'];
+                          String artUrl = '';
+                          if (thumbs is List && thumbs.isNotEmpty) {
+                            artUrl = youtubeDatasource.transformThumbnail(
+                              thumbs.last['url']?.toString() ?? '',
+                            );
+                          }
+                          return _AlbumCard(
+                            title: album['title'] ?? '',
+                            subtitle: album['year']?.toString() ?? '',
+                            thumbnailUrl: artUrl,
+                            onTap: () {
+                              if (album['browseId'] != null) {
+                                navigatePush(
+                                  context,
+                                  '${AppRoutes.youtube}/album/${Uri.encodeComponent(album['browseId'])}',
+                                  extra: {
+                                    'title': album['title'] ?? '',
+                                    'thumbnailUrl': artUrl,
+                                  },
+                                );
+                              }
+                            },
+                          );
+                        },
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
-
-          if (_loading)
-            const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
-          else ...[
-            // Top Songs header
-            if (topSongs.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
-                  child: Text('Popular Songs',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold, letterSpacing: -0.5)),
-                ),
-              ),
-              SongListView(
-                songs: topSongs,
-                showIndex: false,
-                addBottomPadding: false,
-                trailingBuilder: (context, song, index) => IconButton(
-                  onPressed: () => showSongMoreActionsSheet(context: context, song: song),
-                  icon: FaIcon(FontAwesomeIcons.ellipsisVertical, size: 16,
-                    color: cs.onSurface.withValues(alpha: 0.38)),
-                ),
-              ),
-            ],
-
-            // Albums
-            if (albums.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-                  child: Text('Albums',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold, letterSpacing: -0.5)),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 220,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    itemCount: albums.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 16),
-                    itemBuilder: (context, index) {
-                      final album = albums[index];
-                      final thumbs = album['thumbnails'];
-                      String artUrl = '';
-                      if (thumbs is List && thumbs.isNotEmpty) {
-                        artUrl = youtubeDatasource.transformThumbnail(thumbs.last['url']?.toString() ?? '');
-                      }
-                      return _AlbumCard(
-                        title: album['title'] ?? '',
-                        subtitle: album['year']?.toString() ?? '',
-                        thumbnailUrl: artUrl,
-                        onTap: () {
-                          if (album['browseId'] != null) {
-                            navigateGo(context, '${AppRoutes.youtube}/album/${Uri.encodeComponent(album['browseId'])}',
-                              extra: {'title': album['title'] ?? '', 'thumbnailUrl': artUrl});
-                          }
-                        },
-                      );
-                    },
                   ),
-                ),
-              ),
-            ],
+                ],
 
-            // Singles
-            if (singles.isNotEmpty) ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-                  child: Text('Singles',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold, letterSpacing: -0.5)),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 220,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    itemCount: singles.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 16),
-                    itemBuilder: (context, index) {
-                      final single = singles[index];
-                      final thumbs = single['thumbnails'];
-                      String artUrl = '';
-                      if (thumbs is List && thumbs.isNotEmpty) {
-                        artUrl = youtubeDatasource.transformThumbnail(thumbs.last['url']?.toString() ?? '');
-                      }
-                      return _AlbumCard(
-                        title: single['title'] ?? '',
-                        subtitle: single['year']?.toString() ?? '',
-                        thumbnailUrl: artUrl,
-                        onTap: () {
-                          if (single['browseId'] != null) {
-                            navigateGo(context, '${AppRoutes.youtube}/album/${Uri.encodeComponent(single['browseId'])}',
-                              extra: {'title': single['title'] ?? '', 'thumbnailUrl': artUrl});
-                          }
-                        },
-                      );
-                    },
+                // Singles
+                if (singles.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
+                      child: Text(
+                        'Singles',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
                   ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 220,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        itemCount: singles.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 16),
+                        itemBuilder: (context, index) {
+                          final single = singles[index];
+                          final thumbs = single['thumbnails'];
+                          String artUrl = '';
+                          if (thumbs is List && thumbs.isNotEmpty) {
+                            artUrl = youtubeDatasource.transformThumbnail(
+                              thumbs.last['url']?.toString() ?? '',
+                            );
+                          }
+                          return _AlbumCard(
+                            title: single['title'] ?? '',
+                            subtitle: single['year']?.toString() ?? '',
+                            thumbnailUrl: artUrl,
+                            onTap: () {
+                              if (single['browseId'] != null) {
+                                navigatePush(
+                                  context,
+                                  '${AppRoutes.youtube}/album/${Uri.encodeComponent(single['browseId'])}',
+                                  extra: {
+                                    'title': single['title'] ?? '',
+                                    'thumbnailUrl': artUrl,
+                                  },
+                                );
+                              }
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+
+              SliverToBoxAdapter(
+                child: SignalBuilder(
+                  builder: (context) =>
+                      SizedBox(height: audioSignal.reservedHeight.value),
                 ),
               ),
             ],
-          ],
-
-          SliverToBoxAdapter(
-            child: Watch((context) => SizedBox(height: audioSignal.reservedHeight.value)),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -322,23 +392,42 @@ class _AlbumCard extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: thumbnailUrl.isNotEmpty
-                    ? Image.network(thumbnailUrl, fit: BoxFit.cover,
+                    ? Image.network(
+                        thumbnailUrl,
+                        fit: BoxFit.cover,
                         errorBuilder: (context, _, _) => Container(
                           color: Colors.grey[900],
-                          child: Icon(Icons.album, color: _AlbumCard._placeholderIconColor(context),),
-                        ))
+                          child: Icon(
+                            Icons.album,
+                            color: _AlbumCard._placeholderIconColor(context),
+                          ),
+                        ),
+                      )
                     : Container(color: Colors.grey[900]),
               ),
             ),
             const SizedBox(height: 8),
-            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.secondary,
-                fontSize: 14, fontWeight: FontWeight.w600)),
-            Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.6),
-                fontSize: 12)),
+                color: Theme.of(
+                  context,
+                ).colorScheme.secondary.withValues(alpha: 0.6),
+                fontSize: 12,
+              ),
+            ),
           ],
         ),
       ),

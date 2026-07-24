@@ -31,7 +31,7 @@ class SubpageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Watch((context) {
+    return SignalBuilder(builder: (context) {
       final progress = _isMobile ? audioSignal.headerTitleProgress.value : 0.0;
 
       // Morph: shrink and fade the title as it scrolls into the header bar
